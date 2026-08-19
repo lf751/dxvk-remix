@@ -344,22 +344,33 @@ namespace fork_hooks {
       // Cloud render compute pass setup (Nubis Cubed 2023, fork — 2026-05-12, C4).
       // Push the per-frame camera basis and ensure the screen-space RT is
       // allocated at the downscale extent BEFORE computeLuts dispatches the
-      // cloud render compute. The basis vectors are in Y-up world space (cloud
-      // math convention, camera at origin) and the Right/Up vectors are
-      // pre-scaled by tan(halfFovX/Y) + aspect ratio so the shader does just
-      // a weighted sum to reconstruct viewDir per pixel.
+      // cloud render compute. Derive the ray coefficients from the actual
+      // inverse projection so non-canonical game projections reconstruct the
+      // same world directions as the main camera shader path.
       {
         const RtCamera& camera = ctx.getSceneManager().getCamera();
-        const Vector3 forward = camera.getDirection(/*freecam=*/true);
-        const Vector3 right   = camera.getRight(/*freecam=*/true);
-        const Vector3 up      = camera.getUp(/*freecam=*/true);
+        const Matrix4d& projectionToView = camera.getProjectionToView();
+        const Matrix4d& viewToWorld = camera.getViewToWorld(/*freecam=*/true);
+
+        const auto clipToWorldDirection = [&projectionToView, &viewToWorld](const Vector4d& clip) {
+          const Vector4d view = projectionToView * clip;
+          return Vector3((viewToWorld * Vector4d{ view.xyz(), 0.0 }).xyz());
+        };
+
+        const Vector3 forward = clipToWorldDirection(Vector4d(0.0, 0.0, 1.0, 1.0));
+        const Vector3 right   = clipToWorldDirection(Vector4d(1.0, 0.0, 0.0, 0.0));
+        const Vector3 up      = clipToWorldDirection(Vector4d(0.0, 1.0, 0.0, 0.0));
 
         const bool isZUp = RtxOptions::zUp();
+        const bool flipWorldY = RtxOptions::flipWorldY();
         // Swap (x, y, z) -> (x, z, y) when the game is Z-up. Mirrors the
         // existing isZUp swap inside `evalSkyRadiance` in atmosphere_sky.slangh.
-        auto toYUp = [isZUp](const Vector3& v) -> Vector3 {
+        auto toYUp = [isZUp, flipWorldY](const Vector3& v) -> Vector3 {
           if (isZUp) {
             return Vector3(v.x, v.z, v.y);
+          }
+          if (flipWorldY) {
+            return Vector3(v.x, -v.y, v.z);
           }
           return v;
         };
@@ -368,20 +379,8 @@ namespace fork_hooks {
         const Vector3 rightYUp   = toYUp(right);
         const Vector3 upYUp      = toYUp(up);
 
-        // tan(halfFovY) and aspect. halfFov is fov/2 (RtCamera::getFov() is
-        // the full vertical FOV). Pre-scale the basis vectors so the shader
-        // simply does forward + ndc.x*right + ndc.y*up.
-        const float fovYRad = camera.getFov();
-        const float halfFovY = 0.5f * fovYRad;
-        const float tanHalfFovY = std::tan(halfFovY);
-        const float aspect = camera.getAspectRatio();
-        const float tanHalfFovX = tanHalfFovY * aspect;
-
-        const Vector3 rightScaled = rightYUp * tanHalfFovX;
-        const Vector3 upScaled    = upYUp    * tanHalfFovY;
-
         const uint32_t frameIdx = static_cast<uint32_t>(ctx.m_device->getCurrentFrameId());
-        ctx.m_atmosphere->setCloudRenderCameraBasis(forwardYUp, rightScaled, upScaled, frameIdx);
+        ctx.m_atmosphere->setCloudRenderCameraBasis(forwardYUp, rightYUp, upYUp, frameIdx);
 
         // Push the camera world position (Y-up km) for the C6 voxel-grid
         // cloud-on-terrain shadow plumbing. The G-buffer worldPos that the

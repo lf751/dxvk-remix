@@ -55,9 +55,9 @@ $vsWhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer
 if (-not (Test-Path $vsWhere)) {
     throw "vswhere.exe not found at '$vsWhere'. Install the Visual Studio Installer (ships with VS2017+)."
 }
-$vsPath = & $vsWhere -latest -version '[16.0,18.0)' -property installationPath
+$vsPath = & $vsWhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
 if ([string]::IsNullOrWhiteSpace($vsPath)) {
-    throw "No Visual Studio 2019 or 2022 installation with v142 toolchain found via vswhere."
+    throw "No Visual Studio installation with the C++ x64 toolchain found via vswhere."
 }
 $vcvars = Join-Path $vsPath 'VC\Auxiliary\Build\vcvarsall.bat'
 if (-not (Test-Path $vcvars)) {

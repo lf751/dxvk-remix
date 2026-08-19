@@ -741,6 +741,9 @@ vec3 evalSkyRadiance(
 
   // Transform view direction to Y-up space if needed
   vec3 viewDirYUp = isZUp ? vec3(viewDir.x, viewDir.z, viewDir.y) : viewDir;
+  if (!isZUp && args.flipWorldY != 0u) {
+    viewDirYUp.y = -viewDirYUp.y;
+  }
   viewDirYUp = normalize(viewDirYUp);
 
   // Sample the pre-baked sky-view LUT instead of marching the atmosphere live.
@@ -876,9 +879,10 @@ vec3 evalSkyRadiance(
       cloudRT = AtmosphereCloudRender.Load(int3(pixelCoord, 0));
     }
     cloudLayer = vec4(cloudRT.rgb, 1.0f - cloudRT.a);
-  } else if (args.cloudSecondaryLutEnable != 0u && !isPrimaryRay) {
-    // Secondary-ray cloud LUT (fork — 2026-06-10, perf). Indirect / PSR /
-    // reflection sky-miss rays read the per-frame 256x128 dome LUT baked by
+  } else if (args.cloudSecondaryLutEnable != 0u) {
+    // World-direction cloud LUT (fork — 2026-06-10, perf). Indirect / PSR /
+    // reflection sky-miss rays, and primary rays when cloudRenderRTEnable is
+    // disabled, read the per-frame 256x128 dome LUT baked by
     // cloud_secondary_lut.comp.slang instead of a full per-ray cloud march —
     // that hidden march cost (back when these rays ran the now-removed
     // analytical view-march) rivaled the visible cloud pass. The LUT replaced

@@ -455,8 +455,8 @@ struct AtmosphereArgs {
                                    // 0 = legacy constant bottom-darkening gradient. Reuses the
                                    // former pad_c6_1 slot; CB layout unchanged.
 
-  // ----- (former Cloud Height LUT block — retired with the legacy model) -----
-  uint  padRetired4;               // retired: legacy height-LUT enable.
+  // ----- Game-to-atmosphere axis conversion -----
+  uint  flipWorldY;                // 1 when negative game-space Y is atmosphere up
 
   // ----- Two-layer cloud map (slide 1 lift — RDR2 SIGGRAPH 2019) -----
   // Adds an independent second cloud slab at its own altitude band, sampled

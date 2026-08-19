@@ -1639,6 +1639,7 @@ Every indirect / PSR / reflection ray reaching sky-miss previously ran the full 
 The visible cloud march ran once per DLSS-input pixel at up to 32 steps. Clouds are soft, low-frequency content, so the cloud RT is now allocated at `cloudRenderResolutionScale` (default 0.5) of the downscale extent and bilinearly upsampled at the sky-miss composite — ~4× fewer marched pixels at the default. The temporal-smoothing path runs after the upsample at full downscale resolution, so its stabilization is unchanged. Scale 1.0 lands the sample uv on texel centers of a same-size RT and matches the legacy `Load` to float precision (live A/B via the "Cloud Render Scale" slider).
 
 - **`src/dxvk/shaders/rtx/pass/atmosphere/atmosphere_sky.slangh`** — fork-owned change.
+  *When `cloudRenderRTEnable` is disabled, primary rays now use the existing world-direction secondary cloud dome LUT instead of becoming cloudless. This provides a terrain-locked fallback for games whose camera matrices make the screen-space cloud RT rotate with the view; non-primary LUT behavior is unchanged.*
   *The primary-ray cloud-RT branch in `evalSkyRadiance` normalizes pixelCoord by `args.cloudRenderFullDimX/Y` and bilinearly samples the RT via the sky-view sampler (uv clamped a half-texel inside so screen content never wraps through REPEAT-U); falls back to the legacy `Load` while the published extent is still zero (first frames).*
 
 - **`src/dxvk/shaders/rtx/pass/atmosphere/atmosphere_args.h`** — fork-owned addition.
@@ -3914,5 +3915,29 @@ and is still documented as tested-and-rejected).
 
 Note: user rtx.conf files carrying `rtx.atmosphere.nubis3SunNearFieldKm` will log a
 harmless unknown-option warning.
+
+---
+
+## Workstream - Negative-Y-up atmosphere orientation (fork - 2026-08-14)
+
+Adds an atmosphere-local game-to-Numos axis conversion for titles where negative
+world Y is vertical up. This avoids using global `rtx.zUp`, which selects world Z
+and rotates JPOG's sky sideways. Validated in JPOG with an upright sky and clouds
+remaining locked to world directions during camera orbit.
+
+- **`src/dxvk/rtx_render/rtx_options.h`** - fork-owned addition.
+  *Adds `rtx.atmosphere.flipWorldY` (default false).*
+- **`src/dxvk/shaders/rtx/pass/atmosphere/atmosphere_args.h`** - fork-owned change.
+  *Repurposes `padRetired4` as `flipWorldY`; constant-buffer size and layout are unchanged.*
+- **`src/dxvk/rtx_render/rtx_atmosphere.cpp`** - fork-owned change.
+  *Populates `AtmosphereArgs::flipWorldY` from the new option.*
+- **`src/dxvk/rtx_render/rtx_fork_atmosphere.cpp`** - fork-owned change.
+  *Converts the inverse-projection cloud ray basis and camera position from `(x,y,z)`
+  to `(x,-y,z)` before Numos consumes them.*
+- **`src/dxvk/shaders/rtx/pass/atmosphere/atmosphere_sky.slangh`** - fork-owned change.
+  *Applies the same conversion to visible and secondary sky-miss directions.*
+- **`src/dxvk/shaders/rtx/pass/atmosphere/atmosphere_common.slangh`** - fork-owned change.
+  *Applies the conversion to cloud voxel-grid world positions so terrain shadows use
+  the same vertical frame as visible clouds.*
 
 ---

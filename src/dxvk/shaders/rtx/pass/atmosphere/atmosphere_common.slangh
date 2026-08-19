@@ -1553,6 +1553,9 @@ bool intersectCloudSlabRay(vec3 originYUpKm, vec3 dirYUp, AtmosphereArgs args,
 vec3 cloudVoxelWorldToUVW(vec3 worldPosKm, AtmosphereArgs args, bool isZUp) {
   // Convert to Y-up if the caller is in Z-up space.
   vec3 posYUp = isZUp ? vec3(worldPosKm.x, worldPosKm.z, worldPosKm.y) : worldPosKm;
+  if (!isZUp && args.flipWorldY != 0u) {
+    posYUp.y = -posYUp.y;
+  }
 
   const float halfExtent = 0.5f * args.cloudVoxelGridExtentKm;
   const float invExtent  = 1.0f / max(args.cloudVoxelGridExtentKm, 0.0001f);

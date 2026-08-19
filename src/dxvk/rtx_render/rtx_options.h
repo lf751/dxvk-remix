@@ -2228,6 +2228,11 @@ namespace dxvk {
                "lighting produces the expected perceptual wins across "
                "day/sunset/night.");
 
+    RTX_OPTION("rtx.atmosphere", bool, flipWorldY, false,
+           "Treat negative world Y as up when converting game-space directions "
+           "and positions into the atmosphere's Y-up coordinate system. Use for "
+           "games whose vertical axis points down; keep rtx.zUp disabled.");
+
     // Voxel-grid cloud-on-terrain shadows at NEE entry points (fork — 2026-05-12, C6).
     // When true, sampleAtmosphereSunLight / sampleAtmosphereSunLightVolume apply
     // a multiplicative ratio correction that replaces the legacy

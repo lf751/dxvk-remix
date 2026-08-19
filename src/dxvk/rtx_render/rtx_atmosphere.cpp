@@ -987,10 +987,9 @@ AtmosphereArgs RtxAtmosphere::getAtmosphereArgs() const {
     args.cloudAerialFadePerKm = RtxOptions::cloudAerialFadePerKm();
   }
 
-  // Retired legacy-model CB slots (fork — legacy retirement 2026-07-16):
-  // zero-filled reserve pads, free for Phase D growth.
+  // Retired legacy-model CB slots (fork — legacy retirement 2026-07-16).
   args.padRetired0 = 0u;
-  args.padRetired4 = 0u;
+  args.flipWorldY = RtxOptions::flipWorldY() ? 1u : 0u;
   args.padRetired5 = 0.0f;
   args.cloudLightingLodThreshold = RtxOptions::cloudLightingLodThreshold();
   args.padRetired7 = 0.0f;
