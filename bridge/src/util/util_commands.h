@@ -53,6 +53,8 @@ namespace Commands {
     RemixApi_RegisterDevice,
     RemixApi_SetGameValue,
     RemixApi_GetGameValue,
+    RemixApi_AddTextureHash,
+    RemixApi_dxvk_GetTextureHash,
 
     Bridge_SharedHeap_AddSeg,
     Bridge_SharedHeap_Alloc,
@@ -495,6 +497,8 @@ namespace Commands {
     case RemixApi_RegisterDevice: return "RemixApi_RegisterDevice";
     case RemixApi_SetGameValue: return "RemixApi_SetGameValue";
     case RemixApi_GetGameValue: return "RemixApi_GetGameValue";
+    case RemixApi_AddTextureHash: return "RemixApi_AddTextureHash";
+    case RemixApi_dxvk_GetTextureHash: return "RemixApi_dxvk_GetTextureHash";
 
     case Bridge_SharedHeap_AddSeg: return "SharedHeap_AddSeg";
     case Bridge_SharedHeap_Alloc: return "SharedHeap_Alloc";

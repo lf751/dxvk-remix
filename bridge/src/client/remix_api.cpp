@@ -27,6 +27,8 @@
 #include "util_devicecommand.h"
 #include "util_remixapi.h"
 
+#include "d3d9_texture.h"
+
 using namespace remixapi::util;
 
 namespace remixapi {
@@ -498,6 +500,14 @@ constexpr bool strings_equal(char const * a, char const * b) {
 
 extern "C" {
 
+  DLLEXPORT remixapi_ErrorCode __stdcall remixapi_AddTextureHash(
+    const char* textureCategory,
+    const char* textureHash);
+
+  DLLEXPORT remixapi_ErrorCode __stdcall remixapi_dxvk_GetTextureHash(
+    IDirect3DTexture9* texture,
+    uint64_t*          out_hash);
+
   DLLEXPORT remixapi_ErrorCode __stdcall remixapi_InitializeLibrary(
     const remixapi_InitializeLibraryInfo* info,
     remixapi_Interface*                   out_result) {
@@ -553,6 +563,8 @@ extern "C" {
       interf.UpdateLightDefinition        = remixapi_UpdateLightDefinition;
       interf.SetGameValue                 = remixapi_SetGameValue;
       interf.GetGameValue                 = remixapi_GetGameValue;
+      interf.AddTextureHash               = remixapi_AddTextureHash;
+      interf.dxvk_GetTextureHash          = remixapi_dxvk_GetTextureHash;
       // interf.dxvk_GetExternalSwapchain = remixapi_dxvk_GetExternalSwapchain;
       // interf.dxvk_GetVkImage = remixapi_dxvk_GetVkImage;
       // interf.dxvk_CopyRenderingOutput = remixapi_dxvk_CopyRenderingOutput;
@@ -698,6 +710,61 @@ extern "C" {
       memcpy(out_buffer, value_ptr, actual);
     }
     DeviceBridge::pop_front();
+    return result;
+  }
+
+  DLLEXPORT remixapi_ErrorCode __stdcall remixapi_AddTextureHash(
+    const char* textureCategory,
+    const char* textureHash) {
+    ASSERT_REMIXAPI_PFN_TYPE(remixapi_AddTextureHash);
+    if (textureCategory == nullptr || textureCategory[0] == '\0'
+     || textureHash == nullptr || textureHash[0] == '\0') {
+      return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
+    }
+
+    DeviceBridge::ResponseTransaction responseTransaction;
+
+    UID currentUID = 0;
+    {
+      ClientMessage c(Commands::RemixApi_AddTextureHash);
+      currentUID = c.get_uid();
+      send(c, textureCategory);
+      send(c, textureHash);
+    }
+    WAIT_FOR_SERVER_RESPONSE("remixapi_AddTextureHash", REMIXAPI_ERROR_CODE_GENERAL_FAILURE, currentUID);
+    const remixapi_ErrorCode result = static_cast<remixapi_ErrorCode>(DeviceBridge::get_data());
+    DeviceBridge::pop_front();
+    return result;
+  }
+
+  DLLEXPORT remixapi_ErrorCode __stdcall remixapi_dxvk_GetTextureHash(
+    IDirect3DTexture9* texture,
+    uint64_t*          out_hash) {
+    ASSERT_REMIXAPI_PFN_TYPE(remixapi_dxvk_GetTextureHash);
+    if (texture == nullptr || out_hash == nullptr) {
+      return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
+    }
+
+    const auto* const lssTexture = bridge_cast<Direct3DTexture9_LSS*>(texture);
+    const uint32_t textureHandle = static_cast<uint32_t>(lssTexture->getId());
+
+    DeviceBridge::ResponseTransaction responseTransaction;
+
+    UID currentUID = 0;
+    {
+      ClientMessage c(Commands::RemixApi_dxvk_GetTextureHash);
+      currentUID = c.get_uid();
+      c.send_data(textureHandle);
+    }
+    WAIT_FOR_SERVER_RESPONSE("remixapi_dxvk_GetTextureHash", REMIXAPI_ERROR_CODE_GENERAL_FAILURE, currentUID);
+    const remixapi_ErrorCode result = static_cast<remixapi_ErrorCode>(DeviceBridge::get_data());
+    const uint64_t hashLow = DeviceBridge::get_data();
+    const uint64_t hashHigh = DeviceBridge::get_data();
+    DeviceBridge::pop_front();
+
+    if (result == REMIXAPI_ERROR_CODE_SUCCESS) {
+      *out_hash = hashLow | (hashHigh << 32);
+    }
     return result;
   }
 

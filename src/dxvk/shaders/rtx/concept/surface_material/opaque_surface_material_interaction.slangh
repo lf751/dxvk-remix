@@ -756,6 +756,14 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
     chooseTextureArgument(textureAlphaArg1, surface.textureAlphaArg1Source, opacity, surfaceInteraction.vertexColor.a, tFactor.a, opacity);
     chooseTextureArgument(textureAlphaArg2, surface.textureAlphaArg2Source, opacity, surfaceInteraction.vertexColor.a, tFactor.a, float(1.0f));
     chooseTextureOperationAlpha(opacity, surface.textureAlphaOperation, textureAlphaArg1, textureAlphaArg2);
+
+    if ((opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_WORLD_SPACE_SECONDARY_OPACITY) &&
+        opaqueSurfaceMaterial.secondaryTextureIndex != BINDING_INDEX_INVALID)
+    {
+      const vec2 maskTexcoord = surfaceInteraction.position.xz * (1.0f / 1024.0f);
+      opacity *= textures[nonuniformEXT(uint(opaqueSurfaceMaterial.secondaryTextureIndex))]
+        .SampleLevel(samplers[nonuniformEXT(uint(opaqueSurfaceMaterial.samplerIndex))], maskTexcoord, 0).a;
+    }
     
     // Ensure we perform these opacity calculations after the texture operations have been applied to abledo and alpha.
     calcOpaqueSurfaceMaterialOpacity(

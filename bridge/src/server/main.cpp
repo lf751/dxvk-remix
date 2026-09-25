@@ -3300,6 +3300,52 @@ void ProcessDeviceCommandQueue() {
         break;
       }
 
+      case RemixApi_AddTextureHash:
+      {
+        void* category_ptr = nullptr;
+        const uint32_t category_size = DeviceBridge::getReaderChannel().data->pull(&category_ptr);
+        std::string category_str((const char*) category_ptr, category_size);
+
+        void* hash_ptr = nullptr;
+        const uint32_t hash_size = DeviceBridge::getReaderChannel().data->pull(&hash_ptr);
+        std::string hash_str((const char*) hash_ptr, hash_size);
+
+        remixapi_ErrorCode result = REMIXAPI_ERROR_CODE_GENERAL_FAILURE;
+        if (remixapi::g_remix.AddTextureHash) {
+          result = remixapi::g_remix.AddTextureHash(category_str.c_str(), hash_str.c_str());
+        } else {
+          Logger::err("[RemixApi_AddTextureHash] AddTextureHash function pointer is null in g_remix.");
+        }
+
+        ServerMessage c(Commands::Bridge_Response, currentUID);
+        c.send_data(static_cast<uint32_t>(result));
+        break;
+      }
+
+      case RemixApi_dxvk_GetTextureHash:
+      {
+        const uint32_t texture_handle = DeviceBridge::get_data();
+        uint64_t texture_hash = 0;
+        remixapi_ErrorCode result = REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
+
+        const auto texture_entry = gpD3DResources.find(texture_handle);
+        if (texture_entry != gpD3DResources.end() && texture_entry->second != nullptr) {
+          if (remixapi::g_remix.dxvk_GetTextureHash) {
+            result = remixapi::g_remix.dxvk_GetTextureHash(
+              static_cast<IDirect3DTexture9*>(texture_entry->second), &texture_hash);
+          } else {
+            Logger::err("[RemixApi_dxvk_GetTextureHash] dxvk_GetTextureHash function pointer is null in g_remix.");
+            result = REMIXAPI_ERROR_CODE_GENERAL_FAILURE;
+          }
+        }
+
+        ServerMessage c(Commands::Bridge_Response, currentUID);
+        c.send_data(static_cast<uint32_t>(result));
+        c.send_data(static_cast<uint32_t>(texture_hash));
+        c.send_data(static_cast<uint32_t>(texture_hash >> 32));
+        break;
+      }
+
       default:
         break;
       }

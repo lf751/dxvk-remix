@@ -32,6 +32,7 @@
 #include "rtx_options.h"
 #include "rtx_debug_view.h"
 #include "rtx_fork_game_state.h"
+#include "rtx_weather.h"
 
 #include "../dxvk_device.h"
 #include "../dxvk_objects.h"
@@ -168,6 +169,96 @@ namespace {
 
   dxvk::D3D9DeviceEx* tryAsDxvk() {
     return s_dxvkDevice;
+  }
+
+  dxvk::WeatherBlender* getWeatherBlender(dxvk::D3D9DeviceEx* device) {
+    return device
+      ? device->GetDXVKDevice()->getCommon()->getSceneManager().getWeatherBlender()
+      : nullptr;
+  }
+
+  void applyWeatherGameValue(dxvk::WeatherBlender* blender, const char* key, const char* value) {
+    if (!blender || std::strncmp(key, "__weather.", 10) != 0) {
+      return;
+    }
+
+    const char* subKey = key + 10;
+    if (std::strcmp(subKey, "target") == 0) {
+      blender->setTargetPreset(value);
+      return;
+    }
+
+    char* end = nullptr;
+    const float parsed = std::strtof(value, &end);
+    if (end == value) {
+      return;
+    }
+
+    if (std::strcmp(subKey, "blend_seconds") == 0) {
+      blender->setBlendSeconds(parsed);
+    } else if (std::strcmp(subKey, "drift_speed") == 0) {
+      blender->setDriftSpeed(parsed);
+    } else if (std::strcmp(subKey, "drift_intensity") == 0) {
+      blender->setDriftIntensity(parsed);
+    }
+  }
+
+  void applyStoredWeatherGameValues(dxvk::D3D9DeviceEx* device) {
+    dxvk::WeatherBlender* blender = getWeatherBlender(device);
+    if (!blender) {
+      return;
+    }
+
+    auto& store = dxvk::fork_game_state::GameStateStore::get();
+    const char* keys[] = {
+      "__weather.target",
+      "__weather.blend_seconds",
+      "__weather.drift_speed",
+      "__weather.drift_intensity",
+    };
+
+    for (const char* key : keys) {
+      std::string value;
+      if (store.tryGet(key, value)) {
+        applyWeatherGameValue(blender, key, value.c_str());
+      }
+    }
+  }
+
+  bool getWeatherGameValue(dxvk::D3D9DeviceEx* device, const char* key, std::string& value) {
+    dxvk::WeatherBlender* blender = getWeatherBlender(device);
+    if (!blender || std::strncmp(key, "__weather.", 10) != 0) {
+      return false;
+    }
+
+    const char* subKey = key + 10;
+    if (std::strcmp(subKey, "target") == 0) {
+      value = blender->getTargetPreset();
+    } else if (std::strcmp(subKey, "current") == 0) {
+      value = blender->getCurrentPreset();
+    } else if (std::strcmp(subKey, "previous") == 0) {
+      value = blender->getPreviousPreset();
+    } else if (std::strcmp(subKey, "blend_progress") == 0) {
+      char buffer[32];
+      std::snprintf(buffer, sizeof(buffer), "%.4f", blender->getBlendProgress());
+      value = buffer;
+    } else if (std::strcmp(subKey, "blend_seconds") == 0) {
+      char buffer[32];
+      std::snprintf(buffer, sizeof(buffer), "%.6f", blender->getBlendSeconds());
+      value = buffer;
+    } else if (std::strcmp(subKey, "drift_speed") == 0) {
+      char buffer[32];
+      std::snprintf(buffer, sizeof(buffer), "%.6f", blender->getDriftSpeed());
+      value = buffer;
+    } else if (std::strcmp(subKey, "drift_intensity") == 0) {
+      char buffer[32];
+      std::snprintf(buffer, sizeof(buffer), "%.6f", blender->getDriftIntensity());
+      value = buffer;
+    } else {
+      return false;
+    }
+
+    return true;
   }
 
   // from rtx_mod_usd.cpp
@@ -1830,6 +1921,7 @@ namespace {
     s_dxvkD3D9 = dxvkD3d9Ex;
     s_dxvkDevice = dxvkDevice;
     dxvk::g_dxvkDeviceNative = dxvkDevice->GetDXVKDevice().ptr();
+    applyStoredWeatherGameValues(dxvkDevice);
     return REMIXAPI_ERROR_CODE_SUCCESS;
   }
 
@@ -2527,6 +2619,7 @@ extern "C"
 
     dxvk::fork_game_state::GameStateStore::get().set(
       std::string{ key }, std::string{ value });
+    applyWeatherGameValue(getWeatherBlender(tryAsDxvk()), key, value);
     return REMIXAPI_ERROR_CODE_SUCCESS;
   }
 
@@ -2546,7 +2639,9 @@ extern "C"
     }
 
     std::string value;
-    if (!dxvk::fork_game_state::GameStateStore::get().tryGet(std::string{ key }, value)) {
+    const bool hasWeatherValue = getWeatherGameValue(tryAsDxvk(), key, value);
+    if (!hasWeatherValue
+        && !dxvk::fork_game_state::GameStateStore::get().tryGet(std::string{ key }, value)) {
       *out_actual_size = 0;
       return REMIXAPI_ERROR_CODE_SUCCESS;
     }

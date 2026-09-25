@@ -540,6 +540,9 @@ struct LegacyMaterialDefaults {
   RTX_OPTION("rtx.legacyMaterial", bool, alphaIsThinFilmThickness, false,
                   "A flag to determine if the alpha channel from the albedo source should be treated as thin film thickness "
                   "on non-replaced \"legacy\" materials.");
+  RTX_OPTION_ARGS("rtx.legacyMaterial", fast_unordered_set, worldSpaceSecondaryOpacityTextures, {},
+                  "Albedo textures whose secondary texture alpha masks opacity using world XZ coordinates normalized over 1024 units.",
+                  args.flags = RtxOptionFlags::InvalidatesDrawcallTranslation);
   // Note: Should be something non-zero as 0 is an invalid thickness to have (even if this is just unused).
   RTX_OPTION("rtx.legacyMaterial", float, thinFilmThicknessConstant, 200.f,
                   "The thickness (in nanometers) of the thin-film layer assuming it is enabled on non-replaced \"legacy\" materials.\n"
@@ -589,7 +592,8 @@ struct RtOpaqueSurfaceMaterial {
     uint16_t samplerFeedbackStamp,
     uint32_t secondaryTextureIndex = 0,
     bool albedoTextureIsSrgb = false, bool emissiveTextureIsSrgb = false,
-    bool skyLitParticle = false, bool usesLegacyDefaults = false
+    bool skyLitParticle = false, bool usesLegacyDefaults = false,
+    bool worldSpaceSecondaryOpacity = false
   ) :
     m_albedoOpacityTextureIndex{ albedoOpacityTextureIndex }, m_secondaryTextureIndex{secondaryTextureIndex}, m_normalTextureIndex{ normalTextureIndex },
     m_tangentTextureIndex { tangentTextureIndex }, m_heightTextureIndex { heightTextureIndex }, m_roughnessTextureIndex{ roughnessTextureIndex },
@@ -608,7 +612,8 @@ struct RtOpaqueSurfaceMaterial {
     m_subsurfaceMaterialIndex(subsurfaceMaterialIndex), m_isRaytracedRenderTarget(isRaytracedRenderTarget),
     m_isHairCard(isHairCard), m_samplerFeedbackStamp{ samplerFeedbackStamp },
     m_albedoTextureIsSrgb{ albedoTextureIsSrgb }, m_emissiveTextureIsSrgb{ emissiveTextureIsSrgb },
-    m_skyLitParticle{ skyLitParticle }, m_usesLegacyDefaults{ usesLegacyDefaults }
+    m_skyLitParticle{ skyLitParticle }, m_usesLegacyDefaults{ usesLegacyDefaults },
+    m_worldSpaceSecondaryOpacity{ worldSpaceSecondaryOpacity }
   {
     updateCachedData();
     updateCachedHash();
@@ -662,6 +667,10 @@ struct RtOpaqueSurfaceMaterial {
 
     if (m_usesLegacyDefaults) {
       flags |= OPAQUE_SURFACE_MATERIAL_FLAG_USE_LEGACY_DEFAULTS;
+    }
+
+    if (m_worldSpaceSecondaryOpacity) {
+      flags |= OPAQUE_SURFACE_MATERIAL_FLAG_WORLD_SPACE_SECONDARY_OPACITY;
     }
 
     float displaceIn = m_displaceIn * getDisplacementInFactor();
@@ -877,6 +886,7 @@ private:
       uint32_t emissiveTextureIsSrgb;     // NOTE: uint32_t to avoid padding
       uint32_t skyLitParticle;            // NOTE: uint32_t to avoid padding
       uint32_t usesLegacyDefaults;
+      uint32_t worldSpaceSecondaryOpacity;
       // NOTE: There must be NO padding between members, as the struct is used for hashing
     };
     HashStruct hashData = HashStruct{
@@ -911,6 +921,7 @@ private:
       m_emissiveTextureIsSrgb,
       m_skyLitParticle,
       m_usesLegacyDefaults,
+      m_worldSpaceSecondaryOpacity,
     };
     m_cachedHash = hashStructByMemory<HashStruct,
       &HashStruct::albedoOpacityTextureIndex,
@@ -943,7 +954,8 @@ private:
       &HashStruct::albedoTextureIsSrgb,
       &HashStruct::emissiveTextureIsSrgb,
       &HashStruct::skyLitParticle,
-      &HashStruct::usesLegacyDefaults>(hashData);
+      &HashStruct::usesLegacyDefaults,
+      &HashStruct::worldSpaceSecondaryOpacity>(hashData);
   }
 
   void updateCachedData() {
@@ -1009,6 +1021,7 @@ private:
   // Fork (2026-07-26): sky-ambient term in the resolver's particle lighting approximation.
   bool m_skyLitParticle;
   bool m_usesLegacyDefaults;
+  bool m_worldSpaceSecondaryOpacity;
 
   uint16_t m_samplerFeedbackStamp;
 

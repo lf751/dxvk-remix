@@ -1886,6 +1886,9 @@ namespace dxvk {
       };
       const bool albedoTextureIsSrgb = textureUsesSrgbFormat(opaqueMaterialData.getAlbedoOpacityTexture());
       const bool emissiveTextureIsSrgb = textureUsesSrgbFormat(opaqueMaterialData.getEmissiveColorTexture());
+      const bool worldSpaceSecondaryOpacity = lookupHash(
+        LegacyMaterialDefaults::worldSpaceSecondaryOpacityTextures(),
+        opaqueMaterialData.getAlbedoOpacityTexture().getImageHash());
 
       const RtOpaqueSurfaceMaterial opaqueSurfaceMaterial{
         albedoOpacityTextureIndex, normalTextureIndex,
@@ -1906,7 +1909,8 @@ namespace dxvk {
         secondaryTextureIndex,
         albedoTextureIsSrgb, emissiveTextureIsSrgb,
         opaqueMaterialData.getSkyLitParticle(),
-        renderMaterialData.usesLegacyDefaults()
+        renderMaterialData.usesLegacyDefaults(),
+        worldSpaceSecondaryOpacity
       };
 
       surfaceMaterial.emplace(opaqueSurfaceMaterial);
