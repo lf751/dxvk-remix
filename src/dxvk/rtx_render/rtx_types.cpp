@@ -308,11 +308,16 @@ namespace dxvk {
   }
 
   bool DrawCallState::finalizeGeometryHashes() {
-    if (!geometryData.futureGeometryHashes.valid()) {
-      return false;
-    }
+    if (geometryData.hashesPrecomputed) {
+      // rtx.geometryHashMemoInline: served from the memo on the D3D9 thread, no worker task.
+      geometryData.hashesPrecomputed = false;
+    } else {
+      if (!geometryData.futureGeometryHashes.valid()) {
+        return false;
+      }
 
-    geometryData.hashes = geometryData.futureGeometryHashes.get();
+      geometryData.hashes = geometryData.futureGeometryHashes.get();
+    }
 
     if (geometryData.hashes[HashComponents::VertexPosition] == kEmptyHash) {
       throw DxvkError("Position hash should never be empty");
@@ -373,42 +378,60 @@ namespace dxvk {
     categories.clr(category);
   }
 
-  void DrawCallState::setupCategoriesForTexture() {
+  CategoryFlags DrawCallState::computeTextureListCategories(const XXH64_hash_t& textureHash) {
+    // The texture-list part of setupCategoriesForTexture(): depends only on the texture hash and the
+    // option values, so rtx.textureCategoryCache can cache it per texture hash.
+    CategoryFlags result = 0;
+    const auto setIf = [&result](InstanceCategories category, bool doSet) {
+      if (doSet) {
+        result.set(category);
+      }
+    };
+
+    setIf(InstanceCategories::WorldUI, lookupHash(RtxOptions::worldSpaceUiTextures(), textureHash));
+    setIf(InstanceCategories::WorldMatte, lookupHash(RtxOptions::worldSpaceUiBackgroundTextures(), textureHash));
+
+    setIf(InstanceCategories::Ignore, lookupHash(RtxOptions::ignoreTextures(), textureHash));
+    setIf(InstanceCategories::IgnoreLights, lookupHash(RtxOptions::ignoreLights(), textureHash));
+    setIf(InstanceCategories::IgnoreAntiCulling, lookupHash(RtxOptions::antiCullingTextures(), textureHash));
+    setIf(InstanceCategories::IgnoreMotionBlur, lookupHash(RtxOptions::motionBlurMaskOutTextures(), textureHash));
+    setIf(InstanceCategories::IgnoreOpacityMicromap, lookupHash(RtxOptions::opacityMicromapIgnoreTextures(), textureHash));
+    setIf(InstanceCategories::IgnoreAlphaChannel, lookupHash(RtxOptions::ignoreAlphaOnTextures(), textureHash));
+    setIf(InstanceCategories::IgnoreBakedLighting, lookupHash(RtxOptions::ignoreBakedLightingTextures(), textureHash));
+
+    setIf(InstanceCategories::Hidden, lookupHash(RtxOptions::hideInstanceTextures(), textureHash));
+
+    setIf(InstanceCategories::Particle, lookupHash(RtxOptions::particleTextures(), textureHash));
+    setIf(InstanceCategories::Beam, lookupHash(RtxOptions::beamTextures(), textureHash));
+
+    setIf(InstanceCategories::DecalStatic, lookupHash(RtxOptions::decalTextures(), textureHash));
+    setIf(InstanceCategories::DecalDynamic, lookupHash(RtxOptions::dynamicDecalTextures(), textureHash));
+    setIf(InstanceCategories::DecalSingleOffset, lookupHash(RtxOptions::singleOffsetDecalTextures(), textureHash));
+    setIf(InstanceCategories::DecalNoOffset, lookupHash(RtxOptions::nonOffsetDecalTextures(), textureHash));
+
+    setIf(InstanceCategories::AnimatedWater, lookupHash(RtxOptions::animatedWaterTextures(), textureHash));
+
+    setIf(InstanceCategories::ThirdPersonPlayerModel, lookupHash(RtxOptions::playerModelTextures(), textureHash));
+    setIf(InstanceCategories::ThirdPersonPlayerBody, lookupHash(RtxOptions::playerModelBodyTextures(), textureHash));
+
+    setIf(InstanceCategories::Terrain, lookupHash(RtxOptions::terrainTextures(), textureHash));
+    setIf(InstanceCategories::Sky, lookupHash(RtxOptions::skyBoxTextures(), textureHash));
+
+    setIf(InstanceCategories::ParticleEmitter, lookupHash(RtxOptions::particleEmitterTextures(), textureHash));
+    setIf(InstanceCategories::HairCards, lookupHash(RtxOptions::hairCardTextures(), textureHash));
+    return result;
+  }
+
+  void DrawCallState::setupCategoriesForTexture(const CategoryFlags* pCachedTextureListCategories) {
     // TODO (REMIX-231): It would probably be much more efficient to use a map of texture hash to category flags, rather
     //                   than doing N lookups per texture hash for each category.
+    //                   (rtx.textureCategoryCache: the D3D9 layer passes the cached result for this texture.)
     const XXH64_hash_t& textureHash = materialData.getColorTexture().getImageHash();
 
-    setCategory(InstanceCategories::WorldUI, lookupHash(RtxOptions::worldSpaceUiTextures(), textureHash));
-    setCategory(InstanceCategories::WorldMatte, lookupHash(RtxOptions::worldSpaceUiBackgroundTextures(), textureHash));
-
-    setCategory(InstanceCategories::Ignore, lookupHash(RtxOptions::ignoreTextures(), textureHash));
-    setCategory(InstanceCategories::IgnoreLights, lookupHash(RtxOptions::ignoreLights(), textureHash));
-    setCategory(InstanceCategories::IgnoreAntiCulling, lookupHash(RtxOptions::antiCullingTextures(), textureHash));
-    setCategory(InstanceCategories::IgnoreMotionBlur, lookupHash(RtxOptions::motionBlurMaskOutTextures(), textureHash));
-    setCategory(InstanceCategories::IgnoreOpacityMicromap, lookupHash(RtxOptions::opacityMicromapIgnoreTextures(), textureHash) || isUsingRaytracedRenderTarget);
-    setCategory(InstanceCategories::IgnoreAlphaChannel, lookupHash(RtxOptions::ignoreAlphaOnTextures(), textureHash));
-    setCategory(InstanceCategories::IgnoreBakedLighting, lookupHash(RtxOptions::ignoreBakedLightingTextures(), textureHash));
-
-    setCategory(InstanceCategories::Hidden, lookupHash(RtxOptions::hideInstanceTextures(), textureHash));
-
-    setCategory(InstanceCategories::Particle, lookupHash(RtxOptions::particleTextures(), textureHash));
-    setCategory(InstanceCategories::Beam, lookupHash(RtxOptions::beamTextures(), textureHash));
-
-    setCategory(InstanceCategories::DecalStatic, lookupHash(RtxOptions::decalTextures(), textureHash));
-    setCategory(InstanceCategories::DecalDynamic, lookupHash(RtxOptions::dynamicDecalTextures(), textureHash));
-    setCategory(InstanceCategories::DecalSingleOffset, lookupHash(RtxOptions::singleOffsetDecalTextures(), textureHash));
-    setCategory(InstanceCategories::DecalNoOffset, lookupHash(RtxOptions::nonOffsetDecalTextures(), textureHash));
-
-    setCategory(InstanceCategories::AnimatedWater, lookupHash(RtxOptions::animatedWaterTextures(), textureHash));
-
-    setCategory(InstanceCategories::ThirdPersonPlayerModel, lookupHash(RtxOptions::playerModelTextures(), textureHash));
-    setCategory(InstanceCategories::ThirdPersonPlayerBody, lookupHash(RtxOptions::playerModelBodyTextures(), textureHash));
-
-    setCategory(InstanceCategories::Terrain, lookupHash(RtxOptions::terrainTextures(), textureHash));
-    setCategory(InstanceCategories::Sky, lookupHash(RtxOptions::skyBoxTextures(), textureHash));
-
-    setCategory(InstanceCategories::ParticleEmitter, lookupHash(RtxOptions::particleEmitterTextures(), textureHash));
-    setCategory(InstanceCategories::HairCards, lookupHash(RtxOptions::hairCardTextures(), textureHash));
+    // setCategory() only ever sets bits, so OR-ing the list result in is the same as setting each bit in turn.
+    categories.set(pCachedTextureListCategories != nullptr ? *pCachedTextureListCategories
+                                                           : computeTextureListCategories(textureHash));
+    setCategory(InstanceCategories::IgnoreOpacityMicromap, isUsingRaytracedRenderTarget);
   }
 
   void DrawCallState::setupCategoriesForGeometry() {

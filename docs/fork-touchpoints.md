@@ -4348,3 +4348,44 @@ sampling error averages out under the upsample instead of shimmering.
 - **The resolve writes `m_postFxIntermediateTexture` and copies back**, as
   `dispatchLensEffects` does, because it now reads `m_finalOutput` as well as
   writing it and a single `AliasedResource` cannot be both.
+
+## Workstream - volumetrics froxel cache gating (fork - 2026-09-24)
+
+Ported from the private FO4 development fork (Kim2091/dxvk-remix-fo4, branches fo4/gpu-opt and fo4/gating).
+
+### Volumetrics disabled = zero cost
+
+- **`src/dxvk/rtx_render/rtx_global_volumetrics.h`** - `rtx.volumetrics.keepRadianceCacheWhenDisabled` option
+  (default off; later folded into `consumerCacheQuality` Full), `isFroxelCacheActive()`, `m_froxelCacheActive` / `m_froxelCacheHistoryStale`; `enable`
+  description updated.
+- **`src/dxvk/rtx_render/rtx_global_volumetrics.cpp`** - `onFrameBegin` latches the gate; `dispatch` returns
+  early when the cache is inactive; `getVolumeArgs` zeroes `volumetricConsumerGain` on skipped frames and
+  resets history / temporal resampling on the first frame back; dev-menu checkbox under Volumetric Lighting.
+
+### Froxel cache textures shrink to placeholders while the cache is off
+
+- **`src/dxvk/rtx_render/rtx_global_volumetrics.h`** - `m_froxelTexturesFull`; the `consumerCacheQuality`
+  description mentions the freed textures.
+- **`src/dxvk/rtx_render/rtx_global_volumetrics.cpp`** - `onFrameBegin` latches the cache gate before
+  `RtxPass::onFrameBegin` and reallocates when `m_froxelTexturesFull` disagrees with it; `createDownscaledResource`
+  computes the logical extents first, then allocates the radiance/age/reservoir textures at 1x1x1 while the cache
+  is inactive (the logical extents still feed `VolumeArgs`).
+
+### Consumer-only froxel cache while volumetrics are off
+
+Skipping the cache left particles, decals, the PSR diffuse approximation, the stochastic alpha blend fallback and
+dust without cache light. `rtx.volumetrics.consumerCacheQuality` (Off / Low / Medium / High, default Medium) now
+builds a reduced cache for those readers instead; Off keeps the skip and Full builds the full-size cache. Full
+replaces `rtx.volumetrics.keepRadianceCacheWhenDisabled`, which was removed so that one dropdown controls the cache. The readers look the cache up by normalized
+UVW from `VolumeArgs`, so a smaller grid needs no shader change.
+
+- **`src/dxvk/rtx_render/rtx_global_volumetrics.h`** - `FroxelConsumerCacheQuality` enum, `consumerCacheQuality`
+  option, `m_froxelCacheReduction` / `m_froxelTexturesReduction`, `showConsumerCacheQualityCombo()`.
+- **`src/dxvk/rtx_render/rtx_global_volumetrics.cpp`** - `kConsumerCacheDivisors` (x/y divisor on top of
+  `froxelGridResolutionScale`, depth-slice divisor for both grids); `onFrameBegin` latches the reduction with the
+  gate and drops history when it changes; `createDownscaledResource` applies the divisors. `showFroxelCacheQuality`
+  is the single cache quality control: the Quality Level Preset buttons while volumetrics are on, the
+  `consumerCacheQuality` dropdown while they are off; dev menu (Froxel Radiance Cache, with a grid-size readout) and
+  `showImguiUserSettings`.
+- **`src/dxvk/imgui/rtx_user_menu.cpp`** - RTX Volumetrics Settings calls `showImguiUserSettings` unconditionally; the
+  Custom-preset lock now applies only to the quality buttons.

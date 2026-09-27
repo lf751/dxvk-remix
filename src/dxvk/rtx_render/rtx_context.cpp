@@ -39,6 +39,7 @@
 #include "rtx_neural_radiance_cache.h"
 #include "rtx_sharc.h"
 #include "rtx_fork_hooks.h"
+#include "rtx_fork_d3d9_alpha.h" // Fork (d3d9/alpha-gpu)
 #include "rtx_ray_reconstruction.h"
 #include "rtx_xess.h"
 #include "rtx_rtxdi_rayquery.h"
@@ -1003,7 +1004,7 @@ namespace dxvk {
     const RasterGeometry& geoData = drawCallState.getGeometryData();
     DrawCallTransforms& transformData = drawCallState.modifyTransformData();
 
-    assert(geoData.futureGeometryHashes.valid());
+    assert(geoData.futureGeometryHashes.valid() || geoData.hashesPrecomputed);
     assert(geoData.positionBuffer.defined());
 
     const auto fusedMode = RtxOptions::fusedWorldViewMode();
@@ -1078,7 +1079,12 @@ namespace dxvk {
         }
       }
 
-      getSceneManager().submitDrawState(this, drawCallState, overrideMaterialData);
+      // rtx.preserveMoveDrawState: this state is ours and dropped after the submit, so the preserve
+      // path may move it into its BlasEntry instead of copying it.
+      SceneManager& sceneManager = getSceneManager();
+      sceneManager.m_movableDrawCallState = RtxOptions::preserveMoveDrawState() ? &drawCallState : nullptr;
+      sceneManager.submitDrawState(this, drawCallState, overrideMaterialData);
+      sceneManager.m_movableDrawCallState = nullptr;
     }
   }
 
@@ -1159,6 +1165,8 @@ namespace dxvk {
     constants.primaryRayMaxInteractions = RtxOptions::primaryRayMaxInteractions();
     constants.psrRayMaxInteractions = RtxOptions::psrRayMaxInteractions();
     constants.secondaryRayMaxInteractions = RtxOptions::secondaryRayMaxInteractions();
+    // Fork (d3d9/alpha-gpu): rtx.particleSkipZeroAlbedoLighting.
+    D3d9Alpha::setRaytraceArgs(constants);
 
     // Todo: Potentially move this to the volume manager in the future to be more organized.
     constants.volumeTemporalReuseMaxSampleCount = RtxGlobalVolumetrics::temporalReuseMaxSampleCount();

@@ -669,7 +669,14 @@ namespace dxvk {
     
     // Clear mesh hashes before the next frame.  These are used by components, so must clear after graphManager updates.
     clearFrameMeshHashes();
-    
+
+    // rtx.trackHashUsageOnlyWhenNeeded: record hash usage next frame only if a hash checker
+    // component read it recently (the graph update ran before this point).
+    m_framesSinceHashUsageConsumer = m_hashUsageConsumerSeen.exchange(false, std::memory_order_relaxed)
+      ? 0 : std::min<uint32_t>(m_framesSinceHashUsageConsumer + 1, 1000u);
+    s_hashUsageTrackingWanted.store(!RtxOptions::trackHashUsageOnlyWhenNeeded() || m_framesSinceHashUsageConsumer <= 2,
+                                    std::memory_order_relaxed);
+
     // Reset the fog state to get it re-discovered on the next frame
     ImGUI::SetFogStates(m_fogStates, m_fog.getHash());
     m_fog = FogState();
@@ -830,8 +837,11 @@ namespace dxvk {
         cachedTexturesValidForPreserve;
 
 
+    // The draw state to read from after the path ran: with rtx.preserveMoveDrawState the preserve
+    // path may move `input` into its BlasEntry and hands back that copy (same contents).
+    const DrawCallState* pLiveInput = &input;
     if (usePreservePath) {
-      preserveReplacementInstance(ctx, input, pReplacements, replacementInstance);
+      pLiveInput = &preserveReplacementInstance(ctx, input, pReplacements, replacementInstance);
     } else {
       // Any RtxOption read inside the dynamic update should force a full update when changed.
       RTX_OPTION_INVALIDATION_SCOPE(RtxOptionFlags::InvalidatesDrawcallTranslation);
@@ -865,23 +875,24 @@ namespace dxvk {
       replacementInstance->legacyMaterialIdentityHash = legacyMaterialIdentityHash;
     }
 
+    const DrawCallState& liveInput = *pLiveInput;
     replacementInstance->frameLastSeen = currentFrameId;
-    replacementInstance->categoryFlags = input.getCategoryFlags().raw();
-    replacementInstance->isSkinned = input.getSkinningState().numBones > 0;
+    replacementInstance->categoryFlags = liveInput.getCategoryFlags().raw();
+    replacementInstance->isSkinned = liveInput.getSkinningState().numBones > 0;
 
     // Cache this submission's texture-coordinate projection so that next frame's
     // computeDirtyFlags can detect drift. Writing here (after either path has run)
     // mirrors how objectToWorld is updated downstream of the dirty-flag check.
-    replacementInstance->textureTransform = input.getTransformData().textureTransform;
-    replacementInstance->texgenMode = input.getTransformData().texgenMode;
+    replacementInstance->textureTransform = liveInput.getTransformData().textureTransform;
+    replacementInstance->texgenMode = liveInput.getTransformData().texgenMode;
 
     // For standalone draw calls, store the object-space bounding box for anti-culling.
     // For replacement draw calls, the aggregate AABB is computed inside drawReplacements.
     if (pReplacements == nullptr) {
-      const auto& geoBBox = input.getGeometryData().boundingBox;
+      const auto& geoBBox = liveInput.getGeometryData().boundingBox;
       if (geoBBox.isValid()) {
         replacementInstance->geometryBoundingBox = geoBBox;
-        replacementInstance->objectToWorld = input.getTransformData().objectToWorld;
+        replacementInstance->objectToWorld = liveInput.getTransformData().objectToWorld;
       }
     }
   }
@@ -1268,7 +1279,8 @@ namespace dxvk {
   void SceneManager::syncPreservedReplacementMeshesState(
       const DrawCallState& input,
       const ReplacementBucket* pReplacements,
-      ReplacementInstance* replacementInstance) {
+      ReplacementInstance* replacementInstance,
+      bool moveDrawState) {
     if (pReplacements == nullptr) {
       return;
     }
@@ -1292,17 +1304,29 @@ namespace dxvk {
       std::optional<DrawCallState> newDrawCallState =
           SceneManager::buildReplacementMeshDrawCallState(input, pReplacements->replacements[i]);
       if (newDrawCallState.has_value()) {
-        pBlas->input = *newDrawCallState;
+        if (moveDrawState) {
+          // rtx.preserveMoveDrawState: the optional is a temporary, take its bone matrices instead
+          // of copying them again.
+          pBlas->input.assignStealingBones(*newDrawCallState);
+        } else {
+          pBlas->input = *newDrawCallState;
+        }
       }
     }
   }
 
-  void SceneManager::preserveReplacementInstance(
+  const DrawCallState& SceneManager::preserveReplacementInstance(
       Rc<DxvkContext> ctx,
-      const DrawCallState& input,
+      const DrawCallState& callerInput,
       const std::shared_ptr<const ReplacementBucket>& pReplacements,
       ReplacementInstance* replacementInstance) {
     ScopedCpuProfileZone();
+    // rtx.preserveMoveDrawState: when the caller's state is the CS thread's own per-draw copy
+    // (m_movableDrawCallState, set by RtxContext::commitGeometryToRT), the BlasEntry takes its bone
+    // matrices instead of copying them (DrawCallState::assignStealingBones), and everything below
+    // reads that BlasEntry copy.
+    const bool moveDrawState = RtxOptions::preserveMoveDrawState();
+    const DrawCallState* pInput = &callerInput;
     // Refresh BlasEntry::input with this frame's draw state BEFORE dispatching preserveInstance.
     // refreshBillboardsForCurrentFrame -> createBeams / createBillboards consult
     // pBlas->input.getGeometryData() and call mapPtr() on its RasterBuffer slices to read
@@ -1312,13 +1336,20 @@ namespace dxvk {
     // createBeams. Refreshing here keeps the dynamic and preserve paths feeding the same
     // frame's geometry into billboard / beam creation.
     if (pReplacements != nullptr) {
-      syncPreservedReplacementMeshesState(input, pReplacements.get(), replacementInstance);
+      syncPreservedReplacementMeshesState(callerInput, pReplacements.get(), replacementInstance, moveDrawState);
     } else if (replacementInstance->prims.size() > 0) {
       RtInstance* inst = replacementInstance->prims[0].getInstance();
       if (inst != nullptr && inst->getBlas() != nullptr) {
-        inst->getBlas()->input = input;
+        if (moveDrawState && m_movableDrawCallState == &callerInput) {
+          inst->getBlas()->input.assignStealingBones(*m_movableDrawCallState);
+          m_movableDrawCallState = nullptr;
+          pInput = &inst->getBlas()->input;
+        } else {
+          inst->getBlas()->input = callerInput;
+        }
       }
     }
+    const DrawCallState& input = *pInput;
 
     // Re-register per-frame buffer cache indices (same order as dynamic path: buffers resolved first).
     // No MaterialData is threaded through: SceneManager::preserveInstance reads the cached
@@ -1337,6 +1368,7 @@ namespace dxvk {
 
     replacementInstance->recalculateBoundingBox(
         input.getTransformData().objectToWorld, &input.getGeometryData().boundingBox);
+    return input;
   }
 
   SceneManager::ObjectCacheState SceneManager::onSceneObjectAdded(Rc<DxvkContext> ctx, const DrawCallState& drawCallState, BlasEntry* pBlas) {
@@ -2807,6 +2839,9 @@ namespace dxvk {
   }
 
   void SceneManager::trackReplacementMaterialHash(XXH64_hash_t materialHash) {
+    if (!s_hashUsageTrackingWanted.load(std::memory_order_relaxed)) {
+      return;
+    }
     if (materialHash != kEmptyHash) {
       m_currentFrameReplacementMaterialHashes[materialHash]++;
     }
@@ -2826,6 +2861,9 @@ namespace dxvk {
   }
 
   void SceneManager::trackMeshHash(XXH64_hash_t meshHash) {
+    if (!s_hashUsageTrackingWanted.load(std::memory_order_relaxed)) {
+      return;
+    }
     if (meshHash != kEmptyHash) {
       m_currentFrameMeshHashes[meshHash]++;
     }

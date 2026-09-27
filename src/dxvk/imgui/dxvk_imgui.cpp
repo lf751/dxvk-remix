@@ -77,6 +77,7 @@
 #include "rtx_render/rtx_point_instancer_system.h"
 #include "rtx_render/rtx_overlay_window.h"
 #include "rtx_render/rtx_fork_hooks.h"
+#include "rtx_render/rtx_fork_d3d9_alpha.h" // Fork (d3d9/alpha-gpu)
 // NV-DXVK start: Numos native weather UI
 #include "rtx_render/rtx_weather.h"
 // NV-DXVK end
@@ -3789,6 +3790,9 @@ namespace dxvk {
         ImGui::Unindent();
       }
 
+      // Fork (d3d9/alpha-gpu): alpha-tested / blended content and replacement assets (rtx_fork_d3d9_alpha.h).
+      D3d9Alpha::showImguiSettings();
+
       const VkPhysicalDeviceProperties& props = m_device->adapter()->deviceProperties();
       const NV_GPU_ARCHITECTURE_ID archId = RtxOptions::getNvidiaArch();
 
@@ -4077,6 +4081,18 @@ namespace dxvk {
       RemixGui::DragInt("Max Prims in Merged BLAS", &RtxOptions::maxPrimsInMergedBLASObject(), 1.f, 100, 0);
       RemixGui::Checkbox("Force Merge All Meshes", &RtxOptions::forceMergeAllMeshesObject());
       RemixGui::Checkbox("Minimize BLAS Merging", &RtxOptions::minimizeBlasMergingObject());
+      RemixGui::Separator();
+      // Standard D3D9 draw path CPU options.
+      ImGui::TextUnformatted("D3D9 Draw Path (CPU)");
+      RemixGui::Checkbox("D3D9: Lock-Free Reads of All Option Types", &RtxOptions::lockFreeOptionReadsObject());
+      RemixGui::Checkbox("D3D9: Cache Texture Category Lookups", &RtxOptions::textureCategoryCacheObject());
+      RemixGui::Checkbox("D3D9: Memoize Geometry Hashes", &D3D9Rtx::enableGeometryHashMemoizationObject());
+      RemixGui::Checkbox("D3D9: Serve Memoized Hashes Inline (no worker task)", &D3D9Rtx::geometryHashMemoInlineObject());
+      RemixGui::DragInt("D3D9: Self-Check Memoized Hashes Every N Frames (0 = off)", &D3D9Rtx::geometryHashMemoSelfCheckFramesObject(), 1.f, 0, 100000);
+      RemixGui::Checkbox("D3D9: Cache Vertex Shader Bytecode Hash", &D3D9Rtx::cacheShaderBytecodeHashObject());
+      RemixGui::Checkbox("D3D9: Pool Vertex Capture Buffers", &D3D9Rtx::poolVertexCaptureBuffersObject());
+      RemixGui::Checkbox("D3D9: Preserve Path Takes Bone Matrices (no copy)", &RtxOptions::preserveMoveDrawStateObject());
+      RemixGui::Checkbox("D3D9: Track Hash Usage Only for Hash Checker Graphs", &RtxOptions::trackHashUsageOnlyWhenNeededObject());
       RemixGui::Separator();
       RemixGui::Checkbox("Portals: Virtual Instance Matching", &RtxOptions::useRayPortalVirtualInstanceMatchingObject());
       RemixGui::Checkbox("Portals: Fade In Effect", &RtxOptions::enablePortalFadeInEffectObject());

@@ -33,6 +33,16 @@ namespace dxvk {
 // rtx_weather.h, included only by rtx_global_volumetrics.cpp).
 struct WeatherSnapshot;
 
+// Fork: size of the froxel radiance cache kept for its surface consumers while volumetrics are off
+// (rtx.volumetrics.consumerCacheQuality). Off skips the cache entirely.
+enum class FroxelConsumerCacheQuality : int {
+  Off = 0,
+  Low,
+  Medium,
+  High,
+  Full
+};
+
   class RtxGlobalVolumetrics : public CommonDeviceObject, public RtxPass {
 
   public:
@@ -137,7 +147,18 @@ struct WeatherSnapshot;
     RTX_OPTION_FLAG("rtx.volumetrics", bool, enableReferenceMode, false, RtxOptionFlags::NoSave, "Enables reference mode for volumetrics.  This is very expensive, but allows for rendering engineers to test how close sampling approximations are to the real thing. This will not save.");
     RTX_OPTION_ARGS("rtx.volumetrics", bool, enable, true,
                "Enabling volumetric lighting provides higher quality ray traced physical volumetrics, disabling falls back to cheaper depth based fog.\n"
-               "Note that disabling this option does not disable the froxel radiance cache as a whole as it is still needed for other non-volumetric lighting approximations.",
+               "Note that disabling this option also shrinks or skips the froxel radiance cache passes (fork), as set by rtx.volumetrics.consumerCacheQuality.",
+               args.flags = RtxOptionFlags::UserSetting);
+    RTX_OPTION_ARGS("rtx.volumetrics", FroxelConsumerCacheQuality, consumerCacheQuality, FroxelConsumerCacheQuality::Medium,
+               "Froxel radiance cache resolution while rtx.volumetrics.enable is off. With volumetrics off the cache's only readers are its surface consumers "
+               "(opacity-lighting-approximated particles, decal/PSR diffuse approximation, stochastic alpha blend radiance-volume fallback, dust particles), "
+               "which need far less resolution than visible fog.\n"
+               "Off (0): the cache is skipped (no GPU cost, textures shrink to 1x1x1 placeholders) and those consumers receive no cache light.\n"
+               "Low (1): grid 4x coarser in x and y, half the depth slices (~1/32 of the full cache's cells).\n"
+               "Medium (2, default): grid 2x coarser in x and y, half the depth slices (~1/8 of the cells).\n"
+               "High (3): grid 2x coarser in x and y, all depth slices (~1/4 of the cells).\n"
+               "Full (4): the full-size cache, rebuilt every frame as upstream does.\n"
+               "Ignored while volumetrics are on (the cache is always full size then).",
                args.flags = RtxOptionFlags::UserSetting);
     RTX_OPTION("rtx.volumetrics", bool, enableTranslucentShadows, false,
                "Calculate coloured shadows from translucent materials (i.e. glass, water) in volumetric lighting. In engineering terms: include OBJECT_MASK_TRANSLUCENT into volumetric visibility rays.");
@@ -281,7 +302,10 @@ struct WeatherSnapshot;
     }
 
     void dispatch(class RtxContext* ctx, const Resources::RaytracingOutput& rtOutput, uint32_t numActiveFroxelVolumes);
-    
+
+    // Fork (fo4/gpu-opt): whether the froxel radiance cache is built this frame (latched in onFrameBegin).
+    bool isFroxelCacheActive() const { return m_froxelCacheActive; }
+
     const Resources::Resource& getCurrentVolumeReservoirs() const { return m_volumeReservoirs[0]; }
     const Resources::Resource& getPreviousVolumeReservoirs() const { return m_volumeReservoirs[1]; }
     const Resources::Resource& getCurrentVolumeAccumulatedRadianceY() const { return m_volumeAccumulatedRadianceY[m_swapTextures]; }
@@ -292,6 +316,7 @@ struct WeatherSnapshot;
     const Resources::Resource& getPreviousVolumeAccumulatedRadianceAge() const { return m_volumeAccumulatedRadianceAge[!m_swapTextures]; }
 
     void showPresetMenu();
+    void showFroxelCacheQuality(bool presetLocked, bool showGridSize);
     void showImguiUserSettings();
     void showImguiSettings(const WeatherSnapshot* weatherSnapshot = nullptr);
 
@@ -314,6 +339,18 @@ struct WeatherSnapshot;
     Resources::Resource m_volumeAccumulatedRadianceAge[2];
     bool m_swapTextures = false;
     bool m_rebuildFroxels = false;
+    // Fork (fo4/gpu-opt): per-frame latch of whether the froxel cache passes run (see onFrameBegin).
+    // m_froxelCacheHistoryStale is set on the first frame the cache runs after one or more skipped
+    // frames, so that frame drops the stale accumulation/reservoir history like a camera cut.
+    bool m_froxelCacheActive = true;
+    bool m_froxelCacheHistoryStale = false;
+    // Fork (fo4/gating): whether the froxel textures were last allocated at full grid size (cache active)
+    // or as 1x1x1 placeholders (cache off); onFrameBegin reallocates when this disagrees with the gate.
+    bool m_froxelTexturesFull = true;
+    // Fork: consumer-only cache reduction latched for this frame (Off meaning the full-size cache) and the
+    // reduction the textures were last allocated with.
+    FroxelConsumerCacheQuality m_froxelCacheReduction = FroxelConsumerCacheQuality::Off;
+    FroxelConsumerCacheQuality m_froxelTexturesReduction = FroxelConsumerCacheQuality::Off;
 
     // Per-frame weather snapshot override. Set once per frame
     // by applyWeatherOverride() (called from rtx_context.cpp before

@@ -15,6 +15,7 @@
 #include "d3d9_texture.h"
 #include "../dxvk/rtx_render/rtx_terrain_baker.h"
 
+#include <algorithm>
 #include <cassert>
 #include <cstring>
 
@@ -150,13 +151,65 @@ namespace dxvk {
     return result.slice;
   }
 
-  DxvkBufferSlice allocVertexCaptureBuffer(DxvkDevice* pDevice, const VkDeviceSize size) {
+  static Rc<DxvkBuffer> createVertexCaptureBuffer(DxvkDevice* pDevice, const VkDeviceSize size) {
     DxvkBufferCreateInfo info;
     info.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
     info.access = VK_ACCESS_TRANSFER_READ_BIT;
     info.stages = VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT;
     info.size = size;
-    return DxvkBufferSlice(pDevice->createBuffer(info, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, DxvkMemoryStats::Category::AppBuffer, "Vertex Capture Buffer"));
+    return pDevice->createBuffer(info, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, DxvkMemoryStats::Category::AppBuffer, "Vertex Capture Buffer");
+  }
+
+  DxvkBufferSlice D3D9Rtx::allocVertexCaptureBuffer(const VkDeviceSize size) {
+    DxvkDevice* pDevice = m_parent->GetDXVKDevice().ptr();
+
+    if (!poolVertexCaptureBuffers()) {
+      m_captureBufferPool.clear();
+      return DxvkBufferSlice(createVertexCaptureBuffer(pDevice, size));
+    }
+
+    // rtx.poolVertexCaptureBuffers: power-of-two size classes. A pooled buffer is reused only when
+    // the pool holds the last reference (no draw-call state, BlasEntry input, CS chunk or context
+    // binding refers to it) and no command list still uses it on the GPU.
+    VkDeviceSize sizeClass = kMinCaptureBufferClass;
+    while (sizeClass < size) {
+      sizeClass <<= 1;
+    }
+    CaptureBufferBucket& bucket = m_captureBufferPool[sizeClass];
+    const size_t count = bucket.buffers.size();
+    const size_t probes = std::min<size_t>(count, kCaptureBufferProbes);
+    for (size_t i = 0; i < probes; ++i) {
+      const size_t idx = (bucket.cursor + i) % count;
+      PooledCaptureBuffer& entry = bucket.buffers[idx];
+      entry.buffer->incRef();
+      const uint32_t refs = entry.buffer->decRef();
+      if (refs == 1 && !entry.buffer->isInUse()) { // isInUse(Read) checks readers and writers
+        bucket.cursor = idx + 1;
+        entry.lastUsedFrame = m_d3d9FrameIndex;
+        return DxvkBufferSlice(entry.buffer, 0, size);
+      }
+    }
+
+    Rc<DxvkBuffer> buffer = createVertexCaptureBuffer(pDevice, sizeClass);
+    if (count < kMaxPooledCaptureBuffersPerClass) {
+      bucket.buffers.push_back({ buffer, m_d3d9FrameIndex });
+    }
+    return DxvkBufferSlice(buffer, 0, size);
+  }
+
+  void D3D9Rtx::trimVertexCaptureBufferPool() {
+    // Once a second or so: release pooled capture buffers that have not been handed out for a while.
+    if (m_captureBufferPool.empty() || (m_d3d9FrameIndex % 64) != 0) {
+      return;
+    }
+    for (auto it = m_captureBufferPool.begin(); it != m_captureBufferPool.end();) {
+      std::vector<PooledCaptureBuffer>& buffers = it->second.buffers;
+      buffers.erase(std::remove_if(buffers.begin(), buffers.end(), [this](const PooledCaptureBuffer& e) {
+        return m_d3d9FrameIndex - e.lastUsedFrame > kCaptureBufferMaxIdleFrames;
+      }), buffers.end());
+      it->second.cursor = 0;
+      it = buffers.empty() ? m_captureBufferPool.erase(it) : std::next(it);
+    }
   }
 
   void D3D9Rtx::prepareVertexCapture(const int vertexIndexOffset) {
@@ -186,7 +239,7 @@ namespace dxvk {
     const uint32_t stride = sizeof(CapturedVertex);
     const size_t vertexCaptureDataSize = align(geoData.vertexCount * stride, CACHE_LINE_SIZE);
 
-    DxvkBufferSlice slice = allocVertexCaptureBuffer(m_parent->GetDXVKDevice().ptr(), vertexCaptureDataSize);
+    DxvkBufferSlice slice = allocVertexCaptureBuffer(vertexCaptureDataSize);
 
     geoData.positionBuffer = RasterBuffer(slice, 0, stride, VK_FORMAT_R32G32B32A32_SFLOAT);
     assert(geoData.positionBuffer.offset() % 4 == 0);
@@ -288,9 +341,12 @@ namespace dxvk {
         break;
       case D3DDECLUSAGE_COLOR:
         if (element.UsageIndex == 0 &&
-            !RtxOptions::ignoreAllVertexColorBakedLighting() &&
-            !lookupHash(RtxOptions::ignoreBakedLightingTextures(), m_activeDrawCallState.materialData.colorTextures[0].getImageHash())) {
-          targetBuffer = &geoData.color0Buffer;
+            !RtxOptions::ignoreAllVertexColorBakedLighting()) {
+          const XXH64_hash_t colorHash = m_activeDrawCallState.materialData.colorTextures[0].getImageHash();
+          const TextureListInfo* pTexLists = getTextureListInfo(colorHash); // rtx.textureCategoryCache (nullptr = off)
+          if (!(pTexLists ? pTexLists->ignoreBakedLighting : lookupHash(RtxOptions::ignoreBakedLightingTextures(), colorHash))) {
+            targetBuffer = &geoData.color0Buffer;
+          }
         }
         break;
       }
@@ -578,7 +634,61 @@ namespace dxvk {
     }
 
     // Check if UI texture bound
+    if (RtxOptions::textureCategoryCache()) {
+      // rtx.textureCategoryCache: same loop as checkBoundTextureCategory(), cached lookup.
+      const uint32_t usedSamplerMask = m_parent->m_psShaderMasks.samplerMask | m_parent->m_vsShaderMasks.samplerMask;
+      const uint32_t usedTextureMask = m_parent->m_activeTextures & usedSamplerMask;
+      for (uint32_t idx : bit::BitMask(usedTextureMask)) {
+        if (!d3d9State().textures[idx]) {
+          continue;
+        }
+        const XXH64_hash_t texHash = GetCommonTexture(d3d9State().textures[idx])->GetSampleView(false)->image()->getHash();
+        const TextureListInfo* pTexLists = getTextureListInfo(texHash);
+        if (pTexLists != nullptr && pTexLists->ui) {
+          return true;
+        }
+      }
+      return false;
+    }
     return checkBoundTextureCategory(RtxOptions::uiTextures());
+  }
+
+  const D3D9Rtx::TextureListInfo* D3D9Rtx::getTextureListInfo(const XXH64_hash_t& textureHash) {
+    if (!RtxOptions::textureCategoryCache()) {
+      if (!m_textureListCache.empty()) {
+        m_textureListCache.clear();
+      }
+      return nullptr;
+    }
+
+    // Any option value change bumps the generation (after the new value is in place): rebuild lazily.
+    const uint64_t generation = g_rtxOptionResolveGeneration.load(std::memory_order_acquire);
+    if (generation != m_textureListCacheGeneration) {
+      if (!m_textureListCache.empty()) {
+        m_textureListCache.clear();
+      }
+      m_textureListCacheGeneration = generation;
+    }
+
+    auto it = m_textureListCache.find(textureHash);
+    if (it != m_textureListCache.end()) {
+      return &it->second;
+    }
+
+    // Bounded: a game streaming unique textures forever cannot grow this without limit.
+    if (m_textureListCache.size() >= kMaxTextureListCacheEntries) {
+      m_textureListCache.clear();
+    }
+
+    TextureListInfo info;
+    info.categories = DrawCallState::computeTextureListCategories(textureHash);
+    if (lookupHash(RtxOptions::smoothNormalsTextures(), textureHash)) {
+      info.categories.set(InstanceCategories::SmoothNormals);
+    }
+    info.lightmap = lookupHash(RtxOptions::lightmapTextures(), textureHash);
+    info.ignoreBakedLighting = lookupHash(RtxOptions::ignoreBakedLightingTextures(), textureHash);
+    info.ui = lookupHash(RtxOptions::uiTextures(), textureHash);
+    return &m_textureListCache.emplace(textureHash, info).first->second;
   }
 
   XXH64_hash_t D3D9Rtx::buildGeometryHashMemoizationKey(const RasterGeometry& geoData,
@@ -1118,9 +1228,10 @@ namespace dxvk {
         }
 
         const XXH64_hash_t texHash = texture->GetSampleView(true)->image()->getHash();
+        const TextureListInfo* pTexLists = getTextureListInfo(texHash); // rtx.textureCategoryCache (nullptr = off)
 
         // Currently we only support regular textures, skip lightmaps.
-        if (lookupHash(RtxOptions::lightmapTextures(), texHash)) {
+        if (pTexLists ? pTexLists->lightmap : lookupHash(RtxOptions::lightmapTextures(), texHash)) {
           continue;
         }
 
@@ -1140,7 +1251,7 @@ namespace dxvk {
 
         // Check if texture factor blending is enabled
         if (isCurrentStageTextureFactorBlendingEnabled &&
-            lookupHash(RtxOptions::ignoreBakedLightingTextures(), texHash)) {
+            (pTexLists ? pTexLists->ignoreBakedLighting : lookupHash(RtxOptions::ignoreBakedLightingTextures(), texHash))) {
           useStageTextureFactorBlending = false;
           useMultipleStageTextureFactorBlending = false;
         }
@@ -1200,15 +1311,21 @@ namespace dxvk {
                          m_activeDrawCallState.materialData, m_activeDrawCallState.transformData);
 
     if (d3d9State().textures[firstStage]) {
-      m_activeDrawCallState.setupCategoriesForTexture();
-
       // Track the texture hash before checking if it should be ignored
       // This ensures we track all textures sent by the game, not just the ones that are actually rendered.
       const XXH64_hash_t textureHash = m_activeDrawCallState.materialData.getColorTexture().getImageHash();
 
-      // Flag smooth normals category at the d3d9 layer
-      m_activeDrawCallState.setCategory(InstanceCategories::SmoothNormals, lookupHash(RtxOptions::smoothNormalsTextures(), textureHash));
-      if (textureHash != kEmptyHash) {
+      // rtx.textureCategoryCache: the cached categories include the SmoothNormals bit.
+      if (const TextureListInfo* pTexLists = getTextureListInfo(textureHash)) {
+        m_activeDrawCallState.setupCategoriesForTexture(&pTexLists->categories);
+      } else {
+        m_activeDrawCallState.setupCategoriesForTexture();
+
+        // Flag smooth normals category at the d3d9 layer
+        m_activeDrawCallState.setCategory(InstanceCategories::SmoothNormals, lookupHash(RtxOptions::smoothNormalsTextures(), textureHash));
+      }
+      // rtx.trackHashUsageOnlyWhenNeeded: no per-draw command while no hash checker component reads it.
+      if (textureHash != kEmptyHash && SceneManager::s_hashUsageTrackingWanted.load(std::memory_order_relaxed)) {
         m_parent->EmitCs([textureHash](DxvkContext* ctx) {
           static_cast<RtxContext*>(ctx)->getSceneManager().trackReplacementMaterialHash(textureHash);
         });
@@ -1371,6 +1488,8 @@ namespace dxvk {
     m_seenCameraPositionsPrev = std::move(m_seenCameraPositions);
 
     m_stagedBones.clear();
+    ++m_d3d9FrameIndex;
+    trimVertexCaptureBufferPool();
   }
 
   void D3D9Rtx::OnPresent(const Rc<DxvkImage>& targetImage) {

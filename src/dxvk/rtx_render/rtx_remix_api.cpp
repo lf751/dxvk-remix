@@ -182,8 +182,8 @@ namespace {
       return;
     }
 
-    const char* subKey = key + 10;
-    if (std::strcmp(subKey, "target") == 0) {
+    const char* sub = key + 10;
+    if (std::strcmp(sub, "target") == 0) {
       blender->setTargetPreset(value);
       return;
     }
@@ -194,15 +194,17 @@ namespace {
       return;
     }
 
-    if (std::strcmp(subKey, "blend_seconds") == 0) {
+    if (std::strcmp(sub, "blend_seconds") == 0) {
       blender->setBlendSeconds(parsed);
-    } else if (std::strcmp(subKey, "drift_speed") == 0) {
+    } else if (std::strcmp(sub, "drift_speed") == 0) {
       blender->setDriftSpeed(parsed);
-    } else if (std::strcmp(subKey, "drift_intensity") == 0) {
+    } else if (std::strcmp(sub, "drift_intensity") == 0) {
       blender->setDriftIntensity(parsed);
     }
   }
 
+  // Weather keys written before a device was registered (e.g. forwarded early
+  // by the bridge) only reached the store; replay them into the blender.
   void applyStoredWeatherGameValues(dxvk::D3D9DeviceEx* device) {
     dxvk::WeatherBlender* blender = getWeatherBlender(device);
     if (!blender) {
@@ -231,33 +233,29 @@ namespace {
       return false;
     }
 
-    const char* subKey = key + 10;
-    if (std::strcmp(subKey, "target") == 0) {
+    const char* sub = key + 10;
+    char buffer[32];
+    if (std::strcmp(sub, "target") == 0) {
       value = blender->getTargetPreset();
-    } else if (std::strcmp(subKey, "current") == 0) {
+    } else if (std::strcmp(sub, "current") == 0) {
       value = blender->getCurrentPreset();
-    } else if (std::strcmp(subKey, "previous") == 0) {
+    } else if (std::strcmp(sub, "previous") == 0) {
       value = blender->getPreviousPreset();
-    } else if (std::strcmp(subKey, "blend_progress") == 0) {
-      char buffer[32];
+    } else if (std::strcmp(sub, "blend_progress") == 0) {
       std::snprintf(buffer, sizeof(buffer), "%.4f", blender->getBlendProgress());
       value = buffer;
-    } else if (std::strcmp(subKey, "blend_seconds") == 0) {
-      char buffer[32];
+    } else if (std::strcmp(sub, "blend_seconds") == 0) {
       std::snprintf(buffer, sizeof(buffer), "%.6f", blender->getBlendSeconds());
       value = buffer;
-    } else if (std::strcmp(subKey, "drift_speed") == 0) {
-      char buffer[32];
+    } else if (std::strcmp(sub, "drift_speed") == 0) {
       std::snprintf(buffer, sizeof(buffer), "%.6f", blender->getDriftSpeed());
       value = buffer;
-    } else if (std::strcmp(subKey, "drift_intensity") == 0) {
-      char buffer[32];
+    } else if (std::strcmp(sub, "drift_intensity") == 0) {
       std::snprintf(buffer, sizeof(buffer), "%.6f", blender->getDriftIntensity());
       value = buffer;
     } else {
       return false;
     }
-
     return true;
   }
 
@@ -2617,6 +2615,8 @@ extern "C"
       return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
     }
 
+    // Keep the generic key/value store, then route __weather.* keys into the
+    // typed WeatherBlender, which does not read the store itself.
     dxvk::fork_game_state::GameStateStore::get().set(
       std::string{ key }, std::string{ value });
     applyWeatherGameValue(getWeatherBlender(tryAsDxvk()), key, value);
@@ -2639,8 +2639,7 @@ extern "C"
     }
 
     std::string value;
-    const bool hasWeatherValue = getWeatherGameValue(tryAsDxvk(), key, value);
-    if (!hasWeatherValue
+    if (!getWeatherGameValue(tryAsDxvk(), key, value)
         && !dxvk::fork_game_state::GameStateStore::get().tryGet(std::string{ key }, value)) {
       *out_actual_size = 0;
       return REMIXAPI_ERROR_CODE_SUCCESS;

@@ -361,6 +361,9 @@ struct RaytraceGeometry {
 struct RasterGeometry {
   GeometryHashes hashes;
   Future<GeometryHashes> futureGeometryHashes;
+  // rtx.geometryHashMemoInline: `hashes` was filled from the D3D9 geometry hash memo on the
+  // D3D9 thread and futureGeometryHashes is intentionally empty.
+  bool hashesPrecomputed = false;
 
   // Actual vertex/index count (when applicable) as calculated by geo-engine
   uint32_t vertexCount = 0;
@@ -672,6 +675,17 @@ struct DrawCallState {
   DrawCallState(const DrawCallState& _input) = default;
   DrawCallState& operator=(const DrawCallState& drawCallState) = default;
 
+  // rtx.preserveMoveDrawState: assigns `other` to this and leaves `other` without its bone
+  // matrices. DrawCallState has no move operations (std::move of it copies; declaring them would
+  // change object lifetimes elsewhere, e.g. the D3D9 draw-call-state queue), so this steals the
+  // heap-allocated bone matrix vector and copies the rest, which also covers fields added later.
+  void assignStealingBones(DrawCallState& other) {
+    std::vector<Matrix4> bones;
+    bones.swap(other.skinningData.pBoneMatrices);
+    *this = other;
+    skinningData.pBoneMatrices.swap(bones);
+  }
+
   // Note: This uses the original material for the hash, not the replaced material
   const XXH64_hash_t getHash(const HashRule& rule) const {
     return getGeometryData().getHashForRule(rule) ^ materialData.getHash();
@@ -763,7 +777,10 @@ struct DrawCallState {
   // since it may be world geometry that should go through reprojection instead.
   bool skyAutoDetected = false;
 
-  void setupCategoriesForTexture();
+  // pCachedTextureListCategories: computeTextureListCategories() of the color texture hash, when the
+  // caller has it cached (rtx.textureCategoryCache); nullptr = look the lists up now.
+  void setupCategoriesForTexture(const CategoryFlags* pCachedTextureListCategories = nullptr);
+  static CategoryFlags computeTextureListCategories(const XXH64_hash_t& textureHash);
   void setupCategoriesForGeometry();
   void setupCategoriesForHeuristics(uint32_t prevFrameSeenCamerasCount,
                                     std::vector<Vector3>& seenCameraPositions);
