@@ -829,6 +829,10 @@ void UsdMod::Impl::processTerrainBlend(Args& args, const pxr::UsdStageRefPtr& st
     return;
   }
   if (!readFloat("lowElevation", preset->lowElevation) ||
+      !readFloat("coverageSandStrength", preset->coverageSandStrength) ||
+      !readFloat("coverageSandWidth", preset->coverageSandWidth) ||
+      preset->coverageSandStrength < 0.0f || preset->coverageSandStrength > 1.0f ||
+      preset->coverageSandWidth <= 0.0f ||
       !readFloat("rockLowElevation", preset->rockLowElevation) ||
       !readFloat("rockHighElevation", preset->rockHighElevation) ||
       preset->rockHighElevation <= preset->rockLowElevation ||

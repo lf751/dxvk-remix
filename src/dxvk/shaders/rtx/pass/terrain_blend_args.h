@@ -48,11 +48,15 @@ struct TerrainBlendArgs {
   uint rockMode = 0;
   float rockLowElevation = 4.f;
   float rockHighElevation = 8.f;
+  uint coverageTextureIndex = 0xffff;
+  uint coverageSamplerIndex = 0xffff;
+  float coverageSandStrength = 0.f;
+  float coverageSandWidth = 2.f;
   vec4 worldOffset = vec4(0.f);
   TerrainBlendLayerArgs layers[3];
 };
 
 #ifdef __cplusplus
 static_assert(sizeof(TerrainBlendLayerArgs) == 48);
-static_assert(sizeof(TerrainBlendArgs) == 208);
+static_assert(sizeof(TerrainBlendArgs) == 224);
 #endif

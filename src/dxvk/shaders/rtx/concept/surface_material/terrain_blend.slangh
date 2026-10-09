@@ -76,6 +76,23 @@ TerrainLayerSample terrainSampleLayer(TerrainBlendLayerArgs layer, SurfaceIntera
   return result;
 }
 
+float terrainCoverageSand(TerrainBlendArgs args, vec3 position) {
+  if (args.coverageSandStrength <= 0.f || args.coverageTextureIndex == BINDING_INDEX_INVALID) {
+    return 0.f;
+  }
+  // Matches the game's secondary grass opacity coordinates, independently of terrain tiling.
+  const vec2 uv = position.xz * (1.f / 1024.f);
+  const float radius = args.coverageSandWidth * (1.f / 1024.f);
+  float coverage = 0.f;
+  for (int y = -1; y <= 1; ++y) {
+    for (int x = -1; x <= 1; ++x) {
+      coverage += textures[nonuniformEXT(args.coverageTextureIndex)]
+        .SampleLevel(samplers[nonuniformEXT(args.coverageSamplerIndex)], uv + vec2(x, y) * radius, 0).a;
+    }
+  }
+  return saturate((1.f - coverage * (1.f / 9.f)) * 2.f) * args.coverageSandStrength;
+}
+
 OpaqueSurfaceMaterialInteraction terrainBlendInteractionCreate(Surface surface, SurfaceInteraction interaction, MinimalRayInteraction ray) {
   const TerrainBlendArgs args = cb.terrainBlendArgs;
   const vec3 position = interaction.position + args.worldOffset.xyz;
@@ -88,6 +105,9 @@ OpaqueSurfaceMaterialInteraction terrainBlendInteractionCreate(Surface surface, 
   const float rock = args.rockMode == 0 ? slopeRock : (args.rockMode == 1 ? elevationRock :
     1.f - (1.f - slopeRock) * (1.f - elevationRock));
   vec3 weights = vec3(elevation * (1.f - rock), (1.f - elevation) * (1.f - rock), rock);
+  const float coverageSand = terrainCoverageSand(args, position);
+  weights.y += weights.x * coverageSand;
+  weights.x *= 1.f - coverageSand;
   TerrainLayerSample layers[3];
   vec3 heights;
   for (uint layer = 0; layer < 3; ++layer) {

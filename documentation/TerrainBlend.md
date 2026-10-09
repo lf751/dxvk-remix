@@ -51,6 +51,8 @@ Attributes below use the `remix:terrainBlend:` prefix:
 | `slopeEndDegrees` | float | Slope where rock completely replaces flat-ground layers. |
 | `heightBlendStrength` | float | Material height influence, from zero to one. |
 | `heightBlendWidth` | float | Positive transition width, at most one. |
+| `coverageSandStrength` | float | Grass-exclusion sand influence, from zero to one. Default zero. |
+| `coverageSandWidth` | float | Positive sand border sampling radius in world units. Default 2. |
 
 Lengths and elevations use the game's world units. The runtime uses `rtx.zUp` to
 choose the vertical axis. Elevation bounds must increase; slope bounds must increase
@@ -58,6 +60,14 @@ within zero to ninety degrees. Parameters must be finite. Invalid enabled preset
 are logged and ignored.
 
 ## Evaluation
+
+Optional coverage sand uses the live secondary alpha texture of draws selected by
+`rtx.legacyMaterial.worldSpaceSecondaryOpacityTextures`. The shader uses the same
+world XZ / 1024 coordinates as grass opacity. A nine-sample filter extends excluded
+areas into nearby grass, transferring grass weight to sand while retaining rock
+weight. Missing current-frame coverage leaves the procedural blend unchanged.
+The mask includes paths, buildings, shores, and other grass exclusions; it does not
+identify the reason for exclusion. Material height maps can refine the transition.
 
 The preset bypasses the downward terrain baker and evaluates at opaque material
 interactions in primary and indirect tracing. Grass and sand transition with

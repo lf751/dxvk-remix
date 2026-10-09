@@ -250,6 +250,8 @@ namespace dxvk {
 
   void SceneManager::clear(Rc<DxvkContext> ctx, bool needWfi) {
     ScopedCpuProfileZone();
+    m_terrainCoverageTexture = TextureRef {};
+    m_terrainCoverageFrame = UINT32_MAX;
 
     auto& textureManager = m_device->getCommon()->getTextureManager();
 
@@ -692,6 +694,12 @@ namespace dxvk {
 
   void SceneManager::submitDrawState(Rc<DxvkContext> ctx, const DrawCallState& input, const MaterialData* overrideMaterialData) {
     ScopedCpuProfileZone();
+    const auto& sourceMaterial = input.getMaterialData();
+    if (lookupHash(LegacyMaterialDefaults::worldSpaceSecondaryOpacityTextures(),
+                   sourceMaterial.getColorTexture().getImageHash())) {
+      m_terrainCoverageTexture = sourceMaterial.getColorTexture2();
+      m_terrainCoverageFrame = m_device->getCurrentFrameId();
+    }
     if (m_bufferCache.getTotalCount() >= kBufferCacheLimit && m_bufferCache.getActiveCount() >= kBufferCacheLimit) {
       ONCE(Logger::info("[RTX-Compatibility-Info] This application is pushing more unique buffers than is currently supported - some objects may not raytrace."));
       return;
@@ -1578,6 +1586,17 @@ namespace dxvk {
     m_terrainBlendArgs.slopeCosEnd = std::cos(preset->slopeEndDegrees * radiansPerDegree);
     m_terrainBlendArgs.heightBlendStrength = preset->heightBlendStrength;
     m_terrainBlendArgs.heightBlendWidth = preset->heightBlendWidth;
+    m_terrainBlendArgs.coverageSandStrength = preset->coverageSandStrength;
+    m_terrainBlendArgs.coverageSandWidth = preset->coverageSandWidth;
+    if (preset->coverageSandStrength > 0.f &&
+        m_terrainCoverageFrame == m_device->getCurrentFrameId() &&
+        m_terrainCoverageTexture.isValid() && !m_terrainCoverageTexture.isImageEmpty()) {
+      trackTexture(m_terrainCoverageTexture, m_terrainBlendArgs.coverageTextureIndex, true, false);
+      const auto coverageSampler = patchSampler(VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+        VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, {});
+      m_terrainBlendArgs.coverageSamplerIndex = trackSampler(coverageSampler);
+      ONCE(Logger::info("[RTX Terrain Blend] Live grass coverage texture bound for sand blending."));
+    }
     const auto& offset = m_cameraManager.getCamera(CameraType::Main).getArtificialWorldOffset();
     m_terrainBlendArgs.worldOffset = vec4(-offset.x, -offset.y, -offset.z, 0.f);
     const auto sampler = patchSampler(VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_REPEAT,

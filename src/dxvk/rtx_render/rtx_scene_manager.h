@@ -297,6 +297,8 @@ public:
 private:
   void prepareTerrainBlend();
   TerrainBlendArgs m_terrainBlendArgs;
+  TextureRef m_terrainCoverageTexture;
+  uint32_t m_terrainCoverageFrame = UINT32_MAX;
   std::shared_ptr<const TerrainBlendPreset> m_activeTerrainBlendPreset;
   uint32_t m_terrainBlendFrame = UINT32_MAX;
 

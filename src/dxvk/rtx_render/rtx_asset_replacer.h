@@ -51,6 +51,8 @@ namespace dxvk {
     float slopeEndDegrees = 55.0f;
     float heightBlendStrength = 0.2f;
     float heightBlendWidth = 0.2f;
+    float coverageSandStrength = 0.0f;
+    float coverageSandWidth = 2.0f;
   };
 
   class DxvkContext;
