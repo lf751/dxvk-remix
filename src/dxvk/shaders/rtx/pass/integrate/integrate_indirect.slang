@@ -273,6 +273,327 @@
 //!>       NEE_CACHE_ENABLE=1
 //!>       UNORDERED_RESOLVE_WBOIT
 
+//!variant integrate_indirect_raygen_neeCache_terrain.rgen
+//!>       TERRAIN_BLEND
+//!>       RT_TRACE_RAY
+//!>       RAY_PIPELINE
+//!>       NEE_CACHE_ENABLE=1
+
+
+//!variant integrate_indirect_raygen_ser_neeCache_terrain.rgen
+//!>       TERRAIN_BLEND
+//!>       RT_TRACE_RAY
+//!>       RAY_PIPELINE
+//!>       RT_SHADER_EXECUTION_REORDERING
+//!>       NEE_CACHE_ENABLE=1
+
+
+//!variant integrate_indirect_rayquery_neeCache_terrain.comp
+//!>       TERRAIN_BLEND
+//!>       NEE_CACHE_ENABLE=1
+
+
+//!variant integrate_indirect_rayquery_raygen_neeCache_terrain.rgen
+//!>       TERRAIN_BLEND
+//!>       RAY_PIPELINE
+//!>       NEE_CACHE_ENABLE=1
+
+
+//!variant integrate_indirect_rayquery_terrain.comp
+//!>       TERRAIN_BLEND
+//!>       NEE_CACHE_ENABLE=0
+
+
+//!variant integrate_indirect_rayquery_raygen_terrain.rgen
+//!>       TERRAIN_BLEND
+//!>       RAY_PIPELINE
+//!>       NEE_CACHE_ENABLE=0
+
+
+//!variant integrate_indirect_raygen_terrain.rgen
+//!>       TERRAIN_BLEND
+//!>       RT_TRACE_RAY
+//!>       RAY_PIPELINE
+//!>       NEE_CACHE_ENABLE=0
+
+
+//!variant integrate_indirect_raygen_ser_terrain.rgen
+//!>       TERRAIN_BLEND
+//!>       RT_TRACE_RAY
+//!>       RAY_PIPELINE
+//!>       RT_SHADER_EXECUTION_REORDERING
+//!>       NEE_CACHE_ENABLE=0
+
+
+
+//!variant integrate_indirect_raygen_nrc_neeCache_terrain.rgen
+//!>       TERRAIN_BLEND
+//!>       RT_TRACE_RAY
+//!>       RAY_PIPELINE
+//!>       ENABLE_NRC=1
+//!>       NEE_CACHE_ENABLE=1
+
+
+//!variant integrate_indirect_raygen_ser_nrc_neeCache_terrain.rgen
+//!>       TERRAIN_BLEND
+//!>       RT_TRACE_RAY
+//!>       RAY_PIPELINE
+//!>       RT_SHADER_EXECUTION_REORDERING
+//!>       ENABLE_NRC=1
+//!>       NEE_CACHE_ENABLE=1
+
+
+//!variant integrate_indirect_rayquery_nrc_neeCache_terrain.comp
+//!>       TERRAIN_BLEND
+//!>       ENABLE_NRC=1
+//!>       NEE_CACHE_ENABLE=1
+
+
+//!variant integrate_indirect_rayquery_raygen_nrc_neeCache_terrain.rgen
+//!>       TERRAIN_BLEND
+//!>       RAY_PIPELINE
+//!>       ENABLE_NRC=1
+//!>       NEE_CACHE_ENABLE=1
+
+
+//!variant integrate_indirect_rayquery_nrc_terrain.comp
+//!>       TERRAIN_BLEND
+//!>       ENABLE_NRC=1
+//!>       NEE_CACHE_ENABLE=0
+
+
+//!variant integrate_indirect_rayquery_raygen_nrc_terrain.rgen
+//!>       TERRAIN_BLEND
+//!>       RAY_PIPELINE
+//!>       ENABLE_NRC=1
+//!>       NEE_CACHE_ENABLE=0
+
+
+//!variant integrate_indirect_raygen_nrc_terrain.rgen
+//!>       TERRAIN_BLEND
+//!>       RT_TRACE_RAY
+//!>       RAY_PIPELINE
+//!>       ENABLE_NRC=1
+//!>       NEE_CACHE_ENABLE=0
+
+
+//!variant integrate_indirect_raygen_ser_nrc_terrain.rgen
+//!>       TERRAIN_BLEND
+//!>       RT_TRACE_RAY
+//!>       RAY_PIPELINE
+//!>       RT_SHADER_EXECUTION_REORDERING
+//!>       ENABLE_NRC=1
+//!>       NEE_CACHE_ENABLE=0
+
+
+
+//!variant integrate_indirect_raygen_neeCache_wboit_terrain.rgen
+//!>       TERRAIN_BLEND
+//!>       RT_TRACE_RAY
+//!>       RAY_PIPELINE
+//!>       NEE_CACHE_ENABLE=1
+//!>       UNORDERED_RESOLVE_WBOIT
+
+
+//!variant integrate_indirect_raygen_ser_neeCache_wboit_terrain.rgen
+//!>       TERRAIN_BLEND
+//!>       RT_TRACE_RAY
+//!>       RAY_PIPELINE
+//!>       RT_SHADER_EXECUTION_REORDERING
+//!>       NEE_CACHE_ENABLE=1
+//!>       UNORDERED_RESOLVE_WBOIT
+
+
+//!variant integrate_indirect_rayquery_neeCache_wboit_terrain.comp
+//!>       TERRAIN_BLEND
+//!>       NEE_CACHE_ENABLE=1
+//!>       UNORDERED_RESOLVE_WBOIT
+
+
+//!variant integrate_indirect_rayquery_raygen_neeCache_wboit_terrain.rgen
+//!>       TERRAIN_BLEND
+//!>       RAY_PIPELINE
+//!>       NEE_CACHE_ENABLE=1
+//!>       UNORDERED_RESOLVE_WBOIT
+
+
+//!variant integrate_indirect_rayquery_wboit_terrain.comp
+//!>       TERRAIN_BLEND
+//!>       NEE_CACHE_ENABLE=0
+//!>       UNORDERED_RESOLVE_WBOIT
+
+
+//!variant integrate_indirect_rayquery_raygen_wboit_terrain.rgen
+//!>       TERRAIN_BLEND
+//!>       RAY_PIPELINE
+//!>       NEE_CACHE_ENABLE=0
+//!>       UNORDERED_RESOLVE_WBOIT
+
+
+//!variant integrate_indirect_raygen_wboit_terrain.rgen
+//!>       TERRAIN_BLEND
+//!>       RT_TRACE_RAY
+//!>       RAY_PIPELINE
+//!>       NEE_CACHE_ENABLE=0
+//!>       UNORDERED_RESOLVE_WBOIT
+
+
+//!variant integrate_indirect_raygen_ser_wboit_terrain.rgen
+//!>       TERRAIN_BLEND
+//!>       RT_TRACE_RAY
+//!>       RAY_PIPELINE
+//!>       RT_SHADER_EXECUTION_REORDERING
+//!>       NEE_CACHE_ENABLE=0
+//!>       UNORDERED_RESOLVE_WBOIT
+
+
+//!variant integrate_indirect_raygen_nrc_neeCache_wboit_terrain.rgen
+//!>       TERRAIN_BLEND
+//!>       RT_TRACE_RAY
+//!>       RAY_PIPELINE
+//!>       ENABLE_NRC=1
+//!>       NEE_CACHE_ENABLE=1
+//!>       UNORDERED_RESOLVE_WBOIT
+
+
+//!variant integrate_indirect_raygen_ser_nrc_neeCache_wboit_terrain.rgen
+//!>       TERRAIN_BLEND
+//!>       RT_TRACE_RAY
+//!>       RAY_PIPELINE
+//!>       RT_SHADER_EXECUTION_REORDERING
+//!>       ENABLE_NRC=1
+//!>       NEE_CACHE_ENABLE=1
+//!>       UNORDERED_RESOLVE_WBOIT
+
+
+//!variant integrate_indirect_rayquery_nrc_neeCache_wboit_terrain.comp
+//!>       TERRAIN_BLEND
+//!>       ENABLE_NRC=1
+//!>       NEE_CACHE_ENABLE=1
+//!>       UNORDERED_RESOLVE_WBOIT
+
+
+//!variant integrate_indirect_rayquery_raygen_nrc_neeCache_wboit_terrain.rgen
+//!>       TERRAIN_BLEND
+//!>       RAY_PIPELINE
+//!>       ENABLE_NRC=1
+//!>       NEE_CACHE_ENABLE=1
+//!>       UNORDERED_RESOLVE_WBOIT
+
+
+//!variant integrate_indirect_rayquery_nrc_wboit_terrain.comp
+//!>       TERRAIN_BLEND
+//!>       ENABLE_NRC=1
+//!>       NEE_CACHE_ENABLE=0
+//!>       UNORDERED_RESOLVE_WBOIT
+
+
+//!variant integrate_indirect_rayquery_raygen_nrc_wboit_terrain.rgen
+//!>       TERRAIN_BLEND
+//!>       RAY_PIPELINE
+//!>       ENABLE_NRC=1
+//!>       NEE_CACHE_ENABLE=0
+//!>       UNORDERED_RESOLVE_WBOIT
+
+
+//!variant integrate_indirect_raygen_nrc_wboit_terrain.rgen
+//!>       TERRAIN_BLEND
+//!>       RT_TRACE_RAY
+//!>       RAY_PIPELINE
+//!>       ENABLE_NRC=1
+//!>       NEE_CACHE_ENABLE=0
+//!>       UNORDERED_RESOLVE_WBOIT
+
+
+//!variant integrate_indirect_raygen_ser_nrc_wboit_terrain.rgen
+//!>       TERRAIN_BLEND
+//!>       RT_TRACE_RAY
+//!>       RAY_PIPELINE
+//!>       RT_SHADER_EXECUTION_REORDERING
+//!>       ENABLE_NRC=1
+//!>       NEE_CACHE_ENABLE=0
+//!>       UNORDERED_RESOLVE_WBOIT
+
+
+
+//!variant integrate_indirect_sharc_update4_terrain.rgen
+//!>       TERRAIN_BLEND
+//!>       RAY_PIPELINE
+//!>       ENABLE_SHARC=1
+//!>       SHARC_UPDATE=1
+//!>       SHARC_PROPAGATION_DEPTH=4
+//!>       NEE_CACHE_ENABLE=1
+
+
+//!variant integrate_indirect_sharc_update4_wboit_terrain.rgen
+//!>       TERRAIN_BLEND
+//!>       RAY_PIPELINE
+//!>       ENABLE_SHARC=1
+//!>       SHARC_UPDATE=1
+//!>       SHARC_PROPAGATION_DEPTH=4
+//!>       NEE_CACHE_ENABLE=1
+//!>       UNORDERED_RESOLVE_WBOIT
+
+
+//!variant integrate_indirect_sharc_update8_terrain.rgen
+//!>       TERRAIN_BLEND
+//!>       RAY_PIPELINE
+//!>       ENABLE_SHARC=1
+//!>       SHARC_UPDATE=1
+//!>       SHARC_PROPAGATION_DEPTH=8
+//!>       NEE_CACHE_ENABLE=1
+
+
+//!variant integrate_indirect_sharc_update8_wboit_terrain.rgen
+//!>       TERRAIN_BLEND
+//!>       RAY_PIPELINE
+//!>       ENABLE_SHARC=1
+//!>       SHARC_UPDATE=1
+//!>       SHARC_PROPAGATION_DEPTH=8
+//!>       NEE_CACHE_ENABLE=1
+//!>       UNORDERED_RESOLVE_WBOIT
+
+
+//!variant integrate_indirect_sharc_query_terrain.rgen
+//!>       TERRAIN_BLEND
+//!>       RT_TRACE_RAY
+//!>       RAY_PIPELINE
+//!>       ENABLE_SHARC=1
+//!>       SHARC_QUERY=1
+//!>       NEE_CACHE_ENABLE=1
+
+
+//!variant integrate_indirect_sharc_query_wboit_terrain.rgen
+//!>       TERRAIN_BLEND
+//!>       RT_TRACE_RAY
+//!>       RAY_PIPELINE
+//!>       ENABLE_SHARC=1
+//!>       SHARC_QUERY=1
+//!>       NEE_CACHE_ENABLE=1
+//!>       UNORDERED_RESOLVE_WBOIT
+
+
+//!variant integrate_indirect_sharc_query_ser_terrain.rgen
+//!>       TERRAIN_BLEND
+//!>       RT_TRACE_RAY
+//!>       RAY_PIPELINE
+//!>       RT_SHADER_EXECUTION_REORDERING
+//!>       ENABLE_SHARC=1
+//!>       SHARC_QUERY=1
+//!>       NEE_CACHE_ENABLE=1
+
+
+//!variant integrate_indirect_sharc_query_ser_wboit_terrain.rgen
+//!>       TERRAIN_BLEND
+//!>       RT_TRACE_RAY
+//!>       RAY_PIPELINE
+//!>       RT_SHADER_EXECUTION_REORDERING
+//!>       ENABLE_SHARC=1
+//!>       SHARC_QUERY=1
+//!>       NEE_CACHE_ENABLE=1
+//!>       UNORDERED_RESOLVE_WBOIT
+
+
 //!end-variants
 #define ATMOSPHERE_AVAILABLE
 

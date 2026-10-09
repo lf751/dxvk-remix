@@ -54,9 +54,9 @@ namespace dxvk {
     void dispatch(RtxContext* ctx, const Resources::RaytracingOutput& rtOutput);
     void dispatchNEE(RtxContext* ctx, const AssemblyResources& resources);
 
-    static DxvkRaytracingPipelineShaders getPipelineShaders(const bool useRayQuery, const bool serEnabled, const bool ommEnabled, const bool useNeeCache, const bool includePortals, const bool pomEnabled, const bool nrcEnabled, const bool wboitEnbaled);
+    DxvkRaytracingPipelineShaders getPipelineShaders(const bool useRayQuery, const bool serEnabled, const bool ommEnabled, const bool useNeeCache, const bool includePortals, const bool pomEnabled, const bool nrcEnabled, const bool wboitEnbaled) const;
     Rc<DxvkShader> getComputeShader(const bool useNeeCache, const bool nrcEnabled, const bool wboitEnabled) const;
-    static DxvkRaytracingPipelineShaders getSharcQueryPipelineShaders(const bool serEnabled, const bool ommEnabled, const bool includePortals, const bool pomEnabled, const bool wboitEnabled);
+    DxvkRaytracingPipelineShaders getSharcQueryPipelineShaders(const bool serEnabled, const bool ommEnabled, const bool includePortals, const bool pomEnabled, const bool wboitEnabled) const;
     void dispatchSharc(RtxContext* ctx, const Resources::RaytracingOutput& rtOutput, const VkExtent3D& rayDims, const bool serEnabled, const bool ommEnabled, const bool includePortals, const bool pomEnabled, const bool wboitEnabled);
     void logIntegrateIndirectMode();
     

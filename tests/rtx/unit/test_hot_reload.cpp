@@ -132,6 +132,98 @@ static bool hasMeshBucket(AssetReplacements& table, XXH64_hash_t hash) {
 // material replacements (sky, surface overrides via getReplacementMaterial)
 // because they always have use_count==1 — only the cache holds them.
 
+static void testTerrainPresetReloadLifetime() {
+  AssetReplacements live, scratch;
+  auto original = std::make_shared<TerrainBlendPreset>();
+  original->materials[0] = std::make_shared<MaterialData>();
+  std::weak_ptr<MaterialData> materialLifetime = original->materials[0];
+  live.setTerrainBlendPreset(original);
+  auto retained = live.getTerrainBlendPreset();
+  original.reset();
+
+  auto replacement = std::make_shared<TerrainBlendPreset>();
+  replacement->enabled = false;
+  scratch.setTerrainBlendPreset(replacement);
+  AssetChanges changes;
+  live.mergeFrom(std::move(scratch), changes);
+  if (live.getTerrainBlendPreset() != replacement || materialLifetime.expired()) {
+    throw DxvkError("terrain reload must replace the live preset and preserve retained layer materials");
+  }
+  retained.reset();
+  if (!materialLifetime.expired()) {
+    throw DxvkError("retired terrain layer materials must release after the consumer drops its preset");
+  }
+
+  AssetReplacements deleted;
+  live.mergeFrom(std::move(deleted), changes);
+  if (live.getTerrainBlendPreset()) {
+    throw DxvkError("deleted terrain preset must disappear on reload");
+  }
+  live.setTerrainBlendPreset(replacement);
+  live.clear();
+  if (live.getTerrainBlendPreset()) {
+    throw DxvkError("unloading a mod must clear its terrain preset");
+  }
+  Logger::info("testTerrainPresetReloadLifetime passed");
+}
+
+static void testTerrainPresetNoticeClassification() {
+  ChangeCapture cap;
+  const auto classify = [&cap](const char* path, bool resync) {
+    classifyChangedPath(pxr::SdfPath(path), resync, {}, cap.replacements,
+                        cap.dirtyMeshHashes, cap.dirtyMatHashes, cap.dirtyLightHashes,
+                        cap.rebuildAllMeshes, cap.rebuildAllMats, cap.rebuildAllLights);
+    if (!cap.rebuildAllMats || cap.rebuildAllLights || cap.rebuildAllMeshes) {
+      throw DxvkError("terrain parameter, relationship, shader and deletion changes must refresh material data");
+    }
+    cap.reset();
+  };
+  classify("/RootNode/TerrainBlend.remix:terrainBlend:lowElevation", false);
+  classify("/RootNode/TerrainBlend.remix:terrainBlend:grassMaterial", false);
+  classify("/RootNode/TerrainBlend/grass/Shader.inputs:height_texture", false);
+  classify("/RootNode/TerrainBlend", true);
+  Logger::info("testTerrainPresetNoticeClassification passed");
+}
+
+static void testTerrainPlacementEditsTriggerReload() {
+  auto stage = pxr::UsdStage::CreateInMemory("terrain_placement.usda");
+  const auto terrain = stage->DefinePrim(pxr::SdfPath("/RootNode/TerrainBlend"));
+  const auto flip = terrain.CreateAttribute(pxr::TfToken("remix:terrainBlend:flipElevation"), pxr::SdfValueTypeNames->Bool);
+  const auto mode = terrain.CreateAttribute(pxr::TfToken("remix:terrainBlend:rockMode"), pxr::SdfValueTypeNames->Token);
+  const auto low = terrain.CreateAttribute(pxr::TfToken("remix:terrainBlend:rockLowElevation"), pxr::SdfValueTypeNames->Float);
+  const auto high = terrain.CreateAttribute(pxr::TfToken("remix:terrainBlend:rockHighElevation"), pxr::SdfValueTypeNames->Float);
+  flip.Set(false);
+  mode.Set(pxr::TfToken("slope"));
+  low.Set(4.f);
+  high.Set(8.f);
+
+  ChangeCapture cap;
+  pxr::TfNotice::Register(pxr::TfWeakPtr<ChangeCapture>(&cap), &ChangeCapture::OnObjectsChanged, stage);
+  const auto check = [&cap]() {
+    if (!cap.rebuildAllMats || cap.rebuildAllMeshes || cap.rebuildAllLights) {
+      throw DxvkError("terrain placement edits must request a material reload without rebuilding unrelated scene assets");
+    }
+    cap.reset();
+  };
+  flip.Set(true);
+  check();
+  mode.Set(pxr::TfToken("elevation"));
+  check();
+  mode.Set(pxr::TfToken("both"));
+  check();
+  mode.Set(pxr::TfToken("slope"));
+  check();
+  low.Set(-20.f);
+  check();
+  high.Set(-10.f);
+  check();
+  flip.Clear();
+  check();
+  mode.Clear();
+  check();
+  Logger::info("testTerrainPlacementEditsTriggerReload passed");
+}
+
 // Standalone materials survive a hot-reload that processes other things.
 static void testStandaloneMatSurvivesHotReload() {
   AssetReplacements live, scratch;
@@ -1213,6 +1305,10 @@ def "RootNode" {
 int main() {
   try {
     dxvk::UsdMod::loadUsdPlugins();
+
+    dxvk::testTerrainPresetReloadLifetime();
+    dxvk::testTerrainPresetNoticeClassification();
+    dxvk::testTerrainPlacementEditsTriggerReload();
 
     dxvk::testStandaloneMatSurvivesHotReload();
     dxvk::testDeletedMatErasedFromCache();

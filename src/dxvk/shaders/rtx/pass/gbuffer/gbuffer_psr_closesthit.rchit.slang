@@ -63,6 +63,58 @@
 //!>       SURFACE_MATERIAL_RESOLVE_TYPE_ACTIVE_MASK=SURFACE_MATERIAL_RESOLVE_TYPE_ALL
 //!>       UNORDERED_RESOLVE_WBOIT
 
+//!variant gbuffer_psr_material_opaque_translucent_closestHit_terrain.rchit
+//!>       TERRAIN_BLEND
+//!>       SURFACE_MATERIAL_RESOLVE_TYPE_ACTIVE_MASK=SURFACE_MATERIAL_RESOLVE_TYPE_OPAQUE_TRANSLUCENT
+
+
+
+//!variant gbuffer_psr_material_rayportal_closestHit_terrain.rchit
+//!>       TERRAIN_BLEND
+//!>       SURFACE_MATERIAL_RESOLVE_TYPE_ACTIVE_MASK=SURFACE_MATERIAL_RESOLVE_TYPE_ALL
+
+
+
+//!variant gbuffer_psr_nrc_material_opaque_translucent_closestHit_terrain.rchit
+//!>       TERRAIN_BLEND
+//!>       ENABLE_NRC=1
+//!>       SURFACE_MATERIAL_RESOLVE_TYPE_ACTIVE_MASK=SURFACE_MATERIAL_RESOLVE_TYPE_OPAQUE_TRANSLUCENT
+
+
+
+//!variant gbuffer_psr_nrc_material_rayportal_closestHit_terrain.rchit
+//!>       TERRAIN_BLEND
+//!>       ENABLE_NRC=1
+//!>       SURFACE_MATERIAL_RESOLVE_TYPE_ACTIVE_MASK=SURFACE_MATERIAL_RESOLVE_TYPE_ALL
+
+
+
+//!variant gbuffer_psr_material_opaque_translucent_closestHit_wboit_terrain.rchit
+//!>       TERRAIN_BLEND
+//!>       SURFACE_MATERIAL_RESOLVE_TYPE_ACTIVE_MASK=SURFACE_MATERIAL_RESOLVE_TYPE_OPAQUE_TRANSLUCENT
+//!>       UNORDERED_RESOLVE_WBOIT
+
+
+//!variant gbuffer_psr_material_rayportal_closestHit_wboit_terrain.rchit
+//!>       TERRAIN_BLEND
+//!>       SURFACE_MATERIAL_RESOLVE_TYPE_ACTIVE_MASK=SURFACE_MATERIAL_RESOLVE_TYPE_ALL
+//!>       UNORDERED_RESOLVE_WBOIT
+
+
+//!variant gbuffer_psr_nrc_material_opaque_translucent_closestHit_wboit_terrain.rchit
+//!>       TERRAIN_BLEND
+//!>       ENABLE_NRC=1
+//!>       SURFACE_MATERIAL_RESOLVE_TYPE_ACTIVE_MASK=SURFACE_MATERIAL_RESOLVE_TYPE_OPAQUE_TRANSLUCENT
+//!>       UNORDERED_RESOLVE_WBOIT
+
+
+//!variant gbuffer_psr_nrc_material_rayportal_closestHit_wboit_terrain.rchit
+//!>       TERRAIN_BLEND
+//!>       ENABLE_NRC=1
+//!>       SURFACE_MATERIAL_RESOLVE_TYPE_ACTIVE_MASK=SURFACE_MATERIAL_RESOLVE_TYPE_ALL
+//!>       UNORDERED_RESOLVE_WBOIT
+
+
 //!end-variants
 
 #define RAY_TRACING_PRIMARY_RAY

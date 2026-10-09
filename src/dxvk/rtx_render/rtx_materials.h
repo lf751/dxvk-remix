@@ -593,7 +593,7 @@ struct RtOpaqueSurfaceMaterial {
     uint32_t secondaryTextureIndex = 0,
     bool albedoTextureIsSrgb = false, bool emissiveTextureIsSrgb = false,
     bool skyLitParticle = false, bool usesLegacyDefaults = false,
-    bool worldSpaceSecondaryOpacity = false
+    bool worldSpaceSecondaryOpacity = false, bool terrainBlend = false
   ) :
     m_albedoOpacityTextureIndex{ albedoOpacityTextureIndex }, m_secondaryTextureIndex{secondaryTextureIndex}, m_normalTextureIndex{ normalTextureIndex },
     m_tangentTextureIndex { tangentTextureIndex }, m_heightTextureIndex { heightTextureIndex }, m_roughnessTextureIndex{ roughnessTextureIndex },
@@ -613,7 +613,7 @@ struct RtOpaqueSurfaceMaterial {
     m_isHairCard(isHairCard), m_samplerFeedbackStamp{ samplerFeedbackStamp },
     m_albedoTextureIsSrgb{ albedoTextureIsSrgb }, m_emissiveTextureIsSrgb{ emissiveTextureIsSrgb },
     m_skyLitParticle{ skyLitParticle }, m_usesLegacyDefaults{ usesLegacyDefaults },
-    m_worldSpaceSecondaryOpacity{ worldSpaceSecondaryOpacity }
+    m_worldSpaceSecondaryOpacity{ worldSpaceSecondaryOpacity }, m_terrainBlend{ terrainBlend }
   {
     updateCachedData();
     updateCachedHash();
@@ -671,6 +671,9 @@ struct RtOpaqueSurfaceMaterial {
 
     if (m_worldSpaceSecondaryOpacity) {
       flags |= OPAQUE_SURFACE_MATERIAL_FLAG_WORLD_SPACE_SECONDARY_OPACITY;
+    }
+    if (m_terrainBlend) {
+      flags |= OPAQUE_SURFACE_MATERIAL_FLAG_TERRAIN_BLEND;
     }
 
     float displaceIn = m_displaceIn * getDisplacementInFactor();
@@ -887,6 +890,7 @@ private:
       uint32_t skyLitParticle;            // NOTE: uint32_t to avoid padding
       uint32_t usesLegacyDefaults;
       uint32_t worldSpaceSecondaryOpacity;
+      uint32_t terrainBlend;
       // NOTE: There must be NO padding between members, as the struct is used for hashing
     };
     HashStruct hashData = HashStruct{
@@ -922,6 +926,7 @@ private:
       m_skyLitParticle,
       m_usesLegacyDefaults,
       m_worldSpaceSecondaryOpacity,
+      m_terrainBlend,
     };
     m_cachedHash = hashStructByMemory<HashStruct,
       &HashStruct::albedoOpacityTextureIndex,
@@ -955,7 +960,8 @@ private:
       &HashStruct::emissiveTextureIsSrgb,
       &HashStruct::skyLitParticle,
       &HashStruct::usesLegacyDefaults,
-      &HashStruct::worldSpaceSecondaryOpacity>(hashData);
+      &HashStruct::worldSpaceSecondaryOpacity,
+      &HashStruct::terrainBlend>(hashData);
   }
 
   void updateCachedData() {
@@ -1022,6 +1028,7 @@ private:
   bool m_skyLitParticle;
   bool m_usesLegacyDefaults;
   bool m_worldSpaceSecondaryOpacity;
+  bool m_terrainBlend;
 
   uint16_t m_samplerFeedbackStamp;
 

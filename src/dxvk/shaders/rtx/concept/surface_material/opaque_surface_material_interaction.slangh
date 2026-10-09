@@ -22,6 +22,9 @@
 #pragma once
 
 #include "opaque_surface_material_blending.slangh"
+#ifdef TERRAIN_BLEND
+#include "terrain_blend.slangh"
+#endif
 
 // Opaque Surface Material Interaction Constants
 
@@ -566,6 +569,11 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
   inout SurfaceInteraction surfaceInteraction,
   MinimalRayInteraction minimalRayInteraction)
 {
+#ifdef TERRAIN_BLEND
+  if (cb.terrainBlendArgs.enabled != 0 && (opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_TERRAIN_BLEND) != 0) {
+    return terrainBlendInteractionCreate(surface, surfaceInteraction, minimalRayInteraction);
+  }
+#endif
   OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteraction;
   // Note: need initialize the flags explicitely to get rid of garbage data.
   // NV-DXVK start: The existing interaction flag mask preserves this bit through G-buffer serialization.

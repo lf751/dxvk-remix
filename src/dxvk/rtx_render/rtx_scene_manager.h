@@ -36,6 +36,7 @@
 #include "../util/util_hashtable.h"
 
 #include "rtx_globals.h"
+#include "../shaders/rtx/pass/terrain_blend_args.h"
 #include "rtx_retained_buffer_table.h"
 #include "rtx_types.h"
 #include "rtx_common_object.h"
@@ -201,6 +202,8 @@ public:
   GraphManager& getGraphManager() { return m_graphManager; }
   std::unique_ptr<AssetReplacer>& getAssetReplacer() { return m_pReplacer; }
   TerrainBaker& getTerrainBaker() { return *m_terrainBaker.get(); }
+  const TerrainBlendArgs& getTerrainBlendArgs() const { return m_terrainBlendArgs; }
+  const std::shared_ptr<const TerrainBlendPreset>& getActiveTerrainBlendPreset();
 
   WeatherBlender* getWeatherBlender() const { return m_weatherBlender.get(); }
 
@@ -292,6 +295,11 @@ public:
   bool isAntiCullingSupported() const { return m_isAntiCullingSupported; }
 
 private:
+  void prepareTerrainBlend();
+  TerrainBlendArgs m_terrainBlendArgs;
+  std::shared_ptr<const TerrainBlendPreset> m_activeTerrainBlendPreset;
+  uint32_t m_terrainBlendFrame = UINT32_MAX;
+
   enum class ObjectCacheState
   {
     kUpdateInstance = 0,

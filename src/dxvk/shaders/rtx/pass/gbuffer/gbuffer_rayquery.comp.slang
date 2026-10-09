@@ -41,7 +41,9 @@
 //!> axis nrc nrc ENABLE_NRC=1
 //!> axis wboit -
 //!> axis wboit wboit UNORDERED_RESOLVE_WBOIT
-//!> order features pass nrc wboit
+//!> axis terrain -
+//!> axis terrain terrain TERRAIN_BLEND
+//!> order features pass nrc wboit terrain
 //!end-variants
 
 // Note: Opacity lighting approximation used in the GBuffer pass due to it being most visually

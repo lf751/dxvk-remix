@@ -78,6 +78,19 @@ std::shared_ptr<MaterialData> AssetReplacer::getReplacementMaterial(XXH64_hash_t
   return nullptr;
 }
 
+std::shared_ptr<const TerrainBlendPreset> AssetReplacer::getTerrainBlendPreset() {
+  if (!RtxOptions::getEnableReplacementMaterials()) {
+    return nullptr;
+  }
+  for (auto& mod : m_modManager.mods()) {
+    if (auto preset = mod->replacements().getTerrainBlendPreset()) {
+      // An explicitly disabled preset suppresses terrain presets in weaker mods.
+      return preset->enabled ? preset : nullptr;
+    }
+  }
+  return nullptr;
+}
+
 void AssetReplacer::initialize(const Rc<DxvkContext>& context) {
   for (auto& mod : m_modManager.mods()) {
     // Each mod cancels internally too; this stops us starting the next one. Returning

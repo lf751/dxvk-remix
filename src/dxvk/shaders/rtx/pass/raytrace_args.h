@@ -36,6 +36,7 @@
 #include "rtx/pass/sharc/sharc_args.h"
 #include "rtx/pass/volume_args.h"
 #include "rtx/pass/material_args.h"
+#include "rtx/pass/terrain_blend_args.h"
 #include "rtx/pass/view_distance_args.h"
 #include "rtx/pass/atmosphere/atmosphere_args.h"
 #include "rtx/concept/light/light_types.h"
@@ -160,6 +161,7 @@ struct RaytraceArgs {
   LightRangeInfo lightRanges[lightTypeCount];
 
   TerrainArgs terrainArgs;
+  TerrainBlendArgs terrainBlendArgs;
   NeeCacheArgs neeCacheArgs;
   DomeLightArgs domeLightArgs;
   NrcArgs nrcArgs;

@@ -34,6 +34,25 @@
 #include "rtx_lights_data.h"
 
 namespace dxvk {
+  enum class TerrainRockMode : uint32_t { Slope = 0, Elevation = 1, Both = 2 };
+
+  struct TerrainBlendPreset {
+    bool enabled = true;
+    bool flipElevation = false;
+    TerrainRockMode rockMode = TerrainRockMode::Slope;
+    float rockLowElevation = 4.0f;
+    float rockHighElevation = 8.0f;
+    // Layer order is grass, sand, rock. All lengths are in game world units.
+    std::shared_ptr<MaterialData> materials[3];
+    float unitsPerRepeat[3] = { 8.0f, 8.0f, 8.0f };
+    float lowElevation = 0.0f;
+    float highElevation = 4.0f;
+    float slopeStartDegrees = 30.0f;
+    float slopeEndDegrees = 55.0f;
+    float heightBlendStrength = 0.2f;
+    float heightBlendWidth = 0.2f;
+  };
+
   class DxvkContext;
   class DxvkDevice;
   class DxvkCommandList;
@@ -176,6 +195,16 @@ namespace dxvk {
   // Contains and owns the replacements, material and geometry objects.
   class AssetReplacements {
   public:
+    std::shared_ptr<const TerrainBlendPreset> getTerrainBlendPreset() const {
+      std::lock_guard<sync::Spinlock> lock(m_spinlock);
+      return m_terrainBlendPreset;
+    }
+
+    void setTerrainBlendPreset(std::shared_ptr<const TerrainBlendPreset> preset) {
+      std::lock_guard<sync::Spinlock> lock(m_spinlock);
+      m_terrainBlendPreset = std::move(preset);
+    }
+
     // Returns the bucket of replacements of type T for a given hash value, or a nullptr
     // if no replacements were found. The strong ref is copied under the lock, so the
     // caller's bucket stays alive even if another thread replaces the map entry.
@@ -333,6 +362,7 @@ namespace dxvk {
       std::vector<std::shared_ptr<void>> doomed;
       {
         std::scoped_lock lock(m_spinlock, src.m_spinlock);
+        m_terrainBlendPreset = std::move(src.m_terrainBlendPreset);
 
         const auto staleAndReplace = [&doomed](auto& map, auto& srcMap,
                                         const std::unordered_set<XXH64_hash_t>& dirty,
@@ -466,6 +496,7 @@ namespace dxvk {
       m_graphTopologies.clear();
       m_materialPathIndex.clear();
       m_secretReplacements.clear();
+      m_terrainBlendPreset.reset();
     }
 
     const SecretReplacements& secretReplacements() const {
@@ -495,6 +526,7 @@ namespace dxvk {
     }
 
     mutable sync::Spinlock m_spinlock;
+    std::shared_ptr<const TerrainBlendPreset> m_terrainBlendPreset;
 
     // Replacements ready to be fed to the renderer
     fast_unordered_cache<std::shared_ptr<ReplacementBucket>> m_meshReplacers;
@@ -518,6 +550,7 @@ namespace dxvk {
     std::shared_ptr<const ReplacementBucket> getReplacementsForMesh(XXH64_hash_t hash);
     std::shared_ptr<const ReplacementBucket> getReplacementsForLight(XXH64_hash_t hash);
     std::shared_ptr<MaterialData> getReplacementMaterial(XXH64_hash_t hash);
+    std::shared_ptr<const TerrainBlendPreset> getTerrainBlendPreset();
 
     // process the replacement USD and create all the m_replacements entries.
     void initialize(const Rc<DxvkContext>& context);

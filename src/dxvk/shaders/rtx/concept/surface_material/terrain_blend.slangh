@@ -1,0 +1,125 @@
+/*
+* Copyright (c) 2026, NVIDIA CORPORATION. All rights reserved.
+*
+* Permission is hereby granted, free of charge, to any person obtaining a
+* copy of this software and associated documentation files (the "Software"),
+* to deal in the Software without restriction, including without limitation
+* the rights to use, copy, modify, merge, publish, distribute, sublicense,
+* and/or sell copies of the Software, and to permit persons to whom the
+* Software is furnished to do so, subject to the following conditions:
+*
+* The above copyright notice and this permission notice shall be included in
+* all copies or substantial portions of the Software.
+*
+* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+* IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+* FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+* THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+* LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+* FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+* DEALINGS IN THE SOFTWARE.
+*/
+#pragma once
+
+struct TerrainLayerSample {
+  vec3 albedo;
+  vec3 normal;
+  float roughness;
+  float height;
+};
+
+vec4 terrainSampleTexture(uint textureIndex, uint samplerIndex, vec2 uv, vec2 dx, vec2 dy, vec4 fallback) {
+  if (textureIndex == BINDING_INDEX_INVALID) {
+    return fallback;
+  }
+  return textures[nonuniformEXT(textureIndex)].SampleGrad(samplers[nonuniformEXT(samplerIndex)], uv, dx, dy);
+}
+
+TerrainLayerSample terrainSampleLayer(TerrainBlendLayerArgs layer, SurfaceInteraction interaction, vec3 position) {
+  const vec3 n = interaction.geometryNormal;
+  vec3 projectionWeights = pow(abs(n), vec3(4.f));
+  projectionWeights /= max(dot(projectionWeights, vec3(1.f)), 1e-6f);
+  const float scale = rcp(max(layer.unitsPerRepeat, 1e-4f));
+  const vec3 worldDx = interaction.worldPositionGradientX;
+  const vec3 worldDy = interaction.worldPositionGradientY;
+  TerrainLayerSample result;
+  result.albedo = 0.f;
+  result.normal = n;
+  result.roughness = 0.f;
+  result.height = 0.f;
+  for (uint axis = 0; axis < 3; ++axis) {
+    const float weight = projectionWeights[axis];
+    if (weight == 0.f) {
+      continue;
+    }
+    const float side = n[axis] < 0.f ? -1.f : 1.f;
+    const vec3 tangent = axis == 0 ? vec3(0.f, 0.f, 1.f) : vec3(1.f, 0.f, 0.f);
+    const vec3 bitangent = axis == 0 ? vec3(0.f, -side, 0.f) : (axis == 1 ? vec3(0.f, 0.f, -side) : vec3(0.f, side, 0.f));
+    const vec2 uv = vec2(dot(position, tangent), dot(position, bitangent)) * scale;
+    const vec2 dx = vec2(dot(worldDx, tangent), dot(worldDx, bitangent)) * scale;
+    const vec2 dy = vec2(dot(worldDy, tangent), dot(worldDy, bitangent)) * scale;
+    vec3 albedo = terrainSampleTexture(layer.albedoTextureIndex, layer.samplerIndex, uv, dx, dy, layer.albedoConstant).rgb;
+    if (layer.albedoTextureIndex == BINDING_INDEX_INVALID || layer.albedoIsSrgb == 0) {
+      albedo = gammaToLinear(albedo);
+    }
+    result.albedo += albedo * weight;
+    result.roughness += terrainSampleTexture(layer.roughnessTextureIndex, layer.samplerIndex, uv, dx, dy, vec4(layer.roughnessConstant)).r * weight;
+    result.height += terrainSampleTexture(layer.heightTextureIndex, layer.samplerIndex, uv, dx, dy, vec4(0.5f)).r * weight;
+    if (layer.normalTextureIndex != BINDING_INDEX_INVALID) {
+      const vec2 encoded = terrainSampleTexture(layer.normalTextureIndex, layer.samplerIndex, uv, dx, dy, vec4(0.f)).xy;
+      const vec3 detail = unsignedOctahedralToHemisphereDirection(encoded, cb.opaqueMaterialArgs.normalIntensity);
+      // A neutral normal leaves the geometric normal unchanged on every projection.
+      result.normal += weight * (tangent * detail.x + bitangent * detail.y + n * (detail.z - 1.f));
+    }
+  }
+  result.normal = normalize(result.normal);
+  return result;
+}
+
+OpaqueSurfaceMaterialInteraction terrainBlendInteractionCreate(Surface surface, SurfaceInteraction interaction, MinimalRayInteraction ray) {
+  const TerrainBlendArgs args = cb.terrainBlendArgs;
+  const vec3 position = interaction.position + args.worldOffset.xyz;
+  const vec3 up = args.zUp != 0 ? vec3(0.f, 0.f, 1.f) : vec3(0.f, 1.f, 0.f);
+  const float worldElevation = dot(position, up) * (args.flipElevation != 0 ? -1.f : 1.f);
+  const float elevation = smoothstep(args.lowElevation, args.highElevation, worldElevation);
+  const float slope = saturate((abs(dot(interaction.geometryNormal, up)) - args.slopeCosStart) / (args.slopeCosEnd - args.slopeCosStart));
+  const float slopeRock = slope * slope * (3.f - 2.f * slope);
+  const float elevationRock = smoothstep(args.rockLowElevation, args.rockHighElevation, worldElevation);
+  const float rock = args.rockMode == 0 ? slopeRock : (args.rockMode == 1 ? elevationRock :
+    1.f - (1.f - slopeRock) * (1.f - elevationRock));
+  vec3 weights = vec3(elevation * (1.f - rock), (1.f - elevation) * (1.f - rock), rock);
+  TerrainLayerSample layers[3];
+  vec3 heights;
+  for (uint layer = 0; layer < 3; ++layer) {
+    layers[layer] = (TerrainLayerSample) 0;
+    if (weights[layer] > 0.f) {
+      layers[layer] = terrainSampleLayer(args.layers[layer], interaction, position);
+    }
+    heights[layer] = layers[layer].height;
+  }
+  if (args.heightBlendStrength > 0.f) {
+    const vec3 scores = weights + heights * args.heightBlendStrength;
+    const float peak = max(max(weights.x > 0.f ? scores.x : -1e10f, weights.y > 0.f ? scores.y : -1e10f), weights.z > 0.f ? scores.z : -1e10f);
+    weights *= max(scores - peak + args.heightBlendWidth, vec3(0.f));
+    weights /= max(dot(weights, vec3(1.f)), 1e-6f);
+  }
+  vec3 albedo = 0.f;
+  vec3 normal = 0.f;
+  float roughness = 0.f;
+  for (uint layer = 0; layer < 3; ++layer) {
+    albedo += weights[layer] * layers[layer].albedo;
+    normal += weights[layer] * layers[layer].normal;
+    roughness += weights[layer] * layers[layer].roughness;
+  }
+  normal = normalize(normal);
+  albedo = saturate(albedo * cb.opaqueMaterialArgs.albedoScale + cb.opaqueMaterialArgs.albedoBias);
+  roughness = saturate(roughness * cb.opaqueMaterialArgs.roughnessScale + cb.opaqueMaterialArgs.roughnessBias);
+  OpaqueSurfaceMaterialInteraction result = (OpaqueSurfaceMaterialInteraction) 0;
+  result.shadingNormal = getBentNormal(interaction.geometryNormal, normal, -ray.viewDirection);
+  result.normalDetail = saturate(1.f - dot(interaction.geometryNormal, normal));
+  result.opacity = 1.f;
+  result.albedo = surface.isMatte ? vec3(0.f) : albedoToAdjustedAlbedo(albedo, 0.f, 1.f);
+  result.baseReflectivity = surface.isMatte ? vec3(0.f) : calcBaseReflectivity(albedo, 0.f, 1.f, 0.5f);
+  calcRoughness(roughness, 0.f, result.isotropicRoughness, result.anisotropicRoughness);
+  return result;
+}

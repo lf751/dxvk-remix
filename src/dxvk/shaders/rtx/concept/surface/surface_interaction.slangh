@@ -41,6 +41,19 @@ static const bool SurfaceIgnoreTangents = false;
 
 // Surface Interaction Helper Functions
 
+#ifdef TERRAIN_BLEND
+void computeWorldFootprint(vec3 triangleNormal, vec3 rayConeDir, float rayConeRadiusAtIntersection,
+  out vec3 worldPositionGradientX, out vec3 worldPositionGradientY) {
+  vec3 fallbackTangent, fallbackBitangent;
+  calcOrthonormalBasis(triangleNormal, fallbackTangent, fallbackBitangent);
+  const vec3 projectedRayDirection = rayConeDir - dot(triangleNormal, rayConeDir) * triangleNormal;
+  const vec3 worldTangent = safeNormalize(projectedRayDirection, fallbackTangent);
+  // The world footprint is independent of source UV density and remains finite at normal incidence.
+  worldPositionGradientX = worldTangent * rayConeRadiusAtIntersection / max(0.0001f, abs(dot(triangleNormal, rayConeDir)));
+  worldPositionGradientY = cross(triangleNormal, worldTangent) * rayConeRadiusAtIntersection;
+}
+#endif
+
 // Texture Gradient from Ray Cone Helper
 // [2021, "Improved Shader and Texture Level of Detail Using Ray Cones"] (Listing 1)
 // Computes the texture gradients for anisotropic texture filtering based on the intersection of a ray cone with a triangle.
@@ -488,6 +501,19 @@ SurfaceInteraction surfaceInteractionCreate<let GenerateTangents : bool>(
   {
     surfaceInteraction.motion = vec3(0.0);
   }
+
+#ifdef TERRAIN_BLEND
+  if (footprintMode == kFootprintFromTextureCoordDiff) {
+    surfaceInteraction.worldPositionGradientX = (worldPositions[1] - worldPositions[0]) / 3.0f;
+    surfaceInteraction.worldPositionGradientY = (worldPositions[2] - worldPositions[0]) / 3.0f;
+  } else {
+    const vec3 positionOffset = surfaceInteraction.position - ray.origin;
+    const vec3 direction = footprintMode == kFootprintFromRayDirection ? ray.direction : normalize(positionOffset);
+    const float coneRadius = footprintMode == kFootprintFromRayDirection ? rayInteraction.coneRadius : rayInteraction.coneRadius + length(positionOffset) * ray.spreadAngle;
+    computeWorldFootprint(triangleNormal, direction, coneRadius,
+      surfaceInteraction.worldPositionGradientX, surfaceInteraction.worldPositionGradientY);
+  }
+#endif
 
   // Compute texture coordinates
 

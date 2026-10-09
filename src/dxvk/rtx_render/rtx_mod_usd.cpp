@@ -22,6 +22,7 @@
 #pragma once
 
 #include <algorithm>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -45,6 +46,7 @@
 #include "../../lssusd/usd_include_begin.h"
 #include <pxr/base/gf/matrix4f.h>
 #include <pxr/base/gf/rotation.h>
+#include <pxr/base/gf/vec3f.h>
 #include <pxr/base/tf/notice.h>
 #include <pxr/base/tf/weakBase.h>
 #include <pxr/base/tf/weakPtr.h>
@@ -55,6 +57,7 @@
 #include <pxr/usd/usd/prim.h>
 #include <pxr/usd/usd/primCompositionQuery.h>
 #include <pxr/usd/usd/attribute.h>
+#include <pxr/usd/usd/relationship.h>
 #include <pxr/usd/usdGeom/mesh.h>
 #include <pxr/usd/usdGeom/pointInstancer.h>
 #include <pxr/usd/usdGeom/subset.h>
@@ -68,6 +71,7 @@
 #include <pxr/usd/usdLux/blackbody.h>
 #include <pxr/usd/usdSkel/bindingAPI.h>
 #include <pxr/usd/usdShade/materialBindingAPI.h>
+#include <pxr/usd/usdShade/material.h>
 #include <pxr/base/arch/fileSystem.h>
 #include <pxr/base/plug/registry.h>
 #include <pxr/base/plug/plugin.h>
@@ -149,6 +153,7 @@ private:
   void TEMP_parseSecretReplacementVariants(AssetReplacements& target, const fast_unordered_cache<uint32_t>& variants);
   Rc<ManagedTexture> getTexture(const Args& args, const pxr::UsdPrim& shader, const pxr::TfToken& textureToken, bool forcePreload = false) const;
   std::pair<XXH64_hash_t, std::shared_ptr<MaterialData>> processMaterial(Args& args, const pxr::UsdPrim& matPrim);
+  void processTerrainBlend(Args& args, const pxr::UsdStageRefPtr& stage);
   std::pair<XXH64_hash_t, std::shared_ptr<MaterialData>> processMaterialUser(Args& args, const pxr::UsdPrim& prim);
   bool processMesh(const pxr::UsdPrim& prim, Args& args);
   void processPrim(Args& args, const pxr::UsdPrim& prim);
@@ -509,6 +514,10 @@ void classifyChangedPath(const pxr::SdfPath& path, bool isResync, const pxr::Usd
     return;
   }
   const pxr::SdfPath& sectionPath = prefixes[1];
+  if (sectionPath == pxr::SdfPath("/RootNode/TerrainBlend")) {
+    rebuildAllMats = true;
+    return;
+  }
 
   // size==2 means the section folder itself changed. For a resync (structural change)
   // we don't know which children were affected; for an info-only change the section
@@ -752,6 +761,121 @@ std::pair<XXH64_hash_t, std::shared_ptr<MaterialData>> UsdMod::Impl::processMate
   }
 
   return { kEmptyHash, nullptr };
+}
+
+void UsdMod::Impl::processTerrainBlend(Args& args, const pxr::UsdStageRefPtr& stage) {
+  const auto prim = stage->GetPrimAtPath(pxr::SdfPath("/RootNode/TerrainBlend"));
+  args.target->setTerrainBlendPreset(nullptr);
+  if (!prim || !prim.IsActive()) {
+    return;
+  }
+  const auto fail = [&prim](const char* reason) {
+    Logger::warn(str::format("Invalid terrain blend preset ", prim.GetPath().GetString(), ": ", reason));
+  };
+  const auto attribute = [&prim](const char* name) {
+    return prim.GetAttribute(pxr::TfToken(str::format("remix:terrainBlend:", name)));
+  };
+  int version = 0;
+  if (!attribute("schemaVersion").Get(&version) || version != 1) {
+    fail("schemaVersion must be 1");
+    return;
+  }
+  auto preset = std::make_shared<TerrainBlendPreset>();
+  const auto enabled = attribute("enabled");
+  if (enabled.HasAuthoredValueOpinion() && !enabled.Get(&preset->enabled)) {
+    fail("enabled must be a bool");
+    return;
+  }
+  if (!preset->enabled) {
+    args.target->setTerrainBlendPreset(std::move(preset));
+    return;
+  }
+  pxr::GfVec3f units(8.0f);
+  const auto tiling = attribute("unitsPerRepeat");
+  if (tiling.HasAuthoredValueOpinion() && !tiling.Get(&units)) {
+    fail("unitsPerRepeat must be a float3");
+    return;
+  }
+  for (size_t i = 0; i < 3; ++i) {
+    if (!std::isfinite(units[i]) || units[i] <= 0.0f) {
+      fail("unitsPerRepeat must be finite and positive");
+      return;
+    }
+    preset->unitsPerRepeat[i] = units[i];
+  }
+  const auto readFloat = [&attribute](const char* name, float& value) {
+    const auto attr = attribute(name);
+    return (!attr.HasAuthoredValueOpinion() || attr.Get(&value)) && std::isfinite(value);
+  };
+  const auto flip = attribute("flipElevation");
+  if (flip.HasAuthoredValueOpinion() && !flip.Get(&preset->flipElevation)) {
+    fail("flipElevation must be a bool");
+    return;
+  }
+  pxr::TfToken rockMode("slope");
+  const auto mode = attribute("rockMode");
+  if (mode.HasAuthoredValueOpinion() && !mode.Get(&rockMode)) {
+    fail("rockMode must be a token");
+    return;
+  }
+  if (rockMode == pxr::TfToken("slope")) {
+    preset->rockMode = TerrainRockMode::Slope;
+  } else if (rockMode == pxr::TfToken("elevation")) {
+    preset->rockMode = TerrainRockMode::Elevation;
+  } else if (rockMode == pxr::TfToken("both")) {
+    preset->rockMode = TerrainRockMode::Both;
+  } else {
+    fail("rockMode must be slope, elevation, or both");
+    return;
+  }
+  if (!readFloat("lowElevation", preset->lowElevation) ||
+      !readFloat("rockLowElevation", preset->rockLowElevation) ||
+      !readFloat("rockHighElevation", preset->rockHighElevation) ||
+      preset->rockHighElevation <= preset->rockLowElevation ||
+      !readFloat("highElevation", preset->highElevation) ||
+      !readFloat("slopeStartDegrees", preset->slopeStartDegrees) ||
+      !readFloat("slopeEndDegrees", preset->slopeEndDegrees) ||
+      !readFloat("heightBlendStrength", preset->heightBlendStrength) ||
+      !readFloat("heightBlendWidth", preset->heightBlendWidth) ||
+      preset->highElevation <= preset->lowElevation ||
+      preset->slopeStartDegrees < 0.0f || preset->slopeEndDegrees > 90.0f ||
+      preset->slopeEndDegrees <= preset->slopeStartDegrees ||
+      preset->heightBlendStrength < 0.0f || preset->heightBlendStrength > 1.0f ||
+      preset->heightBlendWidth <= 0.0f || preset->heightBlendWidth > 1.0f) {
+    fail("invalid elevation, slope, or height blend parameters");
+    return;
+  }
+  static const char* kRelations[] = { "grassMaterial", "sandMaterial", "rockMaterial" };
+  for (size_t i = 0; i < 3; ++i) {
+    pxr::SdfPathVector targets;
+    const auto relation = prim.GetRelationship(pxr::TfToken(str::format("remix:terrainBlend:", kRelations[i])));
+    if (!relation || !relation.GetForwardedTargets(&targets) || targets.size() != 1) {
+      fail("each layer relationship must target one material");
+      return;
+    }
+    const auto materialPrim = stage->GetPrimAtPath(targets[0]);
+    if (!materialPrim || !materialPrim.IsActive() || !materialPrim.IsA<pxr::UsdShadeMaterial>()) {
+      fail("layer target must be an active Material prim");
+      return;
+    }
+    auto material = processMaterial(args, materialPrim).second;
+    if (!material || material->getType() != MaterialDataType::Opaque || material->getIgnored()) {
+      fail("layers must be valid, visible opaque materials");
+      return;
+    }
+    // Terrain layers are fully opaque regardless of the game's legacy alpha state.
+    auto terrainMaterial = std::make_shared<MaterialData>(*material);
+    auto& opaque = terrainMaterial->getOpaqueMaterialData();
+    opaque.setUseLegacyAlphaState(false);
+    opaque.setBlendEnabled(false);
+    opaque.setAlphaTestType(AlphaTestType::kAlways);
+    opaque.setOpacityConstant(1.0f);
+    opaque.setIgnoreAlphaChannel(true);
+    opaque.setDisplaceIn(0.0f);
+    opaque.setDisplaceOut(0.0f);
+    preset->materials[i] = std::move(terrainMaterial);
+  }
+  args.target->setTerrainBlendPreset(std::move(preset));
 }
 
 std::pair<XXH64_hash_t, std::shared_ptr<MaterialData>> UsdMod::Impl::processMaterialUser(Args& args, const pxr::UsdPrim& prim) {
@@ -1967,6 +2091,14 @@ bool UsdMod::Impl::processUSD(const Rc<DxvkContext>& context, AssetReplacements&
         setProgress(ProgressState::ProcessingMaterials, currentMaterialCount);
       }
     }
+  }
+
+  {
+    pxr::UsdPrim terrainRoot = stage->GetPrimAtPath(pxr::SdfPath("/RootNode/TerrainBlend"));
+    std::vector<AssetReplacement> placeholder;
+    Args args = {context, xformCache, terrainRoot, placeholder};
+    args.target = &target;
+    processTerrainBlend(args, stage);
   }
 
   // Process Meshes

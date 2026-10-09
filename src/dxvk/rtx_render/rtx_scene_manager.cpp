@@ -19,6 +19,7 @@
 * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 * DEALINGS IN THE SOFTWARE.
 */
+#include <cmath>
 #include <limits>
 #include <mutex>
 #include <vector>
@@ -1548,10 +1549,60 @@ namespace dxvk {
     }
   }
 
-  // Helper to populate the texture cache with this resource (and patch sampler if required for texture)
-  // If 'inout_samplerFeedbackStamp' is non-null and still INVALID, it is seeded from the
-  // first present texture; that stamp is then reused so subsequent textures in the same
-  // material are grouped together for sampler-feedback streaming.
+  const std::shared_ptr<const TerrainBlendPreset>& SceneManager::getActiveTerrainBlendPreset() {
+    const uint32_t frame = m_device->getCurrentFrameId();
+    if (m_terrainBlendFrame != frame) {
+      m_activeTerrainBlendPreset = m_pReplacer->getTerrainBlendPreset();
+      m_terrainBlendFrame = frame;
+    }
+    return m_activeTerrainBlendPreset;
+  }
+
+  void SceneManager::prepareTerrainBlend() {
+    m_terrainBlendArgs = TerrainBlendArgs {};
+    const auto& preset = getActiveTerrainBlendPreset();
+    if (!preset) {
+      return;
+    }
+
+    m_terrainBlendArgs.enabled = 1;
+    m_terrainBlendArgs.zUp = RtxOptions::zUp() ? 1 : 0;
+    m_terrainBlendArgs.lowElevation = preset->lowElevation;
+    m_terrainBlendArgs.highElevation = preset->highElevation;
+    m_terrainBlendArgs.flipElevation = preset->flipElevation ? 1u : 0u;
+    m_terrainBlendArgs.rockMode = static_cast<uint32_t>(preset->rockMode);
+    m_terrainBlendArgs.rockLowElevation = preset->rockLowElevation;
+    m_terrainBlendArgs.rockHighElevation = preset->rockHighElevation;
+    constexpr float radiansPerDegree = 0.017453292519943295f;
+    m_terrainBlendArgs.slopeCosStart = std::cos(preset->slopeStartDegrees * radiansPerDegree);
+    m_terrainBlendArgs.slopeCosEnd = std::cos(preset->slopeEndDegrees * radiansPerDegree);
+    m_terrainBlendArgs.heightBlendStrength = preset->heightBlendStrength;
+    m_terrainBlendArgs.heightBlendWidth = preset->heightBlendWidth;
+    const auto& offset = m_cameraManager.getCamera(CameraType::Main).getArtificialWorldOffset();
+    m_terrainBlendArgs.worldOffset = vec4(-offset.x, -offset.y, -offset.z, 0.f);
+    const auto sampler = patchSampler(VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_REPEAT,
+      VK_SAMPLER_ADDRESS_MODE_REPEAT, VK_SAMPLER_ADDRESS_MODE_REPEAT, {});
+    const uint32_t samplerIndex = trackSampler(sampler);
+
+    for (uint32_t i = 0; i < 3; ++i) {
+      const auto& material = preset->materials[i]->getOpaqueMaterialData();
+      auto& layer = m_terrainBlendArgs.layers[i];
+      layer.samplerIndex = samplerIndex;
+      layer.unitsPerRepeat = preset->unitsPerRepeat[i];
+      layer.roughnessConstant = material.getRoughnessConstant();
+      const auto& color = material.getAlbedoConstant();
+      layer.albedoConstant = vec4(color.x, color.y, color.z, 1.f);
+      trackTexture(material.getAlbedoOpacityTexture(), layer.albedoTextureIndex, true, false);
+      trackTexture(material.getNormalTexture(), layer.normalTextureIndex, true, false);
+      trackTexture(material.getRoughnessTexture(), layer.roughnessTextureIndex, true, false);
+      trackTexture(material.getHeightTexture(), layer.heightTextureIndex, true, false);
+      const auto* view = material.getAlbedoOpacityTexture().getImageView();
+      layer.albedoIsSrgb = view != nullptr && TextureUtils::isSRGB(view->info().format) ? 1 : 0;
+    }
+  }
+
+  // If no feedback stamp has been assigned, the first present texture seeds the
+  // stamp so subsequent textures in the material share the same streaming group.
   void SceneManager::trackTexture(const TextureRef& inputTexture,
                                   uint32_t& textureIndex,
                                   bool hasTexcoords,
@@ -1724,6 +1775,9 @@ namespace dxvk {
     }
 
     XXH64_hash_t preCreationHash = renderMaterialData.getHash();
+    const bool terrainBlend = drawCallState.testCategoryFlags(InstanceCategories::Terrain) &&
+      getActiveTerrainBlendPreset() != nullptr;
+    preCreationHash = XXH64(&terrainBlend, sizeof(terrainBlend), preCreationHash);
     preCreationHash = XXH64(&samplerIndex, sizeof(samplerIndex), preCreationHash);
     preCreationHash = XXH64(&samplerIndex2, sizeof(samplerIndex2), preCreationHash);
     preCreationHash = XXH64(&hasTexcoords, sizeof(hasTexcoords), preCreationHash);
@@ -1942,7 +1996,7 @@ namespace dxvk {
         albedoTextureIsSrgb, emissiveTextureIsSrgb,
         opaqueMaterialData.getSkyLitParticle(),
         renderMaterialData.usesLegacyDefaults(),
-        worldSpaceSecondaryOpacity
+        worldSpaceSecondaryOpacity, terrainBlend
       };
 
       surfaceMaterial.emplace(opaqueSurfaceMaterial);
@@ -2313,6 +2367,7 @@ namespace dxvk {
     m_graphManager.applySceneOverrides(ctx);
 
     m_terrainBaker->prepareSceneData(ctx);
+    prepareTerrainBlend();
 
     auto& textureManager = m_device->getCommon()->getTextureManager();
     m_bindlessResourceManager.prepareSceneData(ctx, textureManager.getTextureTable(), getBufferTable(), getSamplerTable());
