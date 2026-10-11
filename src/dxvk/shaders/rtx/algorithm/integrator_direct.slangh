@@ -109,7 +109,11 @@ void evalNEEPrimary(
   //  is disabled, we must also handle that user choice gracefully.
   const bool pomOpaqueSurfaceEncountered = geometryFlags.pomOpaqueSurfaceEncountered && cb.pomEnableDirectLighting;
 
+#if defined(TERRAIN_BLEND_POM) || defined(TERRAIN_BLEND_SHADOW)
+  const uint sharedSurfaceIndex = uint(SharedSurfaceIndex[pixelCoordinate]);
+#else
   const uint sharedSurfaceIndex = (pomOpaqueSurfaceEncountered || isDiffusionProfileSss) ? uint(SharedSurfaceIndex[pixelCoordinate]) : SURFACE_INDEX_INVALID;
+#endif
 
   VisibilityResult occludedVisibility;
   occludedVisibility.hasOpaqueHit = true;
@@ -122,7 +126,7 @@ void evalNEEPrimary(
       minimalRayInteraction.coneRadius, viewRay.spreadAngle, 1.0, geometryFlags.isViewModel, false,
       sharedSurfaceIndex, SharedTextureCoord[pixelCoordinate],
       isThinOpaqueSubsurface,
-      opaqueSurfaceMaterialInteraction.shadingNormal) :
+      opaqueSurfaceMaterialInteraction.shadingNormal, true, minimalRayInteraction.viewDirection) :
     occludedVisibility;
 
   const bool hasNonSssOpaqueHit = visibility.hasOpaqueHit;

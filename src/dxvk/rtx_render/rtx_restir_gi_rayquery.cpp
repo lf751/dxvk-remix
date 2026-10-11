@@ -36,8 +36,16 @@
 #include "rtx_imgui.h"
 
 #include <rtx_shaders/restir_gi_temporal_reuse.h>
+#include <rtx_shaders/restir_gi_temporal_reuse_terrain_shadow.h>
 #include <rtx_shaders/restir_gi_spatial_reuse.h>
+#include <rtx_shaders/restir_gi_spatial_reuse_terrain_shadow.h>
 #include <rtx_shaders/restir_gi_final_shading.h>
+#include <rtx_shaders/restir_gi_final_shading_terrain_shadow.h>
+
+#define GET_TERRAIN_SHADOW_SHADER_VARIANT(stage, shaderClass, code) \
+  (terrainShadowsEnabled \
+    ? GET_SHADER_VARIANT(stage, shaderClass, code##_terrain_shadow) \
+    : GET_SHADER_VARIANT(stage, shaderClass, code))
 
 namespace dxvk {
 
@@ -78,6 +86,7 @@ namespace dxvk {
         TEXTURE2D(RESTIR_GI_REUSE_BINDING_POSITION_ERROR_INPUT)
         TEXTURE2D(RESTIR_GI_REUSE_BINDING_SHARED_FLAGS_INPUT)
         TEXTURE2D(RESTIR_GI_REUSE_BINDING_SHARED_SURFACE_INDEX_INPUT)
+        TEXTURE2D(RESTIR_GI_REUSE_BINDING_SHARED_TEXTURE_COORD_INPUT)
         TEXTURE2D(RESTIR_GI_REUSE_BINDING_SUBSURFACE_DATA_INPUT)
         TEXTURE2D(RESTIR_GI_REUSE_BINDING_SUBSURFACE_DIFFUSION_PROFILE_DATA_INPUT)
         TEXTURE2DARRAY(RESTIR_GI_REUSE_BINDING_GRADIENTS_INPUT)
@@ -115,6 +124,7 @@ namespace dxvk {
         TEXTURE2D(RESTIR_GI_REUSE_BINDING_POSITION_ERROR_INPUT)
         TEXTURE2D(RESTIR_GI_REUSE_BINDING_SHARED_FLAGS_INPUT)
         TEXTURE2D(RESTIR_GI_REUSE_BINDING_SHARED_SURFACE_INDEX_INPUT)
+        TEXTURE2D(RESTIR_GI_REUSE_BINDING_SHARED_TEXTURE_COORD_INPUT)
         TEXTURE2D(RESTIR_GI_REUSE_BINDING_SUBSURFACE_DATA_INPUT)
         TEXTURE2D(RESTIR_GI_REUSE_BINDING_SUBSURFACE_DIFFUSION_PROFILE_DATA_INPUT)
         TEXTURE2DARRAY(RESTIR_GI_REUSE_BINDING_GRADIENTS_INPUT)
@@ -347,6 +357,10 @@ namespace dxvk {
   }
 
   void DxvkReSTIRGIRayQuery::dispatch(RtxContext* ctx, const Resources::RaytracingOutput& rtOutput) {
+    const auto& terrain = rtOutput.m_raytraceArgs.terrainBlendArgs;
+    const bool terrainShadowsEnabled = terrain.enabled != 0 && terrain.displacementEnabled != 0 &&
+      terrain.displacementStrength > 0.f && terrain.displacementSelfShadowEnabled != 0 &&
+      terrain.displacementShadowStrength > 0.f;
 
     if (!isActive()) {
       return;
@@ -379,6 +393,7 @@ namespace dxvk {
       ctx->bindResourceView(RESTIR_GI_REUSE_BINDING_HIT_GEOMETRY_INPUT, m_restirGIHitGeometry.view, nullptr);
       ctx->bindResourceView(RESTIR_GI_REUSE_BINDING_POSITION_ERROR_INPUT, rtOutput.m_primaryPositionError.view, nullptr);
       ctx->bindResourceView(RESTIR_GI_REUSE_BINDING_SHARED_SURFACE_INDEX_INPUT, rtOutput.m_sharedSurfaceIndex.view(Resources::AccessType::Read), nullptr);
+      ctx->bindResourceView(RESTIR_GI_REUSE_BINDING_SHARED_TEXTURE_COORD_INPUT, rtOutput.m_sharedTextureCoord.view, nullptr);
       ctx->bindResourceView(RESTIR_GI_REUSE_BINDING_SUBSURFACE_DATA_INPUT, rtOutput.m_sharedSubsurfaceData.view, nullptr);
       ctx->bindResourceView(RESTIR_GI_REUSE_BINDING_SUBSURFACE_DIFFUSION_PROFILE_DATA_INPUT, rtOutput.m_sharedSubsurfaceDiffusionProfileData.view, nullptr);
       ctx->bindResourceView(RESTIR_GI_REUSE_BINDING_SHARED_FLAGS_INPUT, rtOutput.m_sharedFlags.view, nullptr);
@@ -388,7 +403,8 @@ namespace dxvk {
       ctx->bindResourceBuffer(RESTIR_GI_REUSE_BINDING_RESERVOIR_INPUT_OUTPUT, DxvkBufferSlice(m_restirGIReservoirBuffer, 0, m_restirGIReservoirBuffer->info().size));
       ctx->bindResourceView(RESTIR_GI_REUSE_BINDING_LAST_GBUFFER_INPUT_OUTPUT, rtOutput.m_gbufferLast.view, nullptr);
 
-      ctx->bindShader(VK_SHADER_STAGE_COMPUTE_BIT, ReSTIRGITemporalReuseShader::getShader());
+      ctx->bindShader(VK_SHADER_STAGE_COMPUTE_BIT, GET_TERRAIN_SHADOW_SHADER_VARIANT(
+        VK_SHADER_STAGE_COMPUTE_BIT, ReSTIRGITemporalReuseShader, restir_gi_temporal_reuse));
       ctx->dispatch(workgroups.width, workgroups.height, workgroups.depth);
     }
 
@@ -411,6 +427,7 @@ namespace dxvk {
       ctx->bindResourceView(RESTIR_GI_REUSE_BINDING_HIT_GEOMETRY_INPUT, m_restirGIHitGeometry.view, nullptr);
       ctx->bindResourceView(RESTIR_GI_REUSE_BINDING_POSITION_ERROR_INPUT, rtOutput.m_primaryPositionError.view, nullptr);
       ctx->bindResourceView(RESTIR_GI_REUSE_BINDING_SHARED_SURFACE_INDEX_INPUT, rtOutput.m_sharedSurfaceIndex.view(Resources::AccessType::Read), nullptr);
+      ctx->bindResourceView(RESTIR_GI_REUSE_BINDING_SHARED_TEXTURE_COORD_INPUT, rtOutput.m_sharedTextureCoord.view, nullptr);
       ctx->bindResourceView(RESTIR_GI_REUSE_BINDING_SUBSURFACE_DATA_INPUT, rtOutput.m_sharedSubsurfaceData.view, nullptr);
       ctx->bindResourceView(RESTIR_GI_REUSE_BINDING_SUBSURFACE_DIFFUSION_PROFILE_DATA_INPUT, rtOutput.m_sharedSubsurfaceDiffusionProfileData.view, nullptr);
       ctx->bindResourceView(RESTIR_GI_REUSE_BINDING_SHARED_FLAGS_INPUT, rtOutput.m_sharedFlags.view, nullptr);
@@ -420,7 +437,8 @@ namespace dxvk {
       ctx->bindResourceBuffer(RESTIR_GI_REUSE_BINDING_RESERVOIR_INPUT_OUTPUT, DxvkBufferSlice(m_restirGIReservoirBuffer, 0, m_restirGIReservoirBuffer->info().size));
       ctx->bindResourceView(RESTIR_GI_REUSE_BINDING_LAST_GBUFFER_INPUT_OUTPUT, rtOutput.m_gbufferLast.view, nullptr);
 
-      ctx->bindShader(VK_SHADER_STAGE_COMPUTE_BIT, ReSTIRGISpatialReuseShader::getShader());
+      ctx->bindShader(VK_SHADER_STAGE_COMPUTE_BIT, GET_TERRAIN_SHADOW_SHADER_VARIANT(
+        VK_SHADER_STAGE_COMPUTE_BIT, ReSTIRGISpatialReuseShader, restir_gi_spatial_reuse));
       ctx->dispatch(workgroups.width, workgroups.height, workgroups.depth);
     }
 
@@ -454,8 +472,11 @@ namespace dxvk {
       ctx->bindResourceBuffer(RESTIR_GI_FINAL_SHADING_BINDING_RESTIR_GI_RESERVOIR_OUTPUT, DxvkBufferSlice(m_restirGIReservoirBuffer, 0, m_restirGIReservoirBuffer->info().size));
       ctx->bindResourceView(RESTIR_GI_FINAL_SHADING_BINDING_BSDF_FACTOR2_OUTPUT, m_bsdfFactor2.view, nullptr);
 
-      ctx->bindShader(VK_SHADER_STAGE_COMPUTE_BIT, ReSTIRGIFinalShadingShader::getShader());
+      ctx->bindShader(VK_SHADER_STAGE_COMPUTE_BIT, GET_TERRAIN_SHADOW_SHADER_VARIANT(
+        VK_SHADER_STAGE_COMPUTE_BIT, ReSTIRGIFinalShadingShader, restir_gi_final_shading));
       ctx->dispatch(workgroups.width, workgroups.height, workgroups.depth);
     }
   }
 }
+
+#undef GET_TERRAIN_SHADOW_SHADER_VARIANT

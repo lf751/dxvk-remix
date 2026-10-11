@@ -21,11 +21,199 @@
 */
 #pragma once
 
+vec3 terrainProjectionWeights(vec3 normal) {
+  const vec3 weights = pow(abs(normal), vec3(4.f));
+  return weights / max(dot(weights, vec3(1.f)), 1e-6f);
+}
+
+void terrainProjectionBasis(vec3 normal, uint axis, out vec3 tangent, out vec3 bitangent) {
+  const float side = normal[axis] < 0.f ? -1.f : 1.f;
+  tangent = axis == 0 ? vec3(0.f, 0.f, 1.f) : vec3(1.f, 0.f, 0.f);
+  bitangent = axis == 0 ? vec3(0.f, -side, 0.f) :
+    (axis == 1 ? vec3(0.f, 0.f, -side) : vec3(0.f, side, 0.f));
+}
+
+float terrainLayerHeight(TerrainBlendLayerArgs layer, vec3 position, vec3 normal, float lod) {
+  if (layer.heightTextureIndex == BINDING_INDEX_INVALID) {
+    return 0.5f;
+  }
+  const vec3 projections = terrainProjectionWeights(normal);
+  float height = 0.f;
+  for (uint axis = 0; axis < 3; ++axis) {
+    if (projections[axis] == 0.f) {
+      continue;
+    }
+    vec3 tangent, bitangent;
+    terrainProjectionBasis(normal, axis, tangent, bitangent);
+    const vec2 uv = vec2(dot(position, tangent), dot(position, bitangent)) / layer.unitsPerRepeat;
+    height += textures[nonuniformEXT(layer.heightTextureIndex)]
+      .SampleLevel(samplers[nonuniformEXT(layer.samplerIndex)], uv, lod).r * projections[axis];
+  }
+  return sanitize(height, 0.5f);
+}
+
+float terrainCoverageDirt(TerrainBlendArgs args, vec3 position) {
+  if (args.dirtStrength <= 0.f || args.coverageTextureIndex == BINDING_INDEX_INVALID) {
+    return 0.f;
+  }
+  // Matches the game's secondary grass opacity coordinates, independently of terrain tiling.
+  const vec2 uv = position.xz * (1.f / 1024.f);
+  const float radius = args.dirtWidth * (1.f / 1024.f);
+  float coverage = 0.f;
+  for (int y = -1; y <= 1; ++y) {
+    for (int x = -1; x <= 1; ++x) {
+      coverage += textures[nonuniformEXT(args.coverageTextureIndex)]
+        .SampleLevel(samplers[nonuniformEXT(args.coverageSamplerIndex)], uv + vec2(x, y) * radius, 0).a;
+    }
+  }
+  return saturate((1.f - coverage * (1.f / 9.f)) * 2.f) * args.dirtStrength;
+}
+
+vec4 terrainBaseWeights(vec3 position, vec3 normal) {
+  const TerrainBlendArgs args = cb.terrainBlendArgs;
+  const vec3 up = args.zUp != 0 ? vec3(0.f, 0.f, 1.f) : vec3(0.f, 1.f, 0.f);
+  const float worldElevation = dot(position, up) * (args.flipElevation != 0 ? -1.f : 1.f);
+  const float elevation = smoothstep(args.lowElevation, args.highElevation, worldElevation);
+  const float slope = saturate((abs(dot(normal, up)) - args.slopeCosStart) / (args.slopeCosEnd - args.slopeCosStart));
+  const float slopeRock = slope * slope * (3.f - 2.f * slope);
+  const float elevationRock = smoothstep(args.rockLowElevation, args.rockHighElevation, worldElevation);
+  const float rock = args.rockMode == 0 ? slopeRock : (args.rockMode == 1 ? elevationRock :
+    1.f - (1.f - slopeRock) * (1.f - elevationRock));
+  const float grass = elevation * (1.f - rock);
+  const float coverage = terrainCoverageDirt(args, position) *
+    smoothstep(args.dirtMinElevation, args.dirtMinElevation + args.dirtElevationFadeWidth, worldElevation);
+  return vec4(grass * (1.f - coverage), (1.f - elevation) * (1.f - rock), rock, grass * coverage);
+}
+
+vec4 terrainPlacementWeights(vec3 position, vec3 normal, float lod) {
+  const TerrainBlendArgs args = cb.terrainBlendArgs;
+  const vec4 base = terrainBaseWeights(position, normal);
+  vec3 weights = vec3(base.x + base.w, base.y, base.z);
+  vec3 heights = vec3(0.f);
+  if (args.heightBlendStrength > 0.f) {
+    for (uint layer = 0; layer < 3; ++layer) {
+      if (weights[layer] > 0.f) {
+        heights[layer] = terrainLayerHeight(args.layers[layer], position, normal, lod);
+      }
+    }
+    const vec3 scores = weights + heights * args.heightBlendStrength;
+    const float peak = max(max(weights.x > 0.f ? scores.x : -1e10f, weights.y > 0.f ? scores.y : -1e10f),
+      weights.z > 0.f ? scores.z : -1e10f);
+    weights *= max(scores - peak + args.heightBlendWidth, vec3(0.f));
+    weights /= max(dot(weights, vec3(1.f)), 1e-6f);
+  }
+  // Dirt transfers only the final grass contribution; sand and rock remain unchanged.
+  const float coverage = base.w / max(base.x + base.w, 1e-6f);
+  float dirt = weights.x * coverage;
+  if (dirt > 0.f && args.heightBlendStrength > 0.f) {
+    vec2 pair = vec2(1.f - coverage, coverage);
+    const float dirtHeight = terrainLayerHeight(args.layers[3], position, normal, lod);
+    const vec2 scores = pair + vec2(heights.x, dirtHeight) * args.heightBlendStrength;
+    const float peak = max(pair.x > 0.f ? scores.x : -1e10f, scores.y);
+    pair *= max(scores - peak + args.heightBlendWidth, vec2(0.f));
+    pair /= max(pair.x + pair.y, 1e-6f);
+    dirt = weights.x * pair.y;
+  }
+  return vec4(weights.x - dirt, weights.y, weights.z, dirt);
+}
+
+#if defined(TERRAIN_BLEND_POM) || defined(TERRAIN_BLEND_SHADOW)
+vec2 terrainReliefBounds(vec4 weights) {
+  const TerrainBlendArgs args = cb.terrainBlendArgs;
+  vec4 activeWeights = weights;
+  for (uint layer = 0; layer < 4; ++layer) {
+    if (args.layers[layer].heightTextureIndex == BINDING_INDEX_INVALID) {
+      activeWeights[layer] = 0.f;
+    }
+  }
+  return vec2(-dot(activeWeights, args.displacementInward), dot(activeWeights, args.displacementOutward)) *
+    args.displacementStrength;
+}
+
+float terrainReliefHeight(vec3 position, vec3 normal, vec4 weights, float lod) {
+  const TerrainBlendArgs args = cb.terrainBlendArgs;
+  float height = 0.f;
+  for (uint layer = 0; layer < 4; ++layer) {
+    if (weights[layer] <= 0.f || args.layers[layer].heightTextureIndex == BINDING_INDEX_INVALID) {
+      continue;
+    }
+    const float source = terrainLayerHeight(args.layers[layer], position, normal, lod);
+    const float remapped = saturate((source - args.displacementHeightMin[layer]) /
+      (args.displacementHeightMax[layer] - args.displacementHeightMin[layer]));
+    height += weights[layer] * (remapped * (args.displacementInward[layer] + args.displacementOutward[layer]) -
+      args.displacementInward[layer]);
+  }
+  return sanitize(height * args.displacementStrength, 0.f);
+}
+
+float terrainReliefIntersection(vec3 position, vec3 normal, vec3 outwardView, vec4 weights, float lod) {
+  const TerrainBlendArgs args = cb.terrainBlendArgs;
+  const float facing = dot(outwardView, normal);
+  const vec2 bounds = terrainReliefBounds(weights);
+  if (facing <= 1e-4f || bounds.y - bounds.x <= 0.f) {
+    return 0.f;
+  }
+  float previousDistance = bounds.y / facing;
+  float previousGap = previousDistance * facing -
+    terrainReliefHeight(position + outwardView * previousDistance, normal, weights, lod);
+  if (previousGap <= 0.f) {
+    return previousDistance;
+  }
+  for (uint step = 1; step <= args.displacementMaxIterations; ++step) {
+    const float distance = lerp(bounds.y, bounds.x, float(step) / float(args.displacementMaxIterations)) / facing;
+    const float gap = distance * facing - terrainReliefHeight(position + outwardView * distance, normal, weights, lod);
+    if (gap <= 0.f) {
+      const float intersection = saturate(previousGap / max(previousGap - gap, 1e-8f));
+      return sanitize(lerp(previousDistance, distance, intersection), 0.f);
+    }
+    previousDistance = distance;
+    previousGap = gap;
+  }
+  return previousDistance;
+}
+
+float terrainBlendShadowThroughput(MinimalSurfaceInteraction interaction, vec3 lightDirection,
+    vec3 outwardViewDirection, vec2 terrainHitData) {
+  const TerrainBlendArgs args = cb.terrainBlendArgs;
+  if (args.enabled == 0 || args.displacementEnabled == 0 || args.displacementSelfShadowEnabled == 0 ||
+      args.displacementShadowStrength <= 0.f || args.displacementStrength <= 0.f) {
+    return 1.f;
+  }
+  const vec3 normal = interaction.geometryNormal;
+  const float facing = dot(normal, lightDirection);
+  if (facing <= 1e-4f) {
+    return 1.f;
+  }
+  const vec3 anchor = interaction.position + args.worldOffset.xyz;
+  const float lod = max(terrainHitData.y, 0.f);
+  const float grazingFade = smoothstep(0.05f, 0.2f, dot(outwardViewDirection, normal));
+  const vec4 weights = terrainPlacementWeights(anchor, normal, lod) * grazingFade;
+  const vec3 virtualHit = anchor + outwardViewDirection * terrainHitData.x;
+  const vec2 bounds = terrainReliefBounds(weights);
+  const float surfaceHeight = terrainReliefHeight(virtualHit, normal, weights, lod);
+  const float remaining = bounds.y - surfaceHeight;
+  if (remaining <= 0.f) {
+    return 1.f;
+  }
+  // Compare against the sampled origin height so interpolation error cannot shadow a flat field.
+  const float epsilon = max(1e-5f, (bounds.y - bounds.x) * 1e-5f);
+  const float rayLength = remaining / facing;
+  for (uint step = 1; step <= args.displacementShadowMaxIterations; ++step) {
+    const float distance = rayLength * float(step) / float(args.displacementShadowMaxIterations);
+    const float rayHeight = surfaceHeight + facing * distance;
+    if (terrainReliefHeight(virtualHit + lightDirection * distance, normal, weights, lod) > rayHeight + epsilon) {
+      return 1.f - args.displacementShadowStrength;
+    }
+  }
+  return 1.f;
+}
+#endif
+
+#ifdef TERRAIN_BLEND
 struct TerrainLayerSample {
   vec3 albedo;
   vec3 normal;
   float roughness;
-  float height;
 };
 
 vec4 terrainSampleTexture(uint textureIndex, uint samplerIndex, vec2 uv, vec2 dx, vec2 dy, vec4 fallback) {
@@ -35,40 +223,61 @@ vec4 terrainSampleTexture(uint textureIndex, uint samplerIndex, vec2 uv, vec2 dx
   return textures[nonuniformEXT(textureIndex)].SampleGrad(samplers[nonuniformEXT(samplerIndex)], uv, dx, dy);
 }
 
+float terrainHeightLod(SurfaceInteraction interaction) {
+  const TerrainBlendArgs args = cb.terrainBlendArgs;
+  float footprintSquared = 0.f;
+  const vec3 projections = terrainProjectionWeights(interaction.geometryNormal);
+  const vec4 baseWeights = terrainBaseWeights(interaction.position + args.worldOffset.xyz, interaction.geometryNormal);
+  for (uint layer = 0; layer < 4; ++layer) {
+    if ((layer == 0 ? baseWeights.x + baseWeights.w : baseWeights[layer]) <= 0.f ||
+        args.layers[layer].heightTextureIndex == BINDING_INDEX_INVALID) {
+      continue;
+    }
+    uint width, height;
+    textures[nonuniformEXT(args.layers[layer].heightTextureIndex)].GetDimensions(width, height);
+    for (uint axis = 0; axis < 3; ++axis) {
+      if (projections[axis] == 0.f) {
+        continue;
+      }
+      vec3 tangent, bitangent;
+      terrainProjectionBasis(interaction.geometryNormal, axis, tangent, bitangent);
+      const vec2 texelScale = vec2(width, height) / args.layers[layer].unitsPerRepeat;
+      const vec2 dx = vec2(dot(interaction.worldPositionGradientX, tangent), dot(interaction.worldPositionGradientX, bitangent)) * texelScale;
+      const vec2 dy = vec2(dot(interaction.worldPositionGradientY, tangent), dot(interaction.worldPositionGradientY, bitangent)) * texelScale;
+      footprintSquared = max(footprintSquared, max(dot(dx, dx), dot(dy, dy)));
+    }
+  }
+  // One explicit LOD is retained with the virtual hit and reused by every shadow march.
+  return max(0.f, 0.5f * log2(max(footprintSquared, 1e-8f)) + cb.totalMipBias);
+}
+
 TerrainLayerSample terrainSampleLayer(TerrainBlendLayerArgs layer, SurfaceInteraction interaction, vec3 position) {
   const vec3 n = interaction.geometryNormal;
-  vec3 projectionWeights = pow(abs(n), vec3(4.f));
-  projectionWeights /= max(dot(projectionWeights, vec3(1.f)), 1e-6f);
+  const vec3 projectionWeights = terrainProjectionWeights(n);
   const float scale = rcp(max(layer.unitsPerRepeat, 1e-4f));
-  const vec3 worldDx = interaction.worldPositionGradientX;
-  const vec3 worldDy = interaction.worldPositionGradientY;
   TerrainLayerSample result;
   result.albedo = 0.f;
   result.normal = n;
   result.roughness = 0.f;
-  result.height = 0.f;
   for (uint axis = 0; axis < 3; ++axis) {
     const float weight = projectionWeights[axis];
     if (weight == 0.f) {
       continue;
     }
-    const float side = n[axis] < 0.f ? -1.f : 1.f;
-    const vec3 tangent = axis == 0 ? vec3(0.f, 0.f, 1.f) : vec3(1.f, 0.f, 0.f);
-    const vec3 bitangent = axis == 0 ? vec3(0.f, -side, 0.f) : (axis == 1 ? vec3(0.f, 0.f, -side) : vec3(0.f, side, 0.f));
+    vec3 tangent, bitangent;
+    terrainProjectionBasis(n, axis, tangent, bitangent);
     const vec2 uv = vec2(dot(position, tangent), dot(position, bitangent)) * scale;
-    const vec2 dx = vec2(dot(worldDx, tangent), dot(worldDx, bitangent)) * scale;
-    const vec2 dy = vec2(dot(worldDy, tangent), dot(worldDy, bitangent)) * scale;
+    const vec2 dx = vec2(dot(interaction.worldPositionGradientX, tangent), dot(interaction.worldPositionGradientX, bitangent)) * scale;
+    const vec2 dy = vec2(dot(interaction.worldPositionGradientY, tangent), dot(interaction.worldPositionGradientY, bitangent)) * scale;
     vec3 albedo = terrainSampleTexture(layer.albedoTextureIndex, layer.samplerIndex, uv, dx, dy, layer.albedoConstant).rgb;
     if (layer.albedoTextureIndex == BINDING_INDEX_INVALID || layer.albedoIsSrgb == 0) {
       albedo = gammaToLinear(albedo);
     }
     result.albedo += albedo * weight;
     result.roughness += terrainSampleTexture(layer.roughnessTextureIndex, layer.samplerIndex, uv, dx, dy, vec4(layer.roughnessConstant)).r * weight;
-    result.height += terrainSampleTexture(layer.heightTextureIndex, layer.samplerIndex, uv, dx, dy, vec4(0.5f)).r * weight;
     if (layer.normalTextureIndex != BINDING_INDEX_INVALID) {
       const vec2 encoded = terrainSampleTexture(layer.normalTextureIndex, layer.samplerIndex, uv, dx, dy, vec4(0.f)).xy;
       const vec3 detail = unsignedOctahedralToHemisphereDirection(encoded, cb.opaqueMaterialArgs.normalIntensity);
-      // A neutral normal leaves the geometric normal unchanged on every projection.
       result.normal += weight * (tangent * detail.x + bitangent * detail.y + n * (detail.z - 1.f));
     }
   }
@@ -76,65 +285,41 @@ TerrainLayerSample terrainSampleLayer(TerrainBlendLayerArgs layer, SurfaceIntera
   return result;
 }
 
-float terrainCoverageSand(TerrainBlendArgs args, vec3 position) {
-  if (args.coverageSandStrength <= 0.f || args.coverageTextureIndex == BINDING_INDEX_INVALID) {
-    return 0.f;
-  }
-  // Matches the game's secondary grass opacity coordinates, independently of terrain tiling.
-  const vec2 uv = position.xz * (1.f / 1024.f);
-  const float radius = args.coverageSandWidth * (1.f / 1024.f);
-  float coverage = 0.f;
-  for (int y = -1; y <= 1; ++y) {
-    for (int x = -1; x <= 1; ++x) {
-      coverage += textures[nonuniformEXT(args.coverageTextureIndex)]
-        .SampleLevel(samplers[nonuniformEXT(args.coverageSamplerIndex)], uv + vec2(x, y) * radius, 0).a;
-    }
-  }
-  return saturate((1.f - coverage * (1.f / 9.f)) * 2.f) * args.coverageSandStrength;
-}
-
-OpaqueSurfaceMaterialInteraction terrainBlendInteractionCreate(Surface surface, SurfaceInteraction interaction, MinimalRayInteraction ray) {
+OpaqueSurfaceMaterialInteraction terrainBlendInteractionCreate(Surface surface, inout SurfaceInteraction interaction, MinimalRayInteraction ray) {
   const TerrainBlendArgs args = cb.terrainBlendArgs;
   const vec3 position = interaction.position + args.worldOffset.xyz;
-  const vec3 up = args.zUp != 0 ? vec3(0.f, 0.f, 1.f) : vec3(0.f, 1.f, 0.f);
-  const float worldElevation = dot(position, up) * (args.flipElevation != 0 ? -1.f : 1.f);
-  const float elevation = smoothstep(args.lowElevation, args.highElevation, worldElevation);
-  const float slope = saturate((abs(dot(interaction.geometryNormal, up)) - args.slopeCosStart) / (args.slopeCosEnd - args.slopeCosStart));
-  const float slopeRock = slope * slope * (3.f - 2.f * slope);
-  const float elevationRock = smoothstep(args.rockLowElevation, args.rockHighElevation, worldElevation);
-  const float rock = args.rockMode == 0 ? slopeRock : (args.rockMode == 1 ? elevationRock :
-    1.f - (1.f - slopeRock) * (1.f - elevationRock));
-  vec3 weights = vec3(elevation * (1.f - rock), (1.f - elevation) * (1.f - rock), rock);
-  const float coverageSand = terrainCoverageSand(args, position);
-  weights.y += weights.x * coverageSand;
-  weights.x *= 1.f - coverageSand;
-  TerrainLayerSample layers[3];
-  vec3 heights;
-  for (uint layer = 0; layer < 3; ++layer) {
-    layers[layer] = (TerrainLayerSample) 0;
-    if (weights[layer] > 0.f) {
-      layers[layer] = terrainSampleLayer(args.layers[layer], interaction, position);
-    }
-    heights[layer] = layers[layer].height;
+  const float lod = terrainHeightLod(interaction);
+  const vec4 weights = terrainPlacementWeights(position, interaction.geometryNormal, lod);
+  vec3 virtualPosition = position;
+  bool hasRelief = false;
+#ifdef TERRAIN_BLEND_POM
+  if (args.displacementEnabled != 0 && args.displacementStrength > 0.f && dot(ray.viewDirection, interaction.geometryNormal) > 1e-4f) {
+    const float grazingFade = smoothstep(0.05f, 0.2f, dot(ray.viewDirection, interaction.geometryNormal));
+    const float distance = terrainReliefIntersection(position, interaction.geometryNormal, ray.viewDirection, weights * grazingFade, lod);
+    virtualPosition += ray.viewDirection * distance;
+    interaction.textureCoordinates = vec2(distance, lod);
+    hasRelief = true;
   }
-  if (args.heightBlendStrength > 0.f) {
-    const vec3 scores = weights + heights * args.heightBlendStrength;
-    const float peak = max(max(weights.x > 0.f ? scores.x : -1e10f, weights.y > 0.f ? scores.y : -1e10f), weights.z > 0.f ? scores.z : -1e10f);
-    weights *= max(scores - peak + args.heightBlendWidth, vec3(0.f));
-    weights /= max(dot(weights, vec3(1.f)), 1e-6f);
-  }
+#endif
   vec3 albedo = 0.f;
   vec3 normal = 0.f;
   float roughness = 0.f;
-  for (uint layer = 0; layer < 3; ++layer) {
-    albedo += weights[layer] * layers[layer].albedo;
-    normal += weights[layer] * layers[layer].normal;
-    roughness += weights[layer] * layers[layer].roughness;
+  for (uint layer = 0; layer < 4; ++layer) {
+    if (weights[layer] <= 0.f) {
+      continue;
+    }
+    const TerrainLayerSample sample = terrainSampleLayer(args.layers[layer], interaction, virtualPosition);
+    albedo += weights[layer] * sample.albedo;
+    normal += weights[layer] * sample.normal;
+    roughness += weights[layer] * sample.roughness;
   }
   normal = normalize(normal);
   albedo = saturate(albedo * cb.opaqueMaterialArgs.albedoScale + cb.opaqueMaterialArgs.albedoBias);
   roughness = saturate(roughness * cb.opaqueMaterialArgs.roughnessScale + cb.opaqueMaterialArgs.roughnessBias);
   OpaqueSurfaceMaterialInteraction result = (OpaqueSurfaceMaterialInteraction) 0;
+  if (hasRelief) {
+    result.flags |= OPAQUE_SURFACE_MATERIAL_INTERACTION_FLAG_TERRAIN_HEIGHT;
+  }
   result.shadingNormal = getBentNormal(interaction.geometryNormal, normal, -ray.viewDirection);
   result.normalDetail = saturate(1.f - dot(interaction.geometryNormal, normal));
   result.opacity = 1.f;
@@ -143,3 +328,4 @@ OpaqueSurfaceMaterialInteraction terrainBlendInteractionCreate(Surface surface, 
   calcRoughness(roughness, 0.f, result.isotropicRoughness, result.anisotropicRoughness);
   return result;
 }
+#endif

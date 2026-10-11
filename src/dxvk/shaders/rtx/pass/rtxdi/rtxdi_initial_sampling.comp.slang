@@ -26,6 +26,14 @@
 //!variant rtxdi_initial_sampling_no_portals.comp
 //!>       RTXDI_NO_PORTALS=1
 
+//!variant rtxdi_initial_sampling_terrain_shadow.comp
+//!>       RTXDI_NO_PORTALS=0
+//!>       TERRAIN_BLEND TERRAIN_BLEND_SHADOW
+
+//!variant rtxdi_initial_sampling_no_portals_terrain_shadow.comp
+//!>       RTXDI_NO_PORTALS=1
+//!>       TERRAIN_BLEND TERRAIN_BLEND_SHADOW
+
 //!end-variants
 
 #define USE_32BIT_RAY_DIRECTION 1

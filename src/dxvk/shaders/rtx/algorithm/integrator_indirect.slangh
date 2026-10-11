@@ -1411,6 +1411,33 @@ void integrateIndirectPath(
       }
     }
 
+#ifdef TERRAIN_BLEND_POM
+    if (pathState.continuePath && cb.terrainBlendArgs.displacementSelfShadowEnabled != 0 &&
+        cb.terrainBlendArgs.displacementShadowStrength > 0.f)
+    {
+      const uint terrainSurfaceIndex = uint(SharedSurfaceIndex[gbufferPixelCoordinate]);
+      if (terrainSurfaceIndex != SURFACE_INDEX_INVALID)
+      {
+        const MemoryPolymorphicSurfaceMaterial memoryMaterial = surfaceMaterials[terrainSurfaceIndex];
+        if (memoryMaterial.isOpaque())
+        {
+          const OpaqueSurfaceMaterial material = opaqueSurfaceMaterialCreate(memoryMaterial, true);
+          if ((material.flags & OPAQUE_SURFACE_MATERIAL_FLAG_TERRAIN_BLEND) != 0)
+          {
+            const MinimalSurfaceInteraction interaction = minimalSurfaceInteractionReadFromGBuffer(
+              gbufferPixelCoordinate, indirectPathTextures.PrimaryWorldPositionWorldTriangleNormal);
+            const vec3 outwardViewDirection = signedOctahedralToSphereDirection(PrimaryViewDirection[gbufferPixelCoordinate]);
+            const float attenuation = terrainBlendShadowThroughput(interaction, pathState.direction,
+              outwardViewDirection, SharedTextureCoord[gbufferPixelCoordinate]);
+            accumulateThroughput(pathState, attenuation);
+            pathState.continuePath = any(pathState.throughput > 0.001h);
+            pathState.continueResolving = pathState.continuePath;
+          }
+        }
+      }
+    }
+#endif
+
 #ifdef OPAQUE_MATERIAL_USE_POM
     // Set initial POM material and texcoords from textures.
     if (pathState.continuePath && cb.pomEnableIndirectLighting && geometryFlags.pomOpaqueSurfaceEncountered)

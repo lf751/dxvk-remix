@@ -38,21 +38,34 @@ namespace dxvk {
 
   struct TerrainBlendPreset {
     bool enabled = true;
+    bool smoothNormals = false;
     bool flipElevation = false;
     TerrainRockMode rockMode = TerrainRockMode::Slope;
     float rockLowElevation = 4.0f;
     float rockHighElevation = 8.0f;
-    // Layer order is grass, sand, rock. All lengths are in game world units.
-    std::shared_ptr<MaterialData> materials[3];
-    float unitsPerRepeat[3] = { 8.0f, 8.0f, 8.0f };
+    // Layer order is grass, sand, rock, dirt. All lengths are in game world units.
+    std::shared_ptr<MaterialData> materials[4];
+    float unitsPerRepeat[4] = { 8.0f, 8.0f, 8.0f, 8.0f };
     float lowElevation = 0.0f;
     float highElevation = 4.0f;
     float slopeStartDegrees = 30.0f;
     float slopeEndDegrees = 55.0f;
     float heightBlendStrength = 0.2f;
     float heightBlendWidth = 0.2f;
-    float coverageSandStrength = 0.0f;
-    float coverageSandWidth = 2.0f;
+    float dirtStrength = 0.0f;
+    float dirtWidth = 2.0f;
+    float dirtMinElevation = 0.0f;
+    float dirtElevationFadeWidth = 1.0f;
+    bool displacementEnabled = false;
+    float displacementStrength = 1.0f;
+    uint32_t displacementMaxIterations = 64;
+    float displacementInward[4] = { 0.1f, 0.1f, 0.1f, 0.1f };
+    float displacementOutward[4] = {};
+    float displacementHeightMin[4] = {};
+    float displacementHeightMax[4] = { 1.f, 1.f, 1.f, 1.f };
+    bool displacementSelfShadowEnabled = true;
+    float displacementShadowStrength = 1.f;
+    uint32_t displacementShadowMaxIterations = 32;
   };
 
   class DxvkContext;

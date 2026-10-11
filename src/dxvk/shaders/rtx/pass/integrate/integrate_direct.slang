@@ -36,6 +36,21 @@
 //!variant integrate_direct_nrc_rayquery_raygen.rgen
 //!>       RAY_PIPELINE ENABLE_NRC=1
 
+//!variant integrate_direct_rayquery_terrain_shadow.comp
+//!>       TERRAIN_BLEND TERRAIN_BLEND_SHADOW
+
+//!variant integrate_direct_rayquery_raygen_terrain_shadow.rgen
+//!>       RAY_PIPELINE
+//!>       TERRAIN_BLEND TERRAIN_BLEND_SHADOW
+
+//!variant integrate_direct_nrc_rayquery_terrain_shadow.comp
+//!>       ENABLE_NRC=1
+//!>       TERRAIN_BLEND TERRAIN_BLEND_SHADOW
+
+//!variant integrate_direct_nrc_rayquery_raygen_terrain_shadow.rgen
+//!>       RAY_PIPELINE ENABLE_NRC=1
+//!>       TERRAIN_BLEND TERRAIN_BLEND_SHADOW
+
 //!end-variants
 #define ATMOSPHERE_AVAILABLE
 

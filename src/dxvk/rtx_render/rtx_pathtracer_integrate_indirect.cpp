@@ -39,70 +39,102 @@
 
 #include <rtx_shaders/integrate_indirect_raygen_neeCache.h>
 #include <rtx_shaders/integrate_indirect_raygen_neeCache_terrain.h>
+#include <rtx_shaders/integrate_indirect_raygen_neeCache_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_raygen_ser_neeCache.h>
 #include <rtx_shaders/integrate_indirect_raygen_ser_neeCache_terrain.h>
+#include <rtx_shaders/integrate_indirect_raygen_ser_neeCache_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_rayquery_raygen_neeCache.h>
 #include <rtx_shaders/integrate_indirect_rayquery_raygen_neeCache_terrain.h>
+#include <rtx_shaders/integrate_indirect_rayquery_raygen_neeCache_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_rayquery_raygen.h>
 #include <rtx_shaders/integrate_indirect_rayquery_raygen_terrain.h>
+#include <rtx_shaders/integrate_indirect_rayquery_raygen_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_raygen.h>
 #include <rtx_shaders/integrate_indirect_raygen_terrain.h>
+#include <rtx_shaders/integrate_indirect_raygen_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_raygen_ser.h>
 #include <rtx_shaders/integrate_indirect_raygen_ser_terrain.h>
+#include <rtx_shaders/integrate_indirect_raygen_ser_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_raygen_nrc_neeCache.h>
 #include <rtx_shaders/integrate_indirect_raygen_nrc_neeCache_terrain.h>
+#include <rtx_shaders/integrate_indirect_raygen_nrc_neeCache_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_raygen_ser_nrc_neeCache.h>
 #include <rtx_shaders/integrate_indirect_raygen_ser_nrc_neeCache_terrain.h>
+#include <rtx_shaders/integrate_indirect_raygen_ser_nrc_neeCache_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_rayquery_raygen_nrc_neeCache.h>
 #include <rtx_shaders/integrate_indirect_rayquery_raygen_nrc_neeCache_terrain.h>
+#include <rtx_shaders/integrate_indirect_rayquery_raygen_nrc_neeCache_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_rayquery_raygen_nrc.h>
 #include <rtx_shaders/integrate_indirect_rayquery_raygen_nrc_terrain.h>
+#include <rtx_shaders/integrate_indirect_rayquery_raygen_nrc_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_raygen_nrc.h>
 #include <rtx_shaders/integrate_indirect_raygen_nrc_terrain.h>
+#include <rtx_shaders/integrate_indirect_raygen_nrc_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_raygen_ser_nrc.h>
 #include <rtx_shaders/integrate_indirect_raygen_ser_nrc_terrain.h>
+#include <rtx_shaders/integrate_indirect_raygen_ser_nrc_terrain_pom.h>
 
 #include <rtx_shaders/integrate_indirect_rayquery_neeCache.h>
 #include <rtx_shaders/integrate_indirect_rayquery_neeCache_terrain.h>
+#include <rtx_shaders/integrate_indirect_rayquery_neeCache_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_rayquery.h>
 #include <rtx_shaders/integrate_indirect_rayquery_terrain.h>
+#include <rtx_shaders/integrate_indirect_rayquery_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_rayquery_nrc_neeCache.h>
 #include <rtx_shaders/integrate_indirect_rayquery_nrc_neeCache_terrain.h>
+#include <rtx_shaders/integrate_indirect_rayquery_nrc_neeCache_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_rayquery_nrc.h>
 #include <rtx_shaders/integrate_indirect_rayquery_nrc_terrain.h>
+#include <rtx_shaders/integrate_indirect_rayquery_nrc_terrain_pom.h>
 
 #include <rtx_shaders/integrate_indirect_material_opaque_translucent_closestHit.h>
 #include <rtx_shaders/integrate_indirect_material_opaque_translucent_closestHit_terrain.h>
+#include <rtx_shaders/integrate_indirect_material_opaque_translucent_closestHit_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_material_rayPortal_closestHit.h>
 #include <rtx_shaders/integrate_indirect_material_rayportal_closestHit_terrain.h>
+#include <rtx_shaders/integrate_indirect_material_rayportal_closestHit_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_pom_material_opaque_translucent_closestHit.h>
 #include <rtx_shaders/integrate_indirect_pom_material_opaque_translucent_closestHit_terrain.h>
+#include <rtx_shaders/integrate_indirect_pom_material_opaque_translucent_closestHit_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_pom_material_rayPortal_closestHit.h>
 #include <rtx_shaders/integrate_indirect_pom_material_rayportal_closestHit_terrain.h>
+#include <rtx_shaders/integrate_indirect_pom_material_rayportal_closestHit_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_nrc_material_opaque_translucent_closestHit.h>
 #include <rtx_shaders/integrate_indirect_nrc_material_opaque_translucent_closestHit_terrain.h>
+#include <rtx_shaders/integrate_indirect_nrc_material_opaque_translucent_closestHit_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_nrc_material_rayPortal_closestHit.h>
 #include <rtx_shaders/integrate_indirect_nrc_material_rayportal_closestHit_terrain.h>
+#include <rtx_shaders/integrate_indirect_nrc_material_rayportal_closestHit_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_nrc_pom_material_opaque_translucent_closestHit.h>
 #include <rtx_shaders/integrate_indirect_nrc_pom_material_opaque_translucent_closestHit_terrain.h>
+#include <rtx_shaders/integrate_indirect_nrc_pom_material_opaque_translucent_closestHit_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_nrc_pom_material_rayPortal_closestHit.h>
 #include <rtx_shaders/integrate_indirect_nrc_pom_material_rayportal_closestHit_terrain.h>
+#include <rtx_shaders/integrate_indirect_nrc_pom_material_rayportal_closestHit_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_neeCache_material_rayportal_closestHit.h>
 #include <rtx_shaders/integrate_indirect_neeCache_material_rayportal_closestHit_terrain.h>
+#include <rtx_shaders/integrate_indirect_neeCache_material_rayportal_closestHit_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_neeCache_material_opaque_translucent_closestHit.h>
 #include <rtx_shaders/integrate_indirect_neeCache_material_opaque_translucent_closestHit_terrain.h>
+#include <rtx_shaders/integrate_indirect_neeCache_material_opaque_translucent_closestHit_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_neeCache_pom_material_rayportal_closestHit.h>
 #include <rtx_shaders/integrate_indirect_neeCache_pom_material_rayportal_closestHit_terrain.h>
+#include <rtx_shaders/integrate_indirect_neeCache_pom_material_rayportal_closestHit_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_neeCache_pom_material_opaque_translucent_closestHit.h>
 #include <rtx_shaders/integrate_indirect_neeCache_pom_material_opaque_translucent_closestHit_terrain.h>
+#include <rtx_shaders/integrate_indirect_neeCache_pom_material_opaque_translucent_closestHit_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_nrc_neeCache_material_rayportal_closestHit.h>
 #include <rtx_shaders/integrate_indirect_nrc_neeCache_material_rayportal_closestHit_terrain.h>
+#include <rtx_shaders/integrate_indirect_nrc_neeCache_material_rayportal_closestHit_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_nrc_neeCache_material_opaque_translucent_closestHit.h>
 #include <rtx_shaders/integrate_indirect_nrc_neeCache_material_opaque_translucent_closestHit_terrain.h>
+#include <rtx_shaders/integrate_indirect_nrc_neeCache_material_opaque_translucent_closestHit_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_nrc_neeCache_pom_material_rayportal_closestHit.h>
 #include <rtx_shaders/integrate_indirect_nrc_neeCache_pom_material_rayportal_closestHit_terrain.h>
+#include <rtx_shaders/integrate_indirect_nrc_neeCache_pom_material_rayportal_closestHit_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_nrc_neeCache_pom_material_opaque_translucent_closestHit.h>
 #include <rtx_shaders/integrate_indirect_nrc_neeCache_pom_material_opaque_translucent_closestHit_terrain.h>
+#include <rtx_shaders/integrate_indirect_nrc_neeCache_pom_material_opaque_translucent_closestHit_terrain_pom.h>
 
 #include <rtx_shaders/integrate_indirect_miss.h>
 #include <rtx_shaders/integrate_indirect_miss_neeCache.h>
@@ -113,70 +145,102 @@
 
 #include <rtx_shaders/integrate_indirect_raygen_neeCache_wboit.h>
 #include <rtx_shaders/integrate_indirect_raygen_neeCache_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_raygen_neeCache_wboit_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_raygen_ser_neeCache_wboit.h>
 #include <rtx_shaders/integrate_indirect_raygen_ser_neeCache_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_raygen_ser_neeCache_wboit_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_rayquery_raygen_neeCache_wboit.h>
 #include <rtx_shaders/integrate_indirect_rayquery_raygen_neeCache_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_rayquery_raygen_neeCache_wboit_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_rayquery_raygen_wboit.h>
 #include <rtx_shaders/integrate_indirect_rayquery_raygen_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_rayquery_raygen_wboit_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_raygen_wboit.h>
 #include <rtx_shaders/integrate_indirect_raygen_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_raygen_wboit_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_raygen_ser_wboit.h>
 #include <rtx_shaders/integrate_indirect_raygen_ser_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_raygen_ser_wboit_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_raygen_nrc_neeCache_wboit.h>
 #include <rtx_shaders/integrate_indirect_raygen_nrc_neeCache_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_raygen_nrc_neeCache_wboit_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_raygen_ser_nrc_neeCache_wboit.h>
 #include <rtx_shaders/integrate_indirect_raygen_ser_nrc_neeCache_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_raygen_ser_nrc_neeCache_wboit_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_rayquery_raygen_nrc_neeCache_wboit.h>
 #include <rtx_shaders/integrate_indirect_rayquery_raygen_nrc_neeCache_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_rayquery_raygen_nrc_neeCache_wboit_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_rayquery_raygen_nrc_wboit.h>
 #include <rtx_shaders/integrate_indirect_rayquery_raygen_nrc_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_rayquery_raygen_nrc_wboit_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_raygen_nrc_wboit.h>
 #include <rtx_shaders/integrate_indirect_raygen_nrc_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_raygen_nrc_wboit_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_raygen_ser_nrc_wboit.h>
 #include <rtx_shaders/integrate_indirect_raygen_ser_nrc_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_raygen_ser_nrc_wboit_terrain_pom.h>
 
 #include <rtx_shaders/integrate_indirect_rayquery_neeCache_wboit.h>
 #include <rtx_shaders/integrate_indirect_rayquery_neeCache_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_rayquery_neeCache_wboit_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_rayquery_wboit.h>
 #include <rtx_shaders/integrate_indirect_rayquery_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_rayquery_wboit_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_rayquery_nrc_neeCache_wboit.h>
 #include <rtx_shaders/integrate_indirect_rayquery_nrc_neeCache_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_rayquery_nrc_neeCache_wboit_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_rayquery_nrc_wboit.h>
 #include <rtx_shaders/integrate_indirect_rayquery_nrc_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_rayquery_nrc_wboit_terrain_pom.h>
 
 #include <rtx_shaders/integrate_indirect_material_opaque_translucent_closestHit_wboit.h>
 #include <rtx_shaders/integrate_indirect_material_opaque_translucent_closestHit_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_material_opaque_translucent_closestHit_wboit_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_material_rayPortal_closestHit_wboit.h>
 #include <rtx_shaders/integrate_indirect_material_rayportal_closestHit_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_material_rayportal_closestHit_wboit_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_pom_material_opaque_translucent_closestHit_wboit.h>
 #include <rtx_shaders/integrate_indirect_pom_material_opaque_translucent_closestHit_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_pom_material_opaque_translucent_closestHit_wboit_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_pom_material_rayPortal_closestHit_wboit.h>
 #include <rtx_shaders/integrate_indirect_pom_material_rayportal_closestHit_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_pom_material_rayportal_closestHit_wboit_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_nrc_material_opaque_translucent_closestHit_wboit.h>
 #include <rtx_shaders/integrate_indirect_nrc_material_opaque_translucent_closestHit_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_nrc_material_opaque_translucent_closestHit_wboit_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_nrc_material_rayPortal_closestHit_wboit.h>
 #include <rtx_shaders/integrate_indirect_nrc_material_rayportal_closestHit_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_nrc_material_rayportal_closestHit_wboit_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_nrc_pom_material_opaque_translucent_closestHit_wboit.h>
 #include <rtx_shaders/integrate_indirect_nrc_pom_material_opaque_translucent_closestHit_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_nrc_pom_material_opaque_translucent_closestHit_wboit_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_nrc_pom_material_rayPortal_closestHit_wboit.h>
 #include <rtx_shaders/integrate_indirect_nrc_pom_material_rayportal_closestHit_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_nrc_pom_material_rayportal_closestHit_wboit_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_neeCache_material_rayportal_closestHit_wboit.h>
 #include <rtx_shaders/integrate_indirect_neeCache_material_rayportal_closestHit_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_neeCache_material_rayportal_closestHit_wboit_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_neeCache_material_opaque_translucent_closestHit_wboit.h>
 #include <rtx_shaders/integrate_indirect_neeCache_material_opaque_translucent_closestHit_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_neeCache_material_opaque_translucent_closestHit_wboit_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_neeCache_pom_material_rayportal_closestHit_wboit.h>
 #include <rtx_shaders/integrate_indirect_neeCache_pom_material_rayportal_closestHit_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_neeCache_pom_material_rayportal_closestHit_wboit_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_neeCache_pom_material_opaque_translucent_closestHit_wboit.h>
 #include <rtx_shaders/integrate_indirect_neeCache_pom_material_opaque_translucent_closestHit_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_neeCache_pom_material_opaque_translucent_closestHit_wboit_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_nrc_neeCache_material_rayportal_closestHit_wboit.h>
 #include <rtx_shaders/integrate_indirect_nrc_neeCache_material_rayportal_closestHit_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_nrc_neeCache_material_rayportal_closestHit_wboit_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_nrc_neeCache_material_opaque_translucent_closestHit_wboit.h>
 #include <rtx_shaders/integrate_indirect_nrc_neeCache_material_opaque_translucent_closestHit_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_nrc_neeCache_material_opaque_translucent_closestHit_wboit_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_nrc_neeCache_pom_material_rayportal_closestHit_wboit.h>
 #include <rtx_shaders/integrate_indirect_nrc_neeCache_pom_material_rayportal_closestHit_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_nrc_neeCache_pom_material_rayportal_closestHit_wboit_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_nrc_neeCache_pom_material_opaque_translucent_closestHit_wboit.h>
 #include <rtx_shaders/integrate_indirect_nrc_neeCache_pom_material_opaque_translucent_closestHit_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_nrc_neeCache_pom_material_opaque_translucent_closestHit_wboit_terrain_pom.h>
 
 #include <rtx_shaders/integrate_indirect_miss_wboit.h>
 #include <rtx_shaders/integrate_indirect_miss_neeCache_wboit.h>
@@ -184,41 +248,60 @@
 #include <rtx_shaders/integrate_indirect_miss_nrc_neeCache_wboit.h>
 
 #include <rtx_shaders/integrate_nee_plain.h>
+#include <rtx_shaders/integrate_nee_plain_terrain_shadow.h>
 #include <rtx_shaders/integrate_nee_nrc.h>
+#include <rtx_shaders/integrate_nee_nrc_terrain_shadow.h>
 #include <rtx_shaders/integrate_nee_restir_gi.h>
+#include <rtx_shaders/integrate_nee_restir_gi_terrain_shadow.h>
 #include <rtx_shaders/visualize_nee.h>
 #include <rtx_shaders/integrate_indirect_sharc_update4.h>
 #include <rtx_shaders/integrate_indirect_sharc_update4_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_update4_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_sharc_update4_wboit.h>
 #include <rtx_shaders/integrate_indirect_sharc_update4_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_update4_wboit_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_sharc_update8.h>
 #include <rtx_shaders/integrate_indirect_sharc_update8_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_update8_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_sharc_update8_wboit.h>
 #include <rtx_shaders/integrate_indirect_sharc_update8_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_update8_wboit_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_sharc_query.h>
 #include <rtx_shaders/integrate_indirect_sharc_query_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_query_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_sharc_query_wboit.h>
 #include <rtx_shaders/integrate_indirect_sharc_query_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_query_wboit_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_sharc_query_ser.h>
 #include <rtx_shaders/integrate_indirect_sharc_query_ser_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_query_ser_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_sharc_query_ser_wboit.h>
 #include <rtx_shaders/integrate_indirect_sharc_query_ser_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_query_ser_wboit_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_sharc_query_closesthit.h>
 #include <rtx_shaders/integrate_indirect_sharc_query_closesthit_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_query_closesthit_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_sharc_query_closesthit_wboit.h>
 #include <rtx_shaders/integrate_indirect_sharc_query_closesthit_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_query_closesthit_wboit_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_sharc_query_closesthit_pom.h>
 #include <rtx_shaders/integrate_indirect_sharc_query_closesthit_pom_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_query_closesthit_pom_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_sharc_query_closesthit_pom_wboit.h>
 #include <rtx_shaders/integrate_indirect_sharc_query_closesthit_pom_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_query_closesthit_pom_wboit_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_sharc_query_closesthit_portals.h>
 #include <rtx_shaders/integrate_indirect_sharc_query_closesthit_portals_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_query_closesthit_portals_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_sharc_query_closesthit_portals_wboit.h>
 #include <rtx_shaders/integrate_indirect_sharc_query_closesthit_portals_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_query_closesthit_portals_wboit_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_sharc_query_closesthit_portals_pom.h>
 #include <rtx_shaders/integrate_indirect_sharc_query_closesthit_portals_pom_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_query_closesthit_portals_pom_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_sharc_query_closesthit_portals_pom_wboit.h>
 #include <rtx_shaders/integrate_indirect_sharc_query_closesthit_portals_pom_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_query_closesthit_portals_pom_wboit_terrain_pom.h>
 #include <rtx_shaders/integrate_indirect_sharc_query_miss.h>
 #include <rtx_shaders/integrate_indirect_sharc_query_miss_wboit.h>
 #include <rtx_shaders/integrate_indirect_sharc_query_miss_portals.h>
@@ -230,7 +313,15 @@
 
 #define GET_TERRAIN_SHADER_VARIANT(stage, shaderClass, code) \
   (m_device->getCommon()->getSceneManager().getTerrainBlendArgs().enabled != 0 \
-    ? GET_SHADER_VARIANT(stage, shaderClass, code##_terrain) \
+    ? (m_device->getCommon()->getSceneManager().getTerrainBlendArgs().displacementEnabled != 0 \
+      && m_device->getCommon()->getSceneManager().getTerrainBlendArgs().displacementStrength > 0.0f \
+      ? GET_SHADER_VARIANT(stage, shaderClass, code##_terrain_pom) \
+      : GET_SHADER_VARIANT(stage, shaderClass, code##_terrain)) \
+    : GET_SHADER_VARIANT(stage, shaderClass, code))
+
+#define GET_TERRAIN_SHADOW_SHADER_VARIANT(stage, shaderClass, code) \
+  (terrainShadowsEnabled \
+    ? GET_SHADER_VARIANT(stage, shaderClass, code##_terrain_shadow) \
     : GET_SHADER_VARIANT(stage, shaderClass, code))
 
 namespace dxvk {
@@ -257,6 +348,7 @@ namespace dxvk {
         TEXTURE2D(INTEGRATE_INDIRECT_BINDING_PRIMARY_CONE_RADIUS_INPUT)
         TEXTURE2D(INTEGRATE_INDIRECT_BINDING_SECONDARY_CONE_RADIUS_INPUT)
         TEXTURE2D(INTEGRATE_INDIRECT_BINDING_PRIMARY_WORLD_POSITION_INPUT)
+        TEXTURE2D(INTEGRATE_INDIRECT_BINDING_PRIMARY_VIEW_DIRECTION_INPUT)
         RW_STRUCTURED_BUFFER(INTEGRATE_INDIRECT_BINDING_PRIMARY_RTXDI_RESERVOIR)
 
         TEXTURE2D(INTEGRATE_INDIRECT_BINDING_RAY_ORIGIN_DIRECTION_INPUT)
@@ -745,6 +837,7 @@ namespace dxvk {
     ctx->bindResourceView(INTEGRATE_INDIRECT_BINDING_PRIMARY_CONE_RADIUS_INPUT, rtOutput.m_primaryConeRadius.view, nullptr);
     ctx->bindResourceView(INTEGRATE_INDIRECT_BINDING_SECONDARY_CONE_RADIUS_INPUT, rtOutput.m_secondaryConeRadius.view(Resources::AccessType::Read), nullptr);
     ctx->bindResourceView(INTEGRATE_INDIRECT_BINDING_PRIMARY_WORLD_POSITION_INPUT, rtOutput.getCurrentPrimaryWorldPositionWorldTriangleNormal().view(Resources::AccessType::Read), nullptr);
+    ctx->bindResourceView(INTEGRATE_INDIRECT_BINDING_PRIMARY_VIEW_DIRECTION_INPUT, rtOutput.m_primaryViewDirection.view, nullptr);
     ctx->bindResourceBuffer(INTEGRATE_INDIRECT_BINDING_PRIMARY_RTXDI_RESERVOIR, DxvkBufferSlice(rtOutput.m_rtxdiReservoirBuffer, 0, rtOutput.m_rtxdiReservoirBuffer->info().size));
     ctx->bindResourceView(INTEGRATE_INDIRECT_BINDING_RAY_ORIGIN_DIRECTION_INPUT, rtOutput.m_indirectRayOriginDirection.view(Resources::AccessType::Read), nullptr);
     ctx->bindResourceView(INTEGRATE_INDIRECT_BINDING_ACTIVE_LOCAL_PIXEL_COORDS_INPUT, rtOutput.m_sparseRenderingActiveLocalPixelCoords.view, nullptr);
@@ -985,22 +1078,26 @@ namespace dxvk {
     ctx->bindResourceBuffer(INTEGRATE_NEE_BINDING_NEE_CACHE_SAMPLE, DxvkBufferSlice(resources.neeCacheSample, 0, resources.neeCacheSample->info().size));
     ctx->bindResourceView(INTEGRATE_NEE_BINDING_NEE_CACHE_THREAD_TASK, resources.neeCacheThreadTask.view, nullptr);
 
+    const auto& terrain = m_device->getCommon()->getSceneManager().getTerrainBlendArgs();
+    const bool terrainShadowsEnabled = terrain.enabled != 0 && terrain.displacementEnabled != 0 &&
+      terrain.displacementStrength > 0.f && terrain.displacementSelfShadowEnabled != 0 &&
+      terrain.displacementShadowStrength > 0.f;
     Rc<DxvkShader> integrateNeeShader;
     if (nrcEnabled && !restirGiEnabled) {
-      integrateNeeShader = GET_SHADER_VARIANT(
+      integrateNeeShader = GET_TERRAIN_SHADOW_SHADER_VARIANT(
         VK_SHADER_STAGE_COMPUTE_BIT, IntegrateNEEShader, integrate_nee_nrc);
     } else if (restirGiEnabled && !nrcEnabled) {
-      integrateNeeShader = GET_SHADER_VARIANT(
+      integrateNeeShader = GET_TERRAIN_SHADOW_SHADER_VARIANT(
         VK_SHADER_STAGE_COMPUTE_BIT, IntegrateNEEShader, integrate_nee_restir_gi);
     } else if (!nrcEnabled && !restirGiEnabled) {
-      integrateNeeShader = GET_SHADER_VARIANT(
+      integrateNeeShader = GET_TERRAIN_SHADOW_SHADER_VARIANT(
         VK_SHADER_STAGE_COMPUTE_BIT, IntegrateNEEPlainShader, integrate_nee_plain);
     } else {
       // Unreachable: NRC and ReSTIR GI both reduce to integrateIndirectMode, which holds
       // one value, so they cannot be active together.  The combined variant that used to
       // serve this branch was removed rather than shipped for a state that cannot occur.
       assert(false && "NRC and ReSTIR GI cannot both be active");
-      integrateNeeShader = GET_SHADER_VARIANT(
+      integrateNeeShader = GET_TERRAIN_SHADOW_SHADER_VARIANT(
         VK_SHADER_STAGE_COMPUTE_BIT, IntegrateNEEPlainShader, integrate_nee_plain);
     }
     ctx->bindShader(VK_SHADER_STAGE_COMPUTE_BIT, integrateNeeShader);
@@ -1335,3 +1432,5 @@ namespace dxvk {
 }
 
 #undef GET_TERRAIN_SHADER_VARIANT
+
+#undef GET_TERRAIN_SHADOW_SHADER_VARIANT

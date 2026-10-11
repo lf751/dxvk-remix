@@ -86,6 +86,11 @@ Texture2D<uint16_t> ActiveLocalPixelCoords;
 layout(rgba32f, binding = INTEGRATE_INDIRECT_BINDING_PRIMARY_WORLD_POSITION_INPUT)
 Texture2D<float4> PrimaryWorldPositionWorldTriangleNormal;
 
+#ifdef TERRAIN_BLEND_POM
+layout(rg32f, binding = INTEGRATE_INDIRECT_BINDING_PRIMARY_VIEW_DIRECTION_INPUT)
+Texture2D<float2> PrimaryViewDirection;
+#endif
+
 // Note: Needed for RTXDI sample stealing.
 layout(binding = INTEGRATE_INDIRECT_BINDING_PRIMARY_RTXDI_RESERVOIR)
 RWStructuredBuffer<RTXDI_PackedReservoir> RtxdiReservoirBuffer;

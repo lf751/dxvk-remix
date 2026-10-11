@@ -260,6 +260,13 @@ bool polymorphicSurfaceMaterialInteractionHasHeightTexture(
     false;
 }
 
+bool polymorphicSurfaceMaterialInteractionHasTerrainHeight(
+  PolymorphicSurfaceMaterialInteraction interaction)
+{
+  return polymorphicSurfaceMaterialInteractionGetTypeHelper(interaction) == uint(surfaceMaterialTypeOpaque) &&
+    (interaction.bdata0 & OPAQUE_SURFACE_MATERIAL_INTERACTION_FLAG_TERRAIN_HEIGHT) != 0;
+}
+
 bool polymorphicSurfaceMaterialInteractionHasSubsurface(
   PolymorphicSurfaceMaterialInteraction polymorphicSurfaceMaterialInteraction)
 {

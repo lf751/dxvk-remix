@@ -219,8 +219,9 @@ void polymorphicSurfaceMaterialInteractionWriteToGBuffer(
 
     surfaceIndexTexture[position] = surfaceIndex;
 
-    // Only write sharedTextureCoords if the material has a height texture, or the material has subsurface texture(s)
-    if (polymorphicSurfaceMaterialInteractionHasHeightTexture(polymorphicSurfaceMaterialInteraction))
+    // Terrain stores its signed parallax distance and height LOD in the same full-precision channel.
+    if (polymorphicSurfaceMaterialInteractionHasHeightTexture(polymorphicSurfaceMaterialInteraction) ||
+        polymorphicSurfaceMaterialInteractionHasTerrainHeight(polymorphicSurfaceMaterialInteraction))
     {
       sharedTextureCoords[position] = surfaceInteraction.textureCoordinates;
     }

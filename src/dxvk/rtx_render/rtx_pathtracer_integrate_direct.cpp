@@ -27,9 +27,13 @@
 #include "rtx/pass/integrate/integrate_direct_binding_indices.h"
 
 #include <rtx_shaders/integrate_direct_rayquery.h>
+#include <rtx_shaders/integrate_direct_rayquery_terrain_shadow.h>
 #include <rtx_shaders/integrate_direct_rayquery_raygen.h>
+#include <rtx_shaders/integrate_direct_rayquery_raygen_terrain_shadow.h>
 #include <rtx_shaders/integrate_direct_nrc_rayquery.h>
+#include <rtx_shaders/integrate_direct_nrc_rayquery_terrain_shadow.h>
 #include <rtx_shaders/integrate_direct_nrc_rayquery_raygen.h>
+#include <rtx_shaders/integrate_direct_nrc_rayquery_raygen_terrain_shadow.h>
 
 #include "dxvk_scoped_annotation.h"
 #include "rtx_context.h"
@@ -37,6 +41,11 @@
 #include "rtx_sparse_rendering.h"
 #include "rtx_neural_radiance_cache.h"
 #include "rtx_opacity_micromap_manager.h"
+
+#define GET_TERRAIN_SHADOW_SHADER_VARIANT(stage, shaderClass, code) \
+  (terrainShadowsEnabled \
+    ? GET_SHADER_VARIANT(stage, shaderClass, code##_terrain_shadow) \
+    : GET_SHADER_VARIANT(stage, shaderClass, code))
 
 namespace dxvk {
 
@@ -125,10 +134,10 @@ namespace dxvk {
     if (RtxOptions::Shader::prewarmAllVariants()) {
       for (int32_t deferredNrcTrainingSetup = 1; deferredNrcTrainingSetup >= 0; deferredNrcTrainingSetup--) {
         for (int32_t ommEnabled = isOpacityMicromapSupported; ommEnabled > 0; ommEnabled--) {
-          pipelineManager.registerRaytracingShaders(getPipelineShaders(true, ommEnabled, deferredNrcTrainingSetup));
+          pipelineManager.registerRaytracingShaders(getPipelineShaders(true, ommEnabled, deferredNrcTrainingSetup, false));
         }
 
-        getComputeShader(deferredNrcTrainingSetup);
+        getComputeShader(deferredNrcTrainingSetup, false);
       }
     } else {
       // Note: The getter for OMM enabled also checks if OMMs are supported, so we do not need to check for that manually.
@@ -138,10 +147,10 @@ namespace dxvk {
 
       switch (RtxOptions::renderPassIntegrateDirectRaytraceMode()) {
       case RaytraceMode::RayQuery:
-        getComputeShader(deferredNrcTrainingSetup);
+        getComputeShader(deferredNrcTrainingSetup, false);
         break;
       case RaytraceMode::RayQueryRayGen:
-        pipelineManager.registerRaytracingShaders(getPipelineShaders(true, ommEnabled, deferredNrcTrainingSetup));
+        pipelineManager.registerRaytracingShaders(getPipelineShaders(true, ommEnabled, deferredNrcTrainingSetup, false));
         break;
       default:
         assert(false && "Invalid renderPassIntegrateDirectRaytraceMode in DxvkPathtracerIntegrateDirect::prewarmShaders");
@@ -153,6 +162,10 @@ namespace dxvk {
   void DxvkPathtracerIntegrateDirect::dispatch(
     RtxContext* ctx, 
     const Resources::RaytracingOutput& rtOutput) {
+    const auto& terrain = rtOutput.m_raytraceArgs.terrainBlendArgs;
+    const bool terrainShadowsEnabled = terrain.enabled != 0 && terrain.displacementEnabled != 0 &&
+      terrain.displacementStrength > 0.f && terrain.displacementSelfShadowEnabled != 0 &&
+      terrain.displacementShadowStrength > 0.f;
     ScopedGpuProfileZone(ctx, "Integrate Direct Raytracing");
     ctx->setFramePassStage(RtxFramePassStage::DirectIntegration);
 
@@ -235,11 +248,11 @@ namespace dxvk {
     const VkExtent3D workgroups = util::computeBlockCount(rayDims, VkExtent3D { INTEGRATE_DIRECT_THREADS_DISPATCH_WIDTH, INTEGRATE_DIRECT_THREADS_DISPATCH_HEIGHT, 1 });
     switch (RtxOptions::renderPassIntegrateDirectRaytraceMode()) {
     case RaytraceMode::RayQuery:
-      ctx->bindShader(VK_SHADER_STAGE_COMPUTE_BIT, getComputeShader(deferredNrcTrainingSetup));
+      ctx->bindShader(VK_SHADER_STAGE_COMPUTE_BIT, getComputeShader(deferredNrcTrainingSetup, terrainShadowsEnabled));
       ctx->dispatch(workgroups.width, workgroups.height, workgroups.depth);
       break;
     case RaytraceMode::RayQueryRayGen:
-      ctx->bindRaytracingPipelineShaders(getPipelineShaders(true, ommEnabled, deferredNrcTrainingSetup));
+      ctx->bindRaytracingPipelineShaders(getPipelineShaders(true, ommEnabled, deferredNrcTrainingSetup, terrainShadowsEnabled));
       ctx->traceRays(rayDims.width, rayDims.height, rayDims.depth);
       break;
     default:
@@ -251,15 +264,16 @@ namespace dxvk {
   DxvkRaytracingPipelineShaders DxvkPathtracerIntegrateDirect::getPipelineShaders(
     const bool useRayQuery,
     const bool ommEnabled,
-    const bool deferredNrcTrainingSetup) {
+    const bool deferredNrcTrainingSetup,
+    const bool terrainShadowsEnabled) {
 
     DxvkRaytracingPipelineShaders shaders;
     if (useRayQuery) {
       shaders.debugName = deferredNrcTrainingSetup ? "Integrate Direct NRC RayQuery (RGS)" : "Integrate Direct RayQuery (RGS)";
       if (deferredNrcTrainingSetup) {
-        shaders.addGeneralShader(GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateDirectRayGenShader, integrate_direct_nrc_rayquery_raygen));
+        shaders.addGeneralShader(GET_TERRAIN_SHADOW_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateDirectRayGenShader, integrate_direct_nrc_rayquery_raygen));
       } else {
-        shaders.addGeneralShader(GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateDirectRayGenShader, integrate_direct_rayquery_raygen));
+        shaders.addGeneralShader(GET_TERRAIN_SHADOW_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateDirectRayGenShader, integrate_direct_rayquery_raygen));
       }
     } else {
       assert(!"TraceRay versions of the Integrate Direct pass are not implemented.");
@@ -272,12 +286,12 @@ namespace dxvk {
     return shaders;
   }
 
-  Rc<DxvkShader> DxvkPathtracerIntegrateDirect::getComputeShader(const bool deferredNrcTrainingSetup) const {
+  Rc<DxvkShader> DxvkPathtracerIntegrateDirect::getComputeShader(const bool deferredNrcTrainingSetup, const bool terrainShadowsEnabled) const {
     if (deferredNrcTrainingSetup) {
-      return GET_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateDirectRayGenShader, integrate_direct_nrc_rayquery);
+      return GET_TERRAIN_SHADOW_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateDirectRayGenShader, integrate_direct_nrc_rayquery);
     }
 
-    return GET_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateDirectRayGenShader, integrate_direct_rayquery);
+    return GET_TERRAIN_SHADOW_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateDirectRayGenShader, integrate_direct_rayquery);
   }
 
   const char* DxvkPathtracerIntegrateDirect::raytraceModeToString(RaytraceMode raytraceMode) {
@@ -291,3 +305,5 @@ namespace dxvk {
     }
   }
 }
+
+#undef GET_TERRAIN_SHADOW_SHADER_VARIANT

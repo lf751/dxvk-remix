@@ -124,4 +124,9 @@ exe = executable('test_legacy_material_fresnel', files('test_legacy_material_fre
 test('test_legacy_material_fresnel', exe, env: test_env)
 tests += exe
 
+exe = executable('test_smooth_normals', files('test_smooth_normals.cpp'),
+  include_directories : test_include_path, dependencies : test_unit_deps, win_subsystem : 'console', override_options: ['cpp_std='+dxvk_cpp_std])
+test('test_smooth_normals', exe, env: test_env)
+tests += exe
+
 alias_target('unit_tests', tests)

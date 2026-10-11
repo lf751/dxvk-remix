@@ -131,6 +131,11 @@ struct RAB_Surface
   uint8_t objectMask;
 
   float3 virtualWorldPosition;
+#ifdef TERRAIN_BLEND_SHADOW
+  bool hasTerrainHeight;
+  uint terrainSurfaceIndex;
+  vec2 terrainHitData;
+#endif
 };
 
 typedef LightSample RAB_LightSample;
@@ -386,6 +391,19 @@ RAB_Surface RAB_GetGBufferSurface(ivec2 pixel, bool previousFrame)
     surface.opaqueSurfaceMaterialInteraction.anisotropicRoughness);
 
   const uint primarySurfaceIndex = uint(SharedSurfaceIndex[pixel]);
+#ifdef TERRAIN_BLEND_SHADOW
+  const MemoryPolymorphicSurfaceMaterial memoryMaterial = surfaceMaterials[primarySurfaceIndex];
+  if (memoryMaterial.isOpaque())
+  {
+    const OpaqueSurfaceMaterial material = opaqueSurfaceMaterialCreate(memoryMaterial, true);
+    surface.hasTerrainHeight = (material.flags & OPAQUE_SURFACE_MATERIAL_FLAG_TERRAIN_BLEND) != 0;
+    if (surface.hasTerrainHeight)
+    {
+      surface.terrainSurfaceIndex = primarySurfaceIndex;
+      surface.terrainHitData = SharedTextureCoord[pixel];
+    }
+  }
+#endif
   uint16_t samplerIndex = 0;
 
   const uint subsurfaceMaterialIndex = getSubsurfaceMaterialIndex(surfaceMaterials[primarySurfaceIndex], samplerIndex);
@@ -847,15 +865,22 @@ bool RAB_TraceLightSampleVisibility(RAB_Surface surface, RAB_LightSample lightSa
 
   const bool isThinOpaqueSubsurface = isThinOpaqueSubsurfaceMaterial(surface.opaqueSurfaceMaterialInteraction);
 
-  const VisibilityResult visibility = traceVisibilityRay<visibilityModeEnableSubsurfaceMaterials>(
+#ifdef TERRAIN_BLEND_SHADOW
+  const uint visibilitySurfaceIndex = surface.hasTerrainHeight ? surface.terrainSurfaceIndex : SURFACE_INDEX_INVALID;
+  const vec2 visibilityTexCoords = surface.hasTerrainHeight ? surface.terrainHitData : vec2(0.f);
+#else
+  const uint visibilitySurfaceIndex = SURFACE_INDEX_INVALID;
+  const vec2 visibilityTexCoords = vec2(0.f);
+#endif
+  const VisibilityResult visibility = traceVisibilityRay<visibilityModeEnablePom | visibilityModeEnableSubsurfaceMaterials>(
     surface.minimalSurfaceInteraction, samplePos,
     rayMask, visibilityExpectedRayPortalIndex, visibilityPortalSpace, false,
     0, 0, 1.0,
     surface.isViewModel,
     cb.enablePreviousTLAS && usePreviousTLAS,
-    BINDING_INDEX_INVALID, vec2(0.0f),
+    visibilitySurfaceIndex, visibilityTexCoords,
     isThinOpaqueSubsurface,
-    surface.opaqueSurfaceMaterialInteraction.shadingNormal);
+    surface.opaqueSurfaceMaterialInteraction.shadingNormal, true, surface.minimalRayInteraction.viewDirection);
 
   attenuation = visibility.attenuation;
 
@@ -872,11 +897,19 @@ bool RAB_TraceGISampleVisibility(RAB_Surface surface, RAB_Surface neighborSurfac
 
     const float3 dstPosition = reservoir.getVisibilityPoint(neighborSurface.minimalSurfaceInteraction.position);
 
-    const VisibilityResult visibility = traceVisibilityRay<visibilityModeNone>(
+#ifdef TERRAIN_BLEND_SHADOW
+    const uint visibilitySurfaceIndex = neighborSurface.hasTerrainHeight ? neighborSurface.terrainSurfaceIndex : SURFACE_INDEX_INVALID;
+    const vec2 visibilityTexCoords = neighborSurface.hasTerrainHeight ? neighborSurface.terrainHitData : vec2(0.f);
+#else
+    const uint visibilitySurfaceIndex = SURFACE_INDEX_INVALID;
+    const vec2 visibilityTexCoords = vec2(0.f);
+#endif
+    const VisibilityResult visibility = traceVisibilityRay<visibilityModeEnablePom>(
       neighborSurface.minimalSurfaceInteraction, dstPosition,
       rayMask, portalID, surface.portalSpace, false,
       0, 0, RAB_RESTIR_GI_VISIBILITY_SHORTENING,
-      surface.isViewModel);
+      surface.isViewModel, false, visibilitySurfaceIndex, visibilityTexCoords,
+      false, vec3(0.f), true, neighborSurface.minimalRayInteraction.viewDirection);
 
     return !visibility.hasOpaqueHit;
   }

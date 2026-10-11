@@ -88,6 +88,11 @@ Texture2D<uint2> SharedSubsurfaceDiffusionProfileData;
 layout(r16ui, binding = RTXDI_REUSE_BINDING_ACTIVE_LOCAL_PIXEL_COORDS_INPUT)
 Texture2D<uint16_t> ActiveLocalPixelCoords;
 
+#ifdef TERRAIN_BLEND_SHADOW
+layout(rg32f, binding = RTXDI_REUSE_BINDING_SHARED_TEXTURE_COORD_INPUT)
+Texture2D<float2> SharedTextureCoord;
+#endif
+
 // Inputs / Outputs
 
 layout(binding = RTXDI_REUSE_BINDING_RTXDI_RESERVOIR_INPUT_OUTPUT)

@@ -1064,7 +1064,9 @@ namespace dxvk {
     const bool pendingGpuWrite = input.positionBuffer.isPendingGpuWrite() || input.indexBuffer.isPendingGpuWrite();
 
     const uint32_t kMaxTrianglesForCPU = 512;
-    const bool useCPU = numTriangles <= kMaxTrianglesForCPU && !pendingGpuWrite && !mustUseGPU;
+    // Converted strip/fan indices live in the cached geometry, not the mapped raster input.
+    const bool useCPU = input.isTopologyRaytraceReady() &&
+      numTriangles <= kMaxTrianglesForCPU && !pendingGpuWrite && !mustUseGPU;
 
     if (useCPU) {
       // --- CPU path: uses the same shared functions as the GPU shader ---
@@ -1100,7 +1102,7 @@ namespace dxvk {
       params.normalStride = geo.normalBuffer.stride();
       params.indexOffset = geo.indexBuffer.offsetFromSlice();
 
-      // Sub-allocate from a pooled device-local buffer for the hash table (4 ints per entry: tag + 3 normal components)
+      // Each entry holds an immutable position owner and three normal components.
       const VkDeviceSize hashBufSize = hashTableSize * 4 * sizeof(int);
       DxvkBufferSlice hashTableSlice = m_pSmoothNormalsHashData->alloc(16, hashBufSize);
 

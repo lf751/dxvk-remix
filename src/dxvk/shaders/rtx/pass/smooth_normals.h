@@ -47,10 +47,6 @@ namespace dxvk {
 // overflow.  The angular precision is ~0.006 degrees.
 static const float FIXED_POINT_SCALE = 10000.0f;
 
-// Max linear-probe distance before giving up.  With a load factor of ~0.25
-// the expected probe length is ~1.17; 128 is extremely generous.
-static const uint MAX_PROBES = 128u;
-
 // ---------------------------------------------------------------------------
 // Helper functions
 // ---------------------------------------------------------------------------
@@ -91,135 +87,84 @@ uint canonicalizeFloatBits(float v)
   return asuint(v);
 }
 
-// Compute the hash-table slot index from a position.
-uint hashPositionSlot(float3 pos, uint hashTableSize)
-{
-  uint hx = canonicalizeFloatBits(pos.x);
-  uint hy = canonicalizeFloatBits(pos.y);
-  uint hz = canonicalizeFloatBits(pos.z);
-  uint h = (hx * 73856093u) ^ (hy * 19349663u) ^ (hz * 83492791u);
-  return h & (hashTableSize - 1);
+uint mixPositionBits(uint value) {
+  value ^= value >> 16;
+  value *= 0x7feb352du;
+  value ^= value >> 15;
+  value *= 0x846ca68bu;
+  return value ^ (value >> 16);
 }
 
-// Compute a 32-bit position tag for collision detection.
-// Uses different primes from the slot hash. Guaranteed non-zero (0 = empty).
-uint computePositionTag(float3 pos)
-{
-  uint hx = canonicalizeFloatBits(pos.x);
-  uint hy = canonicalizeFloatBits(pos.y);
-  uint hz = canonicalizeFloatBits(pos.z);
-  uint h = hx ^ (hy * 2654435761u) ^ (hz * 2246822519u);
-  return (h == 0u) ? 1u : h;
+uint hashPositionSlot(float3 pos, uint hashTableSize) {
+  const uint hx = mixPositionBits(canonicalizeFloatBits(pos.x));
+  const uint hy = mixPositionBits(canonicalizeFloatBits(pos.y) ^ 0x9e3779b9u);
+  const uint hz = mixPositionBits(canonicalizeFloatBits(pos.z) ^ 0x85ebca6bu);
+  return mixPositionBits(hx ^ hy ^ hz) & (hashTableSize - 1);
 }
 
-// ---------------------------------------------------------------------------
-// Hash table accumulate — GPU uses atomics, CPU uses direct writes
-// ---------------------------------------------------------------------------
+bool samePosition(float3 a, float3 b) {
+  return canonicalizeFloatBits(a.x) == canonicalizeFloatBits(b.x) &&
+    canonicalizeFloatBits(a.y) == canonicalizeFloatBits(b.y) &&
+    canonicalizeFloatBits(a.z) == canonicalizeFloatBits(b.z);
+}
 
+void accumulateAtPosition(uint vertexIndex, float3 pos, float3 faceNormal,
+    ReadBuffer(float) positionData, RWIntBuffer hashTableData, ConstBuffer(SmoothNormalsArgs) cb) {
+  const uint slot = hashPositionSlot(pos, cb.hashTableSize);
+  const int owner = int(vertexIndex + 1u);
+  const int ix = int(faceNormal.x * FIXED_POINT_SCALE);
+  const int iy = int(faceNormal.y * FIXED_POINT_SCALE);
+  const int iz = int(faceNormal.z * FIXED_POINT_SCALE);
+  // The owner points into immutable position data, so publishing it needs no separate key writes.
+  for (uint probe = 0; probe < cb.hashTableSize; ++probe) {
+    const uint base = ((slot + probe) & (cb.hashTableSize - 1)) * 4;
+    int storedOwner;
 #ifdef __cplusplus
-// CPU path: single-threaded, no atomics needed
-void accumulateAtPosition(float3 pos, float3 faceNormal,
-                          RWIntBuffer hashTableData, uint hashTableSize)
-{
-  uint tag  = computePositionTag(pos);
-  uint slot = hashPositionSlot(pos, hashTableSize);
-
-  int ix = int(faceNormal.x * FIXED_POINT_SCALE);
-  int iy = int(faceNormal.y * FIXED_POINT_SCALE);
-  int iz = int(faceNormal.z * FIXED_POINT_SCALE);
-
-  uint probes = min(MAX_PROBES, hashTableSize);
-  for (uint p = 0; p < probes; p++) {
-    uint entrySlot = (slot + p) & (hashTableSize - 1);
-    uint base = entrySlot * 4;
-
-    int32_t storedTag = hashTableData[base + 0];
-    if (storedTag == 0) {
-      // Empty slot — claim it
-      hashTableData[base + 0] = int32_t(tag);
-      hashTableData[base + 1] = ix;
-      hashTableData[base + 2] = iy;
-      hashTableData[base + 3] = iz;
-      return;
+    storedOwner = hashTableData[base];
+    if (storedOwner == 0) {
+      hashTableData[base] = owner;
     }
-    if (uint32_t(storedTag) == tag) {
-      // Our slot — accumulate
+#else
+    InterlockedCompareExchange(hashTableData[base], 0, owner, storedOwner);
+#endif
+    bool matches = storedOwner == 0;
+    if (storedOwner != 0) {
+      matches = samePosition(pos, smoothNormalsLoadPosition(uint(storedOwner) - 1u, positionData, cb));
+    }
+    if (matches) {
+#ifdef __cplusplus
       hashTableData[base + 1] += ix;
       hashTableData[base + 2] += iy;
       hashTableData[base + 3] += iz;
-      return;
-    }
-    // Slot owned by different position — keep probing
-  }
-}
-
-#else // GPU
-
-void accumulateAtPosition(float3 pos, float3 faceNormal,
-                          RWIntBuffer hashTableData, uint hashTableSize)
-{
-  uint tag  = computePositionTag(pos);
-  uint slot = hashPositionSlot(pos, hashTableSize);
-
-  int ix = int(faceNormal.x * FIXED_POINT_SCALE);
-  int iy = int(faceNormal.y * FIXED_POINT_SCALE);
-  int iz = int(faceNormal.z * FIXED_POINT_SCALE);
-
-  uint probes = min(MAX_PROBES, hashTableSize);
-  for (uint p = 0; p < probes; p++) {
-    uint entrySlot = (slot + p) & (hashTableSize - 1);
-    uint base = entrySlot * 4;
-
-    int oldTag;
-    InterlockedCompareExchange(hashTableData[base + 0], 0, int(tag), oldTag);
-
-    if (oldTag == 0 || uint(oldTag) == tag) {
+#else
       InterlockedAdd(hashTableData[base + 1], ix);
       InterlockedAdd(hashTableData[base + 2], iy);
       InterlockedAdd(hashTableData[base + 3], iz);
+#endif
       return;
     }
   }
 }
 
-#endif
-
-// ---------------------------------------------------------------------------
-// Hash table lookup — identical on CPU and GPU (read-only)
-// ---------------------------------------------------------------------------
-
-float3 lookupSmoothedNormal(float3 pos,
+float3 lookupSmoothedNormal(float3 pos, ReadBuffer(float) positionData,
 #ifdef __cplusplus
-                            const int32_t* hashTableData,
+    const int32_t* hashTableData,
 #else
-                            RWIntBuffer hashTableData,
+    RWIntBuffer hashTableData,
 #endif
-                            uint hashTableSize)
-{
-  uint probes = min(MAX_PROBES, hashTableSize);
-
-  uint tag  = computePositionTag(pos);
-  uint slot = hashPositionSlot(pos, hashTableSize);
-
-  for (uint p = 0; p < probes; p++) {
-    uint entrySlot = (slot + p) & (hashTableSize - 1);
-    uint base = entrySlot * 4;
-
-    int storedTag = hashTableData[base + 0];
-
-    if (storedTag == 0) {
-      break; // empty slot — not found
+    ConstBuffer(SmoothNormalsArgs) cb) {
+  const uint slot = hashPositionSlot(pos, cb.hashTableSize);
+  for (uint probe = 0; probe < cb.hashTableSize; ++probe) {
+    const uint base = ((slot + probe) & (cb.hashTableSize - 1)) * 4;
+    const int owner = hashTableData[base];
+    if (owner == 0) {
+      break;
     }
-
-    if (uint(storedTag) == tag) {
-      return float3(
-        float(hashTableData[base + 1]),
-        float(hashTableData[base + 2]),
-        float(hashTableData[base + 3])
-      );
+    if (samePosition(pos, smoothNormalsLoadPosition(uint(owner) - 1u, positionData, cb))) {
+      return float3(float(hashTableData[base + 1]), float(hashTableData[base + 2]), float(hashTableData[base + 3]));
     }
   }
-  return float3(0.0f, 0.0f, 0.0f);
+  return float3(0.f, 0.f, 0.f);
 }
 
 // ---------------------------------------------------------------------------
@@ -248,9 +193,9 @@ void smoothNormalsAccumulate(uint triIdx,
   if (faceLen <= 1e-20f) return; // degenerate triangle
   faceNormal /= faceLen;
 
-  accumulateAtPosition(p0, faceNormal, hashTableData, cb.hashTableSize);
-  accumulateAtPosition(p1, faceNormal, hashTableData, cb.hashTableSize);
-  accumulateAtPosition(p2, faceNormal, hashTableData, cb.hashTableSize);
+  accumulateAtPosition(i0, p0, faceNormal, positionData, hashTableData, cb);
+  accumulateAtPosition(i1, p1, faceNormal, positionData, hashTableData, cb);
+  accumulateAtPosition(i2, p2, faceNormal, positionData, hashTableData, cb);
 }
 
 // ---------------------------------------------------------------------------
@@ -268,7 +213,7 @@ void smoothNormalsScatter(uint vertIdx,
                           ConstBuffer(SmoothNormalsArgs) cb)
 {
   float3 pos = smoothNormalsLoadPosition(vertIdx, positionData, cb);
-  float3 n = lookupSmoothedNormal(pos, hashTableData, cb.hashTableSize);
+  float3 n = lookupSmoothedNormal(pos, positionData, hashTableData, cb);
 
   float len = length(n);
   if (len > 1e-7f) {

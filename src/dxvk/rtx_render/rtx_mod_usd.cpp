@@ -47,6 +47,7 @@
 #include <pxr/base/gf/matrix4f.h>
 #include <pxr/base/gf/rotation.h>
 #include <pxr/base/gf/vec3f.h>
+#include <pxr/base/gf/vec4f.h>
 #include <pxr/base/tf/notice.h>
 #include <pxr/base/tf/weakBase.h>
 #include <pxr/base/tf/weakPtr.h>
@@ -808,6 +809,11 @@ void UsdMod::Impl::processTerrainBlend(Args& args, const pxr::UsdStageRefPtr& st
     return (!attr.HasAuthoredValueOpinion() || attr.Get(&value)) && std::isfinite(value);
   };
   const auto flip = attribute("flipElevation");
+  const auto smoothNormals = attribute("smoothNormals");
+  if (smoothNormals.HasAuthoredValueOpinion() && !smoothNormals.Get(&preset->smoothNormals)) {
+    fail("smoothNormals must be a bool");
+    return;
+  }
   if (flip.HasAuthoredValueOpinion() && !flip.Get(&preset->flipElevation)) {
     fail("flipElevation must be a bool");
     return;
@@ -828,11 +834,66 @@ void UsdMod::Impl::processTerrainBlend(Args& args, const pxr::UsdStageRefPtr& st
     fail("rockMode must be slope, elevation, or both");
     return;
   }
-  if (!readFloat("lowElevation", preset->lowElevation) ||
-      !readFloat("coverageSandStrength", preset->coverageSandStrength) ||
-      !readFloat("coverageSandWidth", preset->coverageSandWidth) ||
-      preset->coverageSandStrength < 0.0f || preset->coverageSandStrength > 1.0f ||
-      preset->coverageSandWidth <= 0.0f ||
+  const auto displacement = attribute("displacementEnabled");
+  if (displacement.HasAuthoredValueOpinion() && !displacement.Get(&preset->displacementEnabled)) {
+    fail("displacementEnabled must be a bool");
+    return;
+  }
+  const auto readIterations = [&attribute](const char* name, uint32_t& value, int maximum) {
+    const auto attr = attribute(name);
+    int authored = static_cast<int>(value);
+    if ((attr.HasAuthoredValueOpinion() && !attr.Get(&authored)) || authored < 4 || authored > maximum) {
+      return false;
+    }
+    value = static_cast<uint32_t>(authored);
+    return true;
+  };
+  const auto readVector = [&attribute](const char* name, float (&values)[4], float initial) {
+    pxr::GfVec4f vector(initial);
+    const auto attr = attribute(name);
+    if (attr.HasAuthoredValueOpinion() && !attr.Get(&vector)) {
+      return false;
+    }
+    for (size_t i = 0; i < 4; ++i) {
+      if (!std::isfinite(vector[i]) || vector[i] < 0.f) {
+        return false;
+      }
+      values[i] = vector[i];
+    }
+    return true;
+  };
+  const auto selfShadow = attribute("displacementSelfShadowEnabled");
+  if ((selfShadow.HasAuthoredValueOpinion() && !selfShadow.Get(&preset->displacementSelfShadowEnabled)) ||
+      !readIterations("displacementMaxIterations", preset->displacementMaxIterations, 128) ||
+      !readIterations("displacementShadowMaxIterations", preset->displacementShadowMaxIterations, 64) ||
+      !readFloat("displacementShadowStrength", preset->displacementShadowStrength) ||
+      preset->displacementShadowStrength < 0.f || preset->displacementShadowStrength > 1.f ||
+      !readVector("displacementInward", preset->displacementInward, 0.1f) ||
+      !readVector("displacementOutward", preset->displacementOutward, 0.f) ||
+      !readVector("displacementHeightMin", preset->displacementHeightMin, 0.f) ||
+      !readVector("displacementHeightMax", preset->displacementHeightMax, 1.f)) {
+    fail("invalid displacement or self-shadow settings");
+    return;
+  }
+  for (size_t i = 0; i < 4; ++i) {
+    if (preset->displacementHeightMax[i] > 1.f ||
+        preset->displacementHeightMax[i] <= preset->displacementHeightMin[i]) {
+      fail("height remap must satisfy 0 <= min < max <= 1");
+      return;
+    }
+  }
+  if (!readFloat("displacementStrength", preset->displacementStrength) ||
+      preset->displacementStrength < 0.0f ||
+      !readFloat("lowElevation", preset->lowElevation) ||
+      !readFloat("dirtStrength", preset->dirtStrength) ||
+      !readFloat("dirtWidth", preset->dirtWidth) ||
+      preset->dirtStrength < 0.0f || preset->dirtStrength > 1.0f ||
+      preset->dirtWidth <= 0.0f ||
+      !readFloat("dirtMinElevation", preset->dirtMinElevation) ||
+      !readFloat("dirtElevationFadeWidth", preset->dirtElevationFadeWidth) ||
+      preset->dirtElevationFadeWidth <= 0.0f ||
+      !readFloat("dirtUnitsPerRepeat", preset->unitsPerRepeat[3]) ||
+      preset->unitsPerRepeat[3] <= 0.0f ||
       !readFloat("rockLowElevation", preset->rockLowElevation) ||
       !readFloat("rockHighElevation", preset->rockHighElevation) ||
       preset->rockHighElevation <= preset->rockLowElevation ||
@@ -849,11 +910,15 @@ void UsdMod::Impl::processTerrainBlend(Args& args, const pxr::UsdStageRefPtr& st
     fail("invalid elevation, slope, or height blend parameters");
     return;
   }
-  static const char* kRelations[] = { "grassMaterial", "sandMaterial", "rockMaterial" };
-  for (size_t i = 0; i < 3; ++i) {
+  static const char* kRelations[] = { "grassMaterial", "sandMaterial", "rockMaterial", "dirtMaterial" };
+  for (size_t i = 0; i < 4; ++i) {
     pxr::SdfPathVector targets;
     const auto relation = prim.GetRelationship(pxr::TfToken(str::format("remix:terrainBlend:", kRelations[i])));
-    if (!relation || !relation.GetForwardedTargets(&targets) || targets.size() != 1) {
+    const bool hasTargets = relation && relation.GetForwardedTargets(&targets);
+    if (i == 3 && preset->dirtStrength == 0.0f && (!relation || (hasTargets && targets.empty()))) {
+      continue;
+    }
+    if (!hasTargets || targets.size() != 1) {
       fail("each layer relationship must target one material");
       return;
     }

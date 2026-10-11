@@ -19,6 +19,14 @@
 * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 * DEALINGS IN THE SOFTWARE.
 */
+
+//!variant restir_gi_final_shading.comp
+
+//!variant restir_gi_final_shading_terrain_shadow.comp
+//!>       TERRAIN_BLEND TERRAIN_BLEND_SHADOW
+
+//!end-variants
+
 #define RAB_HAS_CURRENT_GBUFFER 1
 #define RAB_HAS_RESTIR_GI_RESERVOIRS 1
 #define OPAQUE_MATERIAL_USE_POM 1
@@ -179,8 +187,12 @@ void main(uint2 threadIndex : SV_DispatchThreadID, uint2 LocalIndex : SV_GroupTh
       // The value is based on experiment. If incorrect shadows are observed, a smaller value should be used.
       float coneSpreadAngle = 0.025f;
       vec3 samplePosition = spatialReservoir.getVisibilityPoint(minimalSurfaceInteraction.position);
+#ifdef TERRAIN_BLEND_SHADOW
+      const uint primarySurfaceIndex = uint(SharedSurfaceIndex[threadIndex]);
+#else
       uint primarySurfaceIndex = cb.pomEnableReSTIRGI && polymorphicSurfaceMaterialInteractionHasHeightTexture(polymorphicSurfaceMaterialInteraction) ?
         uint(SharedSurfaceIndex[threadIndex]) : SURFACE_INDEX_INVALID;
+#endif
 
       // Enable visibility validation when spatial reservoir is not inside portal, and from an opaque hit point.
       // If the actual hit distance is beyond sampleDistance * validSampleMaxRange, the sample should be invalidated because the surface is no longer there.
@@ -202,7 +214,7 @@ void main(uint2 threadIndex : SV_DispatchThreadID, uint2 LocalIndex : SV_GroupTh
       VisibilityResult visibility = traceVisibilityRay<visibilityModeEnablePom | visibilityModeAccurateHitDistance>(minimalSurfaceInteraction,
         samplePosition, rayMask, portalID,
         geometryFlags.portalSpace, geometryFlags.pomOpaqueSurfaceEncountered, 0, coneSpreadAngle, tMaxFactor, geometryFlags.isViewModel, 
-        false, primarySurfaceIndex, SharedTextureCoord[threadIndex], /*isThinOpaqueSubsurface*/ false, /*shadingNormal*/ vec3(0.0f), /*clearOpaqueHitAttenuation*/ !validateSamples);
+        false, primarySurfaceIndex, SharedTextureCoord[threadIndex], /*isThinOpaqueSubsurface*/ false, /*shadingNormal*/ vec3(0.0f), /*clearOpaqueHitAttenuation*/ !validateSamples, minimalRayInteraction.viewDirection);
 
       filterColor = visibility.attenuation;      
       if (validateSamples && !visibility.hasPOMHit)

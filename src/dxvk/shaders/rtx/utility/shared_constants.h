@@ -63,6 +63,7 @@ static const uint8_t surfaceMaterialTypeMask = uint8_t(0x3u);
 // NV-DXVK end
 
 
+#define OPAQUE_SURFACE_MATERIAL_INTERACTION_FLAG_TERRAIN_HEIGHT (1 << 3)
 #define OPAQUE_SURFACE_MATERIAL_INTERACTION_FLAG_HAS_HEIGHT_TEXTURE (1 << 0)
 #define OPAQUE_SURFACE_MATERIAL_INTERACTION_FLAG_USE_THIN_FILM_LAYER (1 << 1)
 // flags overlap with type field when in gbuffer, which occupies last 2 bits.

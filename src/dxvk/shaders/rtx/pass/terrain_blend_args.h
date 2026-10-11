@@ -50,13 +50,29 @@ struct TerrainBlendArgs {
   float rockHighElevation = 8.f;
   uint coverageTextureIndex = 0xffff;
   uint coverageSamplerIndex = 0xffff;
-  float coverageSandStrength = 0.f;
-  float coverageSandWidth = 2.f;
+  float dirtStrength = 0.f;
+  float dirtWidth = 2.f;
+  float dirtMinElevation = 0.f;
+  float dirtElevationFadeWidth = 1.f;
+  uint padding0 = 0;
+  uint padding1 = 0;
   vec4 worldOffset = vec4(0.f);
-  TerrainBlendLayerArgs layers[3];
+  uint displacementEnabled = 0;
+  float displacementStrength = 1.f;
+  uint displacementMaxIterations = 64;
+  uint displacementPadding = 0;
+  vec4 displacementInward = vec4(0.1f);
+  vec4 displacementOutward = vec4(0.f);
+  vec4 displacementHeightMin = vec4(0.f);
+  vec4 displacementHeightMax = vec4(1.f);
+  uint displacementSelfShadowEnabled = 1;
+  float displacementShadowStrength = 1.f;
+  uint displacementShadowMaxIterations = 32;
+  uint displacementShadowPadding = 0;
+  TerrainBlendLayerArgs layers[4];
 };
 
 #ifdef __cplusplus
 static_assert(sizeof(TerrainBlendLayerArgs) == 48);
-static_assert(sizeof(TerrainBlendArgs) == 224);
+static_assert(sizeof(TerrainBlendArgs) == 384);
 #endif
