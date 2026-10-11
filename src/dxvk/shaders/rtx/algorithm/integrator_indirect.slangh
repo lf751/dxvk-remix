@@ -1411,8 +1411,10 @@ void integrateIndirectPath(
       }
     }
 
-#ifdef TERRAIN_BLEND_POM
-    if (pathState.continuePath && cb.terrainBlendArgs.displacementSelfShadowEnabled != 0 &&
+#ifdef TERRAIN_BLEND
+    if (pathState.continuePath && cb.terrainBlendArgs.enabled != 0 &&
+        cb.terrainBlendArgs.displacementEnabled != 0 && cb.terrainBlendArgs.displacementStrength > 0.f &&
+        cb.terrainBlendArgs.displacementSelfShadowEnabled != 0 &&
         cb.terrainBlendArgs.displacementShadowStrength > 0.f)
     {
       const uint terrainSurfaceIndex = uint(SharedSurfaceIndex[gbufferPixelCoordinate]);

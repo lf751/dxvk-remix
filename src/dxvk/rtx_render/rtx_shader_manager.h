@@ -259,7 +259,7 @@ namespace dxvk {
         info.m_pushBufferSize = T::getPushBufferSize();
         info.m_requiresExtraLayout = T::requiresGlobalExtraLayout();
         info.m_slots = T::getResourceSlots();
-        info.m_staticCode = SpirvCodeBuffer(uint32_t(codeSize / sizeof(uint32_t)), staticCode);
+        info.m_staticCode = SpirvCompressedBuffer::decodeEmbedded(codeSize, staticCode);
         info.m_interfaceInputs = T::getInterfaceInputSlots();
         info.m_interfaceOutputs = T::getInterfaceOutputSlots();
 

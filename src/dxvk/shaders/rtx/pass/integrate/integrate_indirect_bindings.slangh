@@ -86,7 +86,7 @@ Texture2D<uint16_t> ActiveLocalPixelCoords;
 layout(rgba32f, binding = INTEGRATE_INDIRECT_BINDING_PRIMARY_WORLD_POSITION_INPUT)
 Texture2D<float4> PrimaryWorldPositionWorldTriangleNormal;
 
-#ifdef TERRAIN_BLEND_POM
+#ifdef TERRAIN_BLEND
 layout(rg32f, binding = INTEGRATE_INDIRECT_BINDING_PRIMARY_VIEW_DIRECTION_INPUT)
 Texture2D<float2> PrimaryViewDirection;
 #endif

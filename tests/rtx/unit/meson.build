@@ -30,6 +30,16 @@ foreach external_dll : external_dll_paths
 endforeach
 
 tests = []
+embedded_spirv_fixtures = custom_target('embedded_spirv_fixtures',
+  build_by_default: true,
+  output: ['embedded_raw.spv', 'embedded_packed.spv'],
+  command: [python_interpreter, files('generate_embedded_spirv.py'), join_paths(global_src_root_norm, 'scripts-common/shader_xxd.py'), '@OUTPUT0@', '@OUTPUT1@'],
+  depend_files: files('../../../scripts-common/shader_xxd.py'))
+exe = executable('test_embedded_spirv', files('test_embedded_spirv.cpp'),
+  dependencies: test_unit_deps, link_with: spirv_lib,
+  include_directories: test_include_path, win_subsystem: 'console', override_options: ['cpp_std='+dxvk_cpp_std])
+test('test_embedded_spirv', exe, env: test_env, args: embedded_spirv_fixtures)
+tests += exe
 exe = executable('test_external_effect_manifest', files('test_external_effect_manifest.cpp'), include_directories : test_include_path, dependencies : [ test_unit_deps, d3d9_dep ], link_with: [ d3d9_dll, dxvk_lib ], win_subsystem : 'console', override_options: ['cpp_std='+dxvk_cpp_std])
 # The sample effects are handed in so they are parsed as part of the test: they
 # are the worked documentation for the format, and one that stopped loading

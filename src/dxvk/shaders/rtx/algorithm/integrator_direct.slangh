@@ -109,7 +109,7 @@ void evalNEEPrimary(
   //  is disabled, we must also handle that user choice gracefully.
   const bool pomOpaqueSurfaceEncountered = geometryFlags.pomOpaqueSurfaceEncountered && cb.pomEnableDirectLighting;
 
-#if defined(TERRAIN_BLEND_POM) || defined(TERRAIN_BLEND_SHADOW)
+#if defined(TERRAIN_BLEND) || defined(TERRAIN_BLEND_SHADOW)
   const uint sharedSurfaceIndex = uint(SharedSurfaceIndex[pixelCoordinate]);
 #else
   const uint sharedSurfaceIndex = (pomOpaqueSurfaceEncountered || isDiffusionProfileSss) ? uint(SharedSurfaceIndex[pixelCoordinate]) : SURFACE_INDEX_INVALID;

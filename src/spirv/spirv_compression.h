@@ -46,6 +46,11 @@ namespace dxvk {
     
     SpirvCodeBuffer decompress() const;
 
+    // NV-DXVK start: Embedded SPIR-V decoding
+    /** Decode raw SPIR-V or a serialized word-codec buffer into owned shader code. */
+    static SpirvCodeBuffer decodeEmbedded(size_t byteSize, const uint32_t* pData);
+    // NV-DXVK end
+
     const std::vector<uint64_t>& getCode() const {
       return m_code;
     }

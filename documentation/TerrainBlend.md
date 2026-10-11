@@ -192,3 +192,10 @@ mountain island. Daylight was temporarily held through the public runtime API to
 inspect the colors, then the existing day/night cycle was restored. The complete
 191-file runtime package was deployed and hash-verified in `D:\Games\JPOGRTX\JPOG`,
 with its integration, configuration, terrain preset, and saves preserved.
+
+## Terrain shader variants
+
+Terrain blending and displacement share one terrain-capable shader variant.
+The authored displacement toggle and strength control relief at runtime; disabled
+displacement skips the relief intersection and terrain self-shadow sampling.
+Scenes without terrain blending select the separate non-terrain variants.

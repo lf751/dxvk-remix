@@ -63,37 +63,21 @@
 #include <rtx_shaders/gbuffer_psr_nrc_material_rayPortal_closesthit_wboit.h>
 
 #include <rtx_shaders/gbuffer_material_opaque_translucent_closestHit_terrain.h>
-#include <rtx_shaders/gbuffer_material_opaque_translucent_closestHit_terrain_pom.h>
 #include <rtx_shaders/gbuffer_material_rayportal_closestHit_terrain.h>
-#include <rtx_shaders/gbuffer_material_rayportal_closestHit_terrain_pom.h>
 #include <rtx_shaders/gbuffer_nrc_material_opaque_translucent_closestHit_terrain.h>
-#include <rtx_shaders/gbuffer_nrc_material_opaque_translucent_closestHit_terrain_pom.h>
 #include <rtx_shaders/gbuffer_nrc_material_rayportal_closestHit_terrain.h>
-#include <rtx_shaders/gbuffer_nrc_material_rayportal_closestHit_terrain_pom.h>
 #include <rtx_shaders/gbuffer_psr_material_opaque_translucent_closestHit_terrain.h>
-#include <rtx_shaders/gbuffer_psr_material_opaque_translucent_closestHit_terrain_pom.h>
 #include <rtx_shaders/gbuffer_psr_material_rayportal_closestHit_terrain.h>
-#include <rtx_shaders/gbuffer_psr_material_rayportal_closestHit_terrain_pom.h>
 #include <rtx_shaders/gbuffer_psr_nrc_material_opaque_translucent_closestHit_terrain.h>
-#include <rtx_shaders/gbuffer_psr_nrc_material_opaque_translucent_closestHit_terrain_pom.h>
 #include <rtx_shaders/gbuffer_psr_nrc_material_rayportal_closestHit_terrain.h>
-#include <rtx_shaders/gbuffer_psr_nrc_material_rayportal_closestHit_terrain_pom.h>
 #include <rtx_shaders/gbuffer_material_opaque_translucent_closestHit_wboit_terrain.h>
-#include <rtx_shaders/gbuffer_material_opaque_translucent_closestHit_wboit_terrain_pom.h>
 #include <rtx_shaders/gbuffer_material_rayportal_closestHit_wboit_terrain.h>
-#include <rtx_shaders/gbuffer_material_rayportal_closestHit_wboit_terrain_pom.h>
 #include <rtx_shaders/gbuffer_nrc_material_opaque_translucent_closestHit_wboit_terrain.h>
-#include <rtx_shaders/gbuffer_nrc_material_opaque_translucent_closestHit_wboit_terrain_pom.h>
 #include <rtx_shaders/gbuffer_nrc_material_rayportal_closestHit_wboit_terrain.h>
-#include <rtx_shaders/gbuffer_nrc_material_rayportal_closestHit_wboit_terrain_pom.h>
 #include <rtx_shaders/gbuffer_psr_material_opaque_translucent_closestHit_wboit_terrain.h>
-#include <rtx_shaders/gbuffer_psr_material_opaque_translucent_closestHit_wboit_terrain_pom.h>
 #include <rtx_shaders/gbuffer_psr_material_rayportal_closestHit_wboit_terrain.h>
-#include <rtx_shaders/gbuffer_psr_material_rayportal_closestHit_wboit_terrain_pom.h>
 #include <rtx_shaders/gbuffer_psr_nrc_material_opaque_translucent_closestHit_wboit_terrain.h>
-#include <rtx_shaders/gbuffer_psr_nrc_material_opaque_translucent_closestHit_wboit_terrain_pom.h>
 #include <rtx_shaders/gbuffer_psr_nrc_material_rayportal_closestHit_wboit_terrain.h>
-#include <rtx_shaders/gbuffer_psr_nrc_material_rayportal_closestHit_wboit_terrain_pom.h>
 
 #include "dxvk_scoped_annotation.h"
 #include "rtx_context.h"
@@ -215,24 +199,17 @@ namespace dxvk {
     };
 
     constexpr uint32_t kGbufferVariantTerrain = 1u << 11;
-    constexpr uint32_t kGbufferVariantTerrainPOM = 1u << 12;
 
     static_assert(RTX_SHADER_VARIANT_MATRIX_GBUFFER_TERRAIN_TERRAIN ==
       RTX_SHADER_VARIANT_MATRIX_GBUFFER_RAYQUERY_TERRAIN_TERRAIN);
-    static_assert(RTX_SHADER_VARIANT_MATRIX_GBUFFER_TERRAIN_TERRAIN_POM ==
-      RTX_SHADER_VARIANT_MATRIX_GBUFFER_RAYQUERY_TERRAIN_TERRAIN_POM);
 
     constexpr uint32_t getGbufferTerrainVariantKey(const uint32_t terrain) {
-      return (terrain != 0u ? kGbufferVariantTerrain : 0u) |
-        (terrain == RTX_SHADER_VARIANT_MATRIX_GBUFFER_TERRAIN_TERRAIN_POM ? kGbufferVariantTerrainPOM : 0u);
+      return terrain != 0u ? kGbufferVariantTerrain : 0u;
     }
 
     uint32_t getGbufferTerrainVariantKey(const TerrainBlendArgs& terrain) {
       return getGbufferTerrainVariantKey(terrain.enabled != 0u
-        ? (terrain.displacementEnabled != 0u && terrain.displacementStrength > 0.0f
-          ? RTX_SHADER_VARIANT_MATRIX_GBUFFER_TERRAIN_TERRAIN_POM
-          : RTX_SHADER_VARIANT_MATRIX_GBUFFER_TERRAIN_TERRAIN)
-        : 0u);
+        ? RTX_SHADER_VARIANT_MATRIX_GBUFFER_TERRAIN_TERRAIN : 0u);
     }
 
     constexpr uint32_t kGbufferVariantPSR = 1u << 0;
@@ -539,103 +516,71 @@ namespace dxvk {
       }
     }
 
-    Rc<DxvkShader> getGbufferClosestHitShader(const uint32_t key, const bool terrainEnabled, const bool terrainPOMEnabled) {
+    Rc<DxvkShader> getGbufferClosestHitShader(const uint32_t key, const bool terrainEnabled) {
       switch (key) {
       case 0:
         return (terrainEnabled
-          ? (terrainPOMEnabled
-            ? GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_material_opaque_translucent_closestHit_terrain_pom)
-            : GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_material_opaque_translucent_closestHit_terrain))
+          ? GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_material_opaque_translucent_closestHit_terrain)
           : GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_material_opaque_translucent_closestHit));
       case kGbufferVariantPortals:
         return (terrainEnabled
-          ? (terrainPOMEnabled
-            ? GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_material_rayportal_closestHit_terrain_pom)
-            : GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_material_rayportal_closestHit_terrain))
+          ? GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_material_rayportal_closestHit_terrain)
           : GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_material_rayportal_closestHit));
       case kGbufferVariantNRC:
         return (terrainEnabled
-          ? (terrainPOMEnabled
-            ? GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_nrc_material_opaque_translucent_closestHit_terrain_pom)
-            : GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_nrc_material_opaque_translucent_closestHit_terrain))
+          ? GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_nrc_material_opaque_translucent_closestHit_terrain)
           : GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_nrc_material_opaque_translucent_closestHit));
       case kGbufferVariantNRC | kGbufferVariantPortals:
         return (terrainEnabled
-          ? (terrainPOMEnabled
-            ? GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_nrc_material_rayportal_closestHit_terrain_pom)
-            : GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_nrc_material_rayportal_closestHit_terrain))
+          ? GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_nrc_material_rayportal_closestHit_terrain)
           : GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_nrc_material_rayportal_closestHit));
       case kGbufferVariantPSR:
         return (terrainEnabled
-          ? (terrainPOMEnabled
-            ? GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_psr_material_opaque_translucent_closestHit_terrain_pom)
-            : GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_psr_material_opaque_translucent_closestHit_terrain))
+          ? GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_psr_material_opaque_translucent_closestHit_terrain)
           : GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_psr_material_opaque_translucent_closestHit));
       case kGbufferVariantPSR | kGbufferVariantPortals:
         return (terrainEnabled
-          ? (terrainPOMEnabled
-            ? GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_psr_material_rayportal_closestHit_terrain_pom)
-            : GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_psr_material_rayportal_closestHit_terrain))
+          ? GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_psr_material_rayportal_closestHit_terrain)
           : GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_psr_material_rayportal_closestHit));
       case kGbufferVariantPSR | kGbufferVariantNRC:
         return (terrainEnabled
-          ? (terrainPOMEnabled
-            ? GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_psr_nrc_material_opaque_translucent_closestHit_terrain_pom)
-            : GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_psr_nrc_material_opaque_translucent_closestHit_terrain))
+          ? GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_psr_nrc_material_opaque_translucent_closestHit_terrain)
           : GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_psr_nrc_material_opaque_translucent_closestHit));
       case kGbufferVariantPSR | kGbufferVariantNRC | kGbufferVariantPortals:
         return (terrainEnabled
-          ? (terrainPOMEnabled
-            ? GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_psr_nrc_material_rayportal_closestHit_terrain_pom)
-            : GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_psr_nrc_material_rayportal_closestHit_terrain))
+          ? GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_psr_nrc_material_rayportal_closestHit_terrain)
           : GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_psr_nrc_material_rayportal_closestHit));
       case kGbufferVariantWBOIT:
         return (terrainEnabled
-          ? (terrainPOMEnabled
-            ? GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_material_opaque_translucent_closestHit_wboit_terrain_pom)
-            : GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_material_opaque_translucent_closestHit_wboit_terrain))
+          ? GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_material_opaque_translucent_closestHit_wboit_terrain)
           : GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_material_opaque_translucent_closestHit_wboit));
       case kGbufferVariantWBOIT | kGbufferVariantPortals:
         return (terrainEnabled
-          ? (terrainPOMEnabled
-            ? GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_material_rayportal_closestHit_wboit_terrain_pom)
-            : GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_material_rayportal_closestHit_wboit_terrain))
+          ? GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_material_rayportal_closestHit_wboit_terrain)
           : GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_material_rayportal_closestHit_wboit));
       case kGbufferVariantNRC | kGbufferVariantWBOIT:
         return (terrainEnabled
-          ? (terrainPOMEnabled
-            ? GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_nrc_material_opaque_translucent_closestHit_wboit_terrain_pom)
-            : GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_nrc_material_opaque_translucent_closestHit_wboit_terrain))
+          ? GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_nrc_material_opaque_translucent_closestHit_wboit_terrain)
           : GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_nrc_material_opaque_translucent_closestHit_wboit));
       case kGbufferVariantNRC | kGbufferVariantWBOIT | kGbufferVariantPortals:
         return (terrainEnabled
-          ? (terrainPOMEnabled
-            ? GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_nrc_material_rayportal_closestHit_wboit_terrain_pom)
-            : GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_nrc_material_rayportal_closestHit_wboit_terrain))
+          ? GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_nrc_material_rayportal_closestHit_wboit_terrain)
           : GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_nrc_material_rayportal_closestHit_wboit));
       case kGbufferVariantPSR | kGbufferVariantWBOIT:
         return (terrainEnabled
-          ? (terrainPOMEnabled
-            ? GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_psr_material_opaque_translucent_closestHit_wboit_terrain_pom)
-            : GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_psr_material_opaque_translucent_closestHit_wboit_terrain))
+          ? GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_psr_material_opaque_translucent_closestHit_wboit_terrain)
           : GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_psr_material_opaque_translucent_closestHit_wboit));
       case kGbufferVariantPSR | kGbufferVariantWBOIT | kGbufferVariantPortals:
         return (terrainEnabled
-          ? (terrainPOMEnabled
-            ? GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_psr_material_rayportal_closestHit_wboit_terrain_pom)
-            : GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_psr_material_rayportal_closestHit_wboit_terrain))
+          ? GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_psr_material_rayportal_closestHit_wboit_terrain)
           : GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_psr_material_rayportal_closestHit_wboit));
       case kGbufferVariantPSR | kGbufferVariantNRC | kGbufferVariantWBOIT:
         return (terrainEnabled
-          ? (terrainPOMEnabled
-            ? GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_psr_nrc_material_opaque_translucent_closestHit_wboit_terrain_pom)
-            : GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_psr_nrc_material_opaque_translucent_closestHit_wboit_terrain))
+          ? GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_psr_nrc_material_opaque_translucent_closestHit_wboit_terrain)
           : GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_psr_nrc_material_opaque_translucent_closestHit_wboit));
       case kGbufferVariantPSR | kGbufferVariantNRC | kGbufferVariantWBOIT | kGbufferVariantPortals:
         return (terrainEnabled
-          ? (terrainPOMEnabled
-            ? GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_psr_nrc_material_rayportal_closestHit_wboit_terrain_pom)
-            : GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_psr_nrc_material_rayportal_closestHit_wboit_terrain))
+          ? GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_psr_nrc_material_rayportal_closestHit_wboit_terrain)
           : GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_psr_nrc_material_rayportal_closestHit_wboit));
       default:
         assert(false && "Invalid GBuffer closest hit shader variant");
@@ -1022,7 +967,6 @@ namespace dxvk {
 
     const auto& terrain = m_device->getCommon()->getSceneManager().getTerrainBlendArgs();
     const bool terrainEnabled = terrain.enabled != 0u;
-    const bool terrainPOMEnabled = terrain.displacementEnabled != 0u && terrain.displacementStrength > 0.0f;
     const uint32_t terrainKey = getGbufferTerrainVariantKey(terrain);
     const uint32_t rayGenBaseKey = getGbufferVariantKey(featureVariant, isPSRPass, nrcEnabled, wboitEnabled) | terrainKey;
     const uint32_t passKey = getGbufferPassVariantKey(isPSRPass, nrcEnabled, wboitEnabled);
@@ -1037,7 +981,7 @@ namespace dxvk {
 
       shaders.addGeneralShader(getGbufferTraceRayGenShader(rayGenKey));
       shaders.addGeneralShader(getGbufferMissShader(passKey));
-      shaders.addHitGroup(getGbufferClosestHitShader(closestHitKey, terrainEnabled, terrainPOMEnabled), nullptr, nullptr);
+      shaders.addHitGroup(getGbufferClosestHitShader(closestHitKey, terrainEnabled), nullptr, nullptr);
       shaders.debugName = isPSRPass ? "GBuffer PSR TraceRay (RGS)" : "GBuffer TraceRay (RGS)";
     }
 

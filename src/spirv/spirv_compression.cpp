@@ -1,6 +1,51 @@
 #include "spirv_compression.h"
 
+// NV-DXVK start: Embedded SPIR-V decoding
+#include <cstring>
+#include "../util/util_error.h"
+// NV-DXVK end
+
 namespace dxvk {
+
+  // NV-DXVK start: Embedded SPIR-V decoding
+  SpirvCodeBuffer SpirvCompressedBuffer::decodeEmbedded(size_t byteSize, const uint32_t* pData) {
+    constexpr uint32_t kCompressedMagic = 0x43565053;
+    if (byteSize < sizeof(uint32_t) || byteSize % sizeof(uint32_t) != 0) {
+      throw DxvkError("Invalid embedded shader size");
+    }
+    if (pData[0] != kCompressedMagic) {
+      return SpirvCodeBuffer(uint32_t(byteSize / sizeof(uint32_t)), pData);
+    }
+    if (byteSize < 16 || pData[1] < 5 || pData[3] != 0) {
+      throw DxvkError("Invalid compressed shader header");
+    }
+    const size_t maskCount = (size_t(pData[1]) + NumMaskWords - 1) / NumMaskWords;
+    const size_t payloadBytes = pData[2];
+    const size_t payloadWords = (payloadBytes + 7) / 8;
+    if (byteSize != 16 + (maskCount + payloadWords) * sizeof(uint64_t)) {
+      throw DxvkError("Invalid compressed shader payload size");
+    }
+    SpirvCompressedBuffer compressed;
+    compressed.m_size = pData[1];
+    compressed.m_mask.resize(maskCount);
+    compressed.m_code.resize(payloadWords);
+    const auto* pBytes = reinterpret_cast<const uint8_t*>(pData) + 16;
+    std::memcpy(compressed.m_mask.data(), pBytes, maskCount * sizeof(uint64_t));
+    std::memcpy(compressed.m_code.data(), pBytes + maskCount * sizeof(uint64_t), payloadWords * sizeof(uint64_t));
+    size_t expectedPayloadBytes = 0;
+    for (uint32_t i = 0; i < compressed.m_size; i++) {
+      expectedPayloadBytes += ((compressed.m_mask[i / NumMaskWords] >> (2 * (i % NumMaskWords))) & 3) + 1;
+    }
+    if (expectedPayloadBytes != payloadBytes) {
+      throw DxvkError("Invalid compressed shader byte counts");
+    }
+    SpirvCodeBuffer code = compressed.decompress();
+    if (code.data()[0] != 0x07230203) {
+      throw DxvkError("Invalid decompressed SPIR-V header");
+    }
+    return code;
+  }
+  // NV-DXVK end
 
   SpirvCompressedBuffer::SpirvCompressedBuffer()
   : m_size(0) {

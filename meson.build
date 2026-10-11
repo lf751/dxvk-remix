@@ -327,6 +327,7 @@ if get_option('buildtype').startswith('debug')
   glsl_args += [ '-g' ]
 endif
 
+
 glsl_generator = generator(
   glsl_compiler,
   output    : [ '@BASENAME@.h' ],
@@ -389,6 +390,9 @@ endif
 # different set of arguments.
 # Note: Append -binary to the runtime shader command arguments to output SPIR-V in binary form rather than as C headers.
 rtx_shaders_runtime_command_arguments = rtx_shaders_command_arguments + [ '-binary' ]
+if get_option('compress_embedded_shaders')
+  rtx_shaders_command_arguments += [ '-compress' ]
+endif
 
 # Runtime Shader Recompilation Definitions
 # Note: Runtime shader recompilation requires various paths and script arguments as constant strings, so this information is generated

@@ -445,7 +445,7 @@ VisibilityResult traceVisibilityRay<let VisibilityMode : uint>(
 
   visibilityRay.tMax *= tMaxFactor;
 
-#if defined(TERRAIN_BLEND_POM) || defined(TERRAIN_BLEND_SHADOW)
+#if defined(TERRAIN_BLEND) || defined(TERRAIN_BLEND_SHADOW)
   float terrainAttenuation = 1.0f;
   const TerrainBlendArgs terrainArgs = cb.terrainBlendArgs;
   if ((VisibilityMode & visibilityModeEnablePom) && primarySurfaceIndex != SURFACE_INDEX_INVALID &&
@@ -539,7 +539,7 @@ VisibilityResult traceVisibilityRay<let VisibilityMode : uint>(
   VisibilityResult result = traceVisibilityRay<VisibilityMode>(visibilityRay, rayMask, expectedRayPortalIndex, rayOriginPortalSpace, hasRayOriginatedFromViewModel, usePreviousTLAS, clearOpaqueHitAttenuation);
 
   // We want to calculate the attenuation from the light to the surface - which is why we use targetPosition (light) and neg-direction (light to surface)
-#if defined(TERRAIN_BLEND_POM) || defined(TERRAIN_BLEND_SHADOW)
+#if defined(TERRAIN_BLEND) || defined(TERRAIN_BLEND_SHADOW)
   result.attenuation *= terrainAttenuation;
 #endif
 

@@ -117,7 +117,7 @@ vec4 terrainPlacementWeights(vec3 position, vec3 normal, float lod) {
   return vec4(weights.x - dirt, weights.y, weights.z, dirt);
 }
 
-#if defined(TERRAIN_BLEND_POM) || defined(TERRAIN_BLEND_SHADOW)
+#if defined(TERRAIN_BLEND) || defined(TERRAIN_BLEND_SHADOW)
 vec2 terrainReliefBounds(vec4 weights) {
   const TerrainBlendArgs args = cb.terrainBlendArgs;
   vec4 activeWeights = weights;
@@ -292,7 +292,7 @@ OpaqueSurfaceMaterialInteraction terrainBlendInteractionCreate(Surface surface, 
   const vec4 weights = terrainPlacementWeights(position, interaction.geometryNormal, lod);
   vec3 virtualPosition = position;
   bool hasRelief = false;
-#ifdef TERRAIN_BLEND_POM
+#ifdef TERRAIN_BLEND
   if (args.displacementEnabled != 0 && args.displacementStrength > 0.f && dot(ray.viewDirection, interaction.geometryNormal) > 1e-4f) {
     const float grazingFade = smoothstep(0.05f, 0.2f, dot(ray.viewDirection, interaction.geometryNormal));
     const float distance = terrainReliefIntersection(position, interaction.geometryNormal, ray.viewDirection, weights * grazingFade, lod);

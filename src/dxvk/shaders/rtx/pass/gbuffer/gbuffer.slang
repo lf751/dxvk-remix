@@ -37,7 +37,6 @@
 //!> axis wboit wboit UNORDERED_RESOLVE_WBOIT
 //!> axis terrain -
 //!> axis terrain terrain TERRAIN_BLEND
-//!> axis terrain terrain_pom TERRAIN_BLEND TERRAIN_BLEND_POM
 //!> order features psr pipeline nrc wboit terrain
 //!end-variants
 

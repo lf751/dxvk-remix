@@ -33,6 +33,7 @@ parser.add_argument('-force', action='store_true', dest='force')
 parser.add_argument('-parallel', action='store_true', dest='parallel')
 parser.add_argument('-binary', action='store_true', dest='binary')
 parser.add_argument('-debug', action='store_true', dest='debug')
+parser.add_argument('-compress', action='store_true', dest='compress')
 args = parser.parse_args()
 
 # Set to True to generate Slang repro file when compiling shaders
@@ -41,7 +42,7 @@ generateSlangRepro = False
 includePaths = ' '.join([f'-I{path}' for path in args.includes])
 slangDll = os.path.join(os.path.dirname(args.slangc), 'slang.dll')
 
-tools = [args.glslang, args.slangc, slangDll, __file__]
+tools = [args.glslang, args.slangc, slangDll, __file__, os.path.join(os.path.dirname(__file__), 'shader_xxd.py')]
 newestTool = max([os.path.getmtime(x) for x in tools])
 
 # Note: -Os (Optimize Size) used here as while one might typically expect optimizing for size to comprimise speed optimizations,
@@ -56,6 +57,16 @@ if args.debug:
     glslangFlags += ' -g'
 
 os.makedirs(args.output, exist_ok = True)
+
+headerModePath = os.path.join(args.output, '_shader_header_mode.txt')
+headerMode = 'compressed' if args.compress else 'raw'
+if not args.binary:
+    previousMode = None
+    if os.path.exists(headerModePath):
+        with open(headerModePath) as modeFile:
+            previousMode = modeFile.read()
+    if previousMode != headerMode:
+        args.force = True
 
 
 def printFromThread(what):
@@ -258,6 +269,8 @@ def createSlangTask(inputFile, variantSpec):
         script_dir = os.path.dirname(os.path.realpath(__file__))
         shader_xxd = os.path.join(script_dir, 'shader_xxd.py')
         command2 = f'"{sys.executable}" {shader_xxd} -i {destFile} -o {headerFile}'
+        if args.compress:
+            command2 += ' --compress'
 
         task.commands = [command1, command2]
 
@@ -646,3 +659,7 @@ if len(tasks):
 
 if terminate:
     sys.exit(1)
+
+if not args.binary:
+    with open(headerModePath, 'w') as modeFile:
+        modeFile.write(headerMode)
