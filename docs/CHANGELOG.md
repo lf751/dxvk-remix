@@ -30,6 +30,12 @@ Entry format:
 
 ## 2026-10-30
 
+### JPOG integration: port dev D3D9 geometry continuity fixes
+Port the D3D9 frontend, object matching, topology validation and retained history corrections from RemixProjGroup dev commit 90583a4c1 (principally e67adb158), retaining the authored terrain and canonical-buffer smooth-normal fixes. Resized batches rebuild instead of refitting incompatible topology; in-place rebuilds preserve temporal continuity. Repeated identical retained transforms no longer invalidate their users.
+- Options: none added or changed. Experimental shader, preset, sparse-sampling and TLAS changes are not included.
+- Tests: test_geometry_continuity covers resized non-indexed batches, connectivity/topology changes, parked bones and non-finite matrices. Gameplay flickering and tree memory regression require a new live comparison.
+- Attribution: fixes by RemixProjGroup contributors, ported from https://github.com/RemixProjGroup/dxvk-remix/commit/e67adb15819083400d673c5ee61099dc31622bc1. Existing source license notices are preserved.
+
 ### Smooth normals use one geometry representation
 CPU smoothing now reads the converted ray-tracing positions and triangle-list
 indices, matching the GPU path. It selects CPU execution only when those buffers

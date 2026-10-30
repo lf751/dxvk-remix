@@ -169,4 +169,10 @@ exe = executable('test_terrain_surface_packing', files('test_terrain_surface_pac
 test('test_terrain_surface_packing', exe, env: test_env)
 tests += exe
 
+
+exe = executable('test_geometry_continuity', files('test_geometry_continuity.cpp'),
+  include_directories: test_include_path, dependencies: [test_unit_deps, d3d9_dep],
+  link_with: [d3d9_dll, dxvk_lib], win_subsystem: 'console', override_options: ['cpp_std='+dxvk_cpp_std])
+test('test_geometry_continuity', exe, env: test_env)
+tests += exe
 alias_target('unit_tests', tests, embedded_spirv_fixtures)
