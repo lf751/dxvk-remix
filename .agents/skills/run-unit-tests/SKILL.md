@@ -19,10 +19,13 @@ Configure and build the unit test directory with the same toolchain as your othe
 
 ```powershell
 $vcvars = '<VS install>\VC\Auxiliary\Build\vcvarsall.bat'
-cmd.exe /c "call `"$vcvars`" x64 >nul 2>&1 && cd /d <repo> && meson setup --buildtype release --backend ninja -Denable_tracy=false _Comp64UnitTest && cd _Comp64UnitTest && meson compile -j 4 unit_tests && meson install --tags unit"
+cmd.exe /c "call `"$vcvars`" x64 >nul 2>&1 && cd /d <repo> && meson setup --buildtype release --backend ninja -Denable_tracy=false -Denable_d3d11=true -Denable_dxgi=true _Comp64UnitTest && cd _Comp64UnitTest && meson compile -j 4 unit_tests && meson install --tags unit"
 ```
 
 ## Running Tests
+
+The shared D3D9 module also exports D3D11 and DXGI entry points, so both
+frontends must be enabled in this configuration.
 
 Once `_Comp64UnitTest` exists:
 

@@ -11,6 +11,8 @@ calls vcvarsall.bat by full path (avoiding the upstream SetupVS lying-
 on-failure trap), pre-cleans the gitignored `nv-private/` and
 `tests/rtx/dxvk_rt_testing/` dirs, runs `meson setup`/`compile`/`install`
 in a single isolated cmd.exe shell, and verifies artifacts.
+The wrapper enables the combined D3D11 and DXGI frontends by default, matching
+the shared module's export table. Explicit `-MesonArgs` values take precedence.
 
 ## When to invoke
 

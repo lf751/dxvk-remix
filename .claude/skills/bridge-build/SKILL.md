@@ -11,6 +11,8 @@ via vswhere, calls vcvarsall.bat by full path (avoiding the upstream
 SetupVS lying-on-failure trap), runs `meson setup`/`compile` per arch in
 isolated cmd.exe shells (no env contamination between x64 and x86), and
 verifies all three expected artifacts.
+It prefers VS 18 (including Build Tools), falls back to VS 2019 / 2022,
+and caps Ninja compilation at four workers for each architecture.
 
 The bridge is the IPC layer that lets a 32-bit game talk to the 64-bit
 Remix runtime. Client and server live under `bridge/` and build into
@@ -116,10 +118,9 @@ bridge/_output/
   bridge has `_compRelease_x64` (server only) and `_compRelease_x86`
   (client + launcher). Ninja runs against each independently — one
   side can rebuild while the other is a no-op when sources match.
-- **MSVC v142 toolchain required.** Either VS2019 directly, or
-  VS2022 with the v142 toolset Individual Component installed.
-  The script's vswhere call uses `-version '[16.0,18.0)'` so either
-  works.
+- **Visual Studio C++ tools required.** Install the x86/x64 C++ tools for
+  VS 18, VS 2022 or VS 2019. The script uses `-products *` so Build Tools
+  installations are included in discovery.
 - **`gametargets.conf` deploy path.** If the user has set up
   `bridge/gametargets.conf`, meson auto-deploys binaries into the
   configured game dirs as part of the build. The bridge's

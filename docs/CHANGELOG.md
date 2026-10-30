@@ -30,6 +30,13 @@ Entry format:
 
 ## 2026-10-30
 
+### Build wrappers support the combined module and current Visual Studio
+The runtime wrapper enables D3D11 and DXGI by default to match the shared
+module's export table. The bridge wrapper discovers VS 18 and Build Tools and
+uses four Ninja workers. Workflow instructions describe the same configuration.
+- Options: wrapper defaults enable `enable_d3d11` and `enable_dxgi`; explicit Meson arguments take precedence.
+- Commits: bridge wrapper changes in 2093caa68; runtime default and workflow follow-up.
+
 ### Optional lossless embedded shader compression
 The build can pack embedded SPIR-V using DXVK's existing word codec and decode it
 when a shader is first created. Runtime shader recompilation still emits ordinary

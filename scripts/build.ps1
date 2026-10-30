@@ -87,6 +87,14 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# The shared module exports D3D11 and DXGI entry points alongside D3D9.
+foreach ($frontend in 'd3d11', 'dxgi') {
+    $optionPrefix = "-Denable_${frontend}="
+    if (-not ($MesonArgs | Where-Object { $_.StartsWith($optionPrefix) })) {
+        $MesonArgs += "${optionPrefix}true"
+    }
+}
+
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $flavorTag = switch ($Flavor) {
     'release'        { 'Release' }
@@ -94,7 +102,7 @@ $flavorTag = switch ($Flavor) {
     'debugoptimized' { 'DebugOptimized' }
 }
 if ($ApiOnly) {
-    $MesonArgs = @('-Denable_d3d9_frontend=false', '-Denable_d3d11=true', '-Denable_dxgi=true') + $MesonArgs
+    $MesonArgs = @('-Denable_d3d9_frontend=false') + $MesonArgs
 }
 $buildDir = if ($BuildDir) { $BuildDir } elseif ($ApiOnly) { '_Comp64ApiOnly' } else { "_Comp64$flavorTag" }
 $mesonExtra = ($MesonArgs | ForEach-Object { "`"$_`"" }) -join ' '
