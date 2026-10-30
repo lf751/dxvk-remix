@@ -135,6 +135,61 @@ void testConvertedTopology(VkPrimitiveTopology topology) {
     expectNormal(normal, Vector3(-2,1,0), "converted strip/fan normal");
   }
 }
+
+void testConvertedVertexDomain() {
+  const std::vector<Vector3> vertices = {
+    Vector3(1,0,1), Vector3(0,0,0), Vector3(0,0,1), Vector3(0,0,2), Vector3(1,0,2),
+    Vector3(2,0,2), Vector3(2,0,1), Vector3(2,0,0), Vector3(1,0,0)
+  };
+  std::vector<float> positions(4 + vertices.size() * 7, -1000.f);
+  for (uint32_t i = 0; i < vertices.size(); ++i) {
+    positions[4 + i * 7] = vertices[i].x;
+    positions[5 + i * 7] = vertices[i].y;
+    positions[6 + i * 7] = vertices[i].z;
+  }
+  std::vector<uint32_t> rasterIndices = {0xffffffff, 0xffffffff, 100};
+  for (uint32_t i = 0; i < 17; ++i) {
+    rasterIndices.push_back(101 + i % 8);
+  }
+  rasterIndices.push_back(19711);
+  GenTriListArgs conversion {};
+  conversion.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN;
+  conversion.useIndexBuffer = 1;
+  conversion.srcUseUint32 = 1;
+  conversion.firstIndex = 2;
+  conversion.minVertex = 100;
+  conversion.maxVertex = 108;
+  std::vector<uint16_t> converted(17 * 3);
+  for (uint32_t tri = 0; tri < 17; ++tri) {
+    generateIndices(tri, converted.data(), rasterIndices.data(), conversion);
+  }
+  std::vector<uint32_t> indices((converted.size() + 3) / 2, 0);
+  for (uint32_t i = 0; i < converted.size(); ++i) {
+    if (converted[i] >= vertices.size()) {
+      throw std::runtime_error("converted index outside vertex domain");
+    }
+    const uint32_t halfword = i + 2;
+    indices[halfword / 2] |= uint32_t(converted[i]) << ((halfword % 2) * 16);
+  }
+  SmoothNormalsArgs args {};
+  args.positionOffset = 16;
+  args.positionStride = 28;
+  args.indexOffset = 4;
+  args.indexStride = 2;
+  args.useShortIndices = 1;
+  args.numVertices = 9;
+  args.numTriangles = 17;
+  args.hashTableSize = 256;
+  std::vector<int32_t> table(args.hashTableSize * 4, 0);
+  for (uint32_t tri = 0; tri < args.numTriangles; ++tri) {
+    smoothNormalsAccumulate(tri, positions.data(), indices.data(), table.data(), args);
+  }
+  for (uint32_t vertex = 0; vertex < args.numVertices; ++vertex) {
+    float encoded;
+    smoothNormalsScatter(vertex, positions.data(), &encoded, table.data(), args);
+    expectNormal(decodeNormal(asuint(encoded)), Vector3(0,1,0), "converted vertex domain normal");
+  }
+}
 }
 
 int main() {
@@ -144,6 +199,7 @@ int main() {
     testCollisionChainBeyond128();
     testConvertedTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP);
     testConvertedTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN);
+    testConvertedVertexDomain();
     std::cout << "Smooth normals regressions passed." << std::endl;
     return 0;
   } catch (const std::exception& error) {

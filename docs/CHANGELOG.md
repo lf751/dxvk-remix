@@ -30,6 +30,14 @@ Entry format:
 
 ## 2026-10-30
 
+### Smooth normals use one geometry representation
+CPU smoothing now reads the converted ray-tracing positions and triangle-list
+indices, matching the GPU path. It selects CPU execution only when those buffers
+are mapped and have no pending GPU writes. Mixing original raster buffers with
+converted index metadata could read outside the vertex array when a scene loaded.
+- Options: none; smoothing stays enabled through the authored preset.
+- Commits: smooth-normal geometry integration correction.
+
 ### Build wrappers support the combined module and current Visual Studio
 The runtime wrapper enables D3D11 and DXGI by default to match the shared
 module's export table. The bridge wrapper discovers VS 18 and Build Tools and

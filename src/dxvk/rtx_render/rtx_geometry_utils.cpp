@@ -1377,7 +1377,7 @@ namespace dxvk {
     return std::sqrtf(maxUvTileSizeSqr);
   }
 
-  void RtxGeometryUtils::dispatchSmoothNormals(const Rc<DxvkContext>& ctx, const RasterGeometry& input, RaytraceGeometry& geo) {
+  void RtxGeometryUtils::dispatchSmoothNormals(const Rc<DxvkContext>& ctx, RaytraceGeometry& geo) {
     ScopedGpuProfileZone(ctx, "smoothNormals");
 
     if (!geo.positionBuffer.defined() || !geo.indexBuffer.defined() || !geo.normalBuffer.defined()) {
@@ -1407,28 +1407,21 @@ namespace dxvk {
     params.useShortIndices = (geo.indexBuffer.indexType() == VK_INDEX_TYPE_UINT16) ? 1 : 0;
     params.phase = 0;
     params.hashTableSize = hashTableSize;
+    params.positionOffset = geo.positionBuffer.offsetFromSlice();
+    params.positionStride = geo.positionBuffer.stride();
+    params.indexOffset = geo.indexBuffer.offsetFromSlice();
 
-    assert(geo.vertexCount == input.vertexCount);
-
-    // Decide whether to use the CPU path.  The input raster buffers must be host-visible
-    // and not pending GPU write.  For small meshes the CPU path avoids GPU dispatch overhead.
-    const bool mustUseGPU = input.indexBuffer.mapPtr() == nullptr || input.positionBuffer.mapPtr() == nullptr;
-    const bool pendingGpuWrite = input.positionBuffer.isPendingGpuWrite() || input.indexBuffer.isPendingGpuWrite();
+    // Both paths consume the converted triangle list and its matching vertex domain.
+    const bool mustUseGPU = geo.indexBuffer.mapPtr() == nullptr || geo.positionBuffer.mapPtr() == nullptr;
+    const bool pendingGpuWrite = geo.positionBuffer.isPendingGpuWrite() || geo.indexBuffer.isPendingGpuWrite();
 
     const uint32_t kMaxTrianglesForCPU = 512;
     const bool useCPU = numTriangles <= kMaxTrianglesForCPU && !pendingGpuWrite && !mustUseGPU;
 
     if (useCPU) {
       // --- CPU path: uses the same shared functions as the GPU shader ---
-      const float* srcPosition = reinterpret_cast<const float*>(input.positionBuffer.mapPtr(0));
-      const uint32_t* srcIndex = reinterpret_cast<const uint32_t*>(input.indexBuffer.mapPtr(0));
-
-      // Remap offsets to the raster input buffers
-      params.positionOffset = input.positionBuffer.offsetFromSlice();
-      params.positionStride = input.positionBuffer.stride();
-      params.normalOffset = 0; // CPU output writes per-vertex via writeToBuffer, so offset/stride handled externally
-      params.normalStride = 0; 
-      params.indexOffset = input.indexBuffer.offsetFromSlice();
+      const float* srcPosition = reinterpret_cast<const float*>(geo.positionBuffer.mapPtr(0));
+      const uint32_t* srcIndex = reinterpret_cast<const uint32_t*>(geo.indexBuffer.mapPtr(0));
 
       // Allocate and zero the hash table on the CPU
       std::vector<int32_t> hashTable(hashTableSize * 4, 0);
@@ -1446,11 +1439,8 @@ namespace dxvk {
       }
     } else {
       // --- GPU path ---
-      params.positionOffset = geo.positionBuffer.offsetFromSlice();
-      params.positionStride = geo.positionBuffer.stride();
       params.normalOffset = geo.normalBuffer.offsetFromSlice();
       params.normalStride = geo.normalBuffer.stride();
-      params.indexOffset = geo.indexBuffer.offsetFromSlice();
 
       // Sub-allocate from a pooled device-local buffer for the hash table (4 ints per entry: tag + 3 normal components)
       const VkDeviceSize hashBufSize = hashTableSize * 4 * sizeof(int);

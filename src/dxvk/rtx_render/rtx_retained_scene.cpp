@@ -1285,7 +1285,7 @@ namespace dxvk {
     }
     // As processDrawCallState does after a build or vertex update.
     if (m_scene.shouldSmoothNormals(drawCall)) {
-      m_scene.device()->getCommon()->metaGeometryUtils().dispatchSmoothNormals(ctx, drawCall.getGeometryData(), blas.modifiedGeometryData);
+      m_scene.device()->getCommon()->metaGeometryUtils().dispatchSmoothNormals(ctx, blas.modifiedGeometryData);
       blas.modifiedGeometryData.smoothNormalsApplied = true;
       m_scene.syncLinkedInstances(&blas);
       blas.frameLastUpdated = blas.frameLastTouched;

@@ -2187,7 +2187,7 @@ namespace dxvk {
     // the normals computed on the first pass remain valid for subsequent frames.
     if (shouldSmoothNormals(drawCallState) &&
         (result == ObjectCacheState::KBuildBVH || result == ObjectCacheState::kUpdateBVH)) {
-      m_device->getCommon()->metaGeometryUtils().dispatchSmoothNormals(ctx, drawCallState.getGeometryData(), pBlas->modifiedGeometryData);
+      m_device->getCommon()->metaGeometryUtils().dispatchSmoothNormals(ctx, pBlas->modifiedGeometryData);
       pBlas->modifiedGeometryData.smoothNormalsApplied = true;
       if (drawCallState.testCategoryFlags(InstanceCategories::Terrain)) {
         ONCE(Logger::info("[RTX Terrain Blend] Terrain normal smoothing active."));

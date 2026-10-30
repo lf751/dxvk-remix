@@ -255,7 +255,6 @@ namespace dxvk {
       */
     void dispatchSmoothNormals(
       const Rc<DxvkContext>& ctx,
-      const RasterGeometry& input,
       RaytraceGeometry& geo);
 
     inline void flushCommandList() {
