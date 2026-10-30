@@ -60,7 +60,7 @@ struct TerrainBlendArgs {
   uint displacementEnabled = 0;
   float displacementStrength = 1.f;
   uint displacementMaxIterations = 64;
-  uint displacementPadding = 0;
+  uint displacementMode = 1;
   vec4 displacementInward = vec4(0.1f);
   vec4 displacementOutward = vec4(0.f);
   vec4 displacementHeightMin = vec4(0.f);

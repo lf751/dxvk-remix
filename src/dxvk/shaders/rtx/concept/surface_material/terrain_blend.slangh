@@ -21,6 +21,8 @@
 */
 #pragma once
 
+#include "rtx/pass/terrain_pom_math.h"
+
 vec3 terrainProjectionWeights(vec3 normal) {
   const vec3 weights = pow(abs(normal), vec3(4.f));
   return weights / max(dot(weights, vec3(1.f)), 1e-6f);
@@ -146,7 +148,7 @@ float terrainReliefHeight(vec3 position, vec3 normal, vec4 weights, float lod) {
   return sanitize(height * args.displacementStrength, 0.f);
 }
 
-float terrainReliefIntersection(vec3 position, vec3 normal, vec3 outwardView, vec4 weights, float lod) {
+float terrainRaymarchIntersection(vec3 position, vec3 normal, vec3 outwardView, vec4 weights, float lod) {
   const TerrainBlendArgs args = cb.terrainBlendArgs;
   const float facing = dot(outwardView, normal);
   const vec2 bounds = terrainReliefBounds(weights);
@@ -172,6 +174,196 @@ float terrainReliefIntersection(vec3 position, vec3 normal, vec3 outwardView, ve
   return previousDistance;
 }
 
+void terrainQuadtreeCell(vec3 position, vec3 direction, vec3 normal, vec4 weights, uint level, uint minimumLevel,
+    out float maximumHeight, out float exitDistance) {
+  const TerrainBlendArgs args = cb.terrainBlendArgs;
+  const vec3 projections = terrainProjectionWeights(normal);
+  maximumHeight = 0.f;
+  exitDistance = 1e30f;
+  for (uint layer = 0; layer < 4; ++layer) {
+    const TerrainBlendLayerArgs material = args.layers[layer];
+    if (weights[layer] <= 0.f || material.heightTextureIndex == BINDING_INDEX_INVALID) {
+      continue;
+    }
+    uint width, height, mipCount;
+    textures[nonuniformEXT(material.heightTextureIndex)].GetDimensions(0, width, height, mipCount);
+    const uint mip = min(level, mipCount - 1);
+    const int2 dimensions = int2(max(uint2(width, height) >> mip, uint2(1)));
+    float layerMaximum = 0.f;
+    for (uint axis = 0; axis < 3; ++axis) {
+      if (projections[axis] == 0.f) {
+        continue;
+      }
+      vec3 tangent, bitangent;
+      terrainProjectionBasis(normal, axis, tangent, bitangent);
+      const vec2 uv = vec2(dot(position, tangent), dot(position, bitangent)) / material.unitsPerRepeat;
+      const vec2 velocity = vec2(dot(direction, tangent), dot(direction, bitangent)) / material.unitsPerRepeat;
+      const float gridOffset = level == minimumLevel ? 0.5f : 0.f;
+      const int2 cell = int2(floor(uv * dimensions - gridOffset));
+      float projectionMaximum = 0.f;
+      // Neighbour maxima bound the bilinear footprint throughout the current cell.
+      if (level > minimumLevel) {
+        for (int x = -1; x <= 1; ++x) {
+          for (int y = -1; y <= 1; ++y) {
+            const int2 texel = ((cell + int2(x, y)) % dimensions + dimensions) % dimensions;
+            projectionMaximum = max(projectionMaximum,
+              textures[nonuniformEXT(material.heightTextureIndex)].Load(int3(texel, mip)).r);
+          }
+        }
+      }
+      layerMaximum += projections[axis] * projectionMaximum;
+      for (uint coordinate = 0; coordinate < 2; ++coordinate) {
+        if (abs(velocity[coordinate]) > 1e-8f) {
+          const float edge = (float(cell[coordinate] + (velocity[coordinate] > 0.f ? 1 : 0)) + gridOffset) /
+            float(dimensions[coordinate]);
+          const float distance = (edge - uv[coordinate]) / velocity[coordinate];
+          // Cross the boundary even when world-space coordinates limit float precision.
+          const float boundaryStep = max(0.001f / float(dimensions[coordinate]),
+            abs(uv[coordinate]) * 2e-7f) / abs(velocity[coordinate]);
+          exitDistance = min(exitDistance, max(distance, boundaryStep));
+        }
+      }
+    }
+    const float remapped = saturate((layerMaximum - args.displacementHeightMin[layer]) /
+      (args.displacementHeightMax[layer] - args.displacementHeightMin[layer]));
+    maximumHeight += weights[layer] * (remapped *
+      (args.displacementInward[layer] + args.displacementOutward[layer]) - args.displacementInward[layer]);
+  }
+  maximumHeight *= args.displacementStrength;
+}
+
+void terrainAppendHeightBreakpoints(vec3 polynomial, float threshold, inout float breakpoints[18], inout uint count) {
+  float first, second;
+  const int roots = terrainPomRoots(polynomial.x, polynomial.y, polynomial.z - threshold, first, second);
+  if (roots > 0 && first > 0.f && first < 1.f) {
+    breakpoints[count++] = first;
+  }
+  if (roots > 1 && second > 0.f && second < 1.f) {
+    breakpoints[count++] = second;
+  }
+}
+
+bool terrainQuadtreeLeafIntersection(vec3 position, vec3 normal, vec3 outwardView, vec4 weights, float lod,
+    float startDistance, float endDistance, out float intersection) {
+  const TerrainBlendArgs args = cb.terrainBlendArgs;
+  vec3 polynomials[4];
+  float breakpoints[18];
+  breakpoints[0] = 0.f;
+  breakpoints[1] = 1.f;
+  uint count = 2;
+  intersection = 0.f;
+  for (uint layer = 0; layer < 4; ++layer) {
+    polynomials[layer] = vec3(0.f);
+    if (weights[layer] <= 0.f || args.layers[layer].heightTextureIndex == BINDING_INDEX_INVALID) {
+      continue;
+    }
+    const float first = terrainLayerHeight(args.layers[layer], position + outwardView * startDistance, normal, lod);
+    const float middle = terrainLayerHeight(args.layers[layer],
+      position + outwardView * (0.5f * (startDistance + endDistance)), normal, lod);
+    const float last = terrainLayerHeight(args.layers[layer], position + outwardView * endDistance, normal, lod);
+    const float curvature = 2.f * (first + last - 2.f * middle);
+    polynomials[layer] = vec3(curvature, last - first - curvature, first);
+    terrainAppendHeightBreakpoints(polynomials[layer], args.displacementHeightMin[layer], breakpoints, count);
+    terrainAppendHeightBreakpoints(polynomials[layer], args.displacementHeightMax[layer], breakpoints, count);
+  }
+  for (uint index = 1; index < count; ++index) {
+    const float value = breakpoints[index];
+    uint destination = index;
+    while (destination > 0 && breakpoints[destination - 1] > value) {
+      breakpoints[destination] = breakpoints[destination - 1];
+      --destination;
+    }
+    breakpoints[destination] = value;
+  }
+  const float facing = dot(outwardView, normal);
+  for (uint segment = 1; segment < count; ++segment) {
+    const float lower = breakpoints[segment - 1];
+    const float upper = breakpoints[segment];
+    const float middle = 0.5f * (lower + upper);
+    vec3 gapPolynomial = vec3(0.f, (endDistance - startDistance) * facing, startDistance * facing);
+    for (uint layer = 0; layer < 4; ++layer) {
+      if (weights[layer] <= 0.f || args.layers[layer].heightTextureIndex == BINDING_INDEX_INVALID) {
+        continue;
+      }
+      const vec3 raw = polynomials[layer];
+      const float height = dot(raw, vec3(middle * middle, middle, 1.f));
+      vec3 relief;
+      if (height <= args.displacementHeightMin[layer]) {
+        relief = vec3(0.f, 0.f, -args.displacementInward[layer]);
+      } else if (height >= args.displacementHeightMax[layer]) {
+        relief = vec3(0.f, 0.f, args.displacementOutward[layer]);
+      } else {
+        const float scale = (args.displacementInward[layer] + args.displacementOutward[layer]) /
+          (args.displacementHeightMax[layer] - args.displacementHeightMin[layer]);
+        relief = raw * scale;
+        relief.z -= args.displacementHeightMin[layer] * scale + args.displacementInward[layer];
+      }
+      gapPolynomial -= relief * (weights[layer] * args.displacementStrength);
+    }
+    float fraction;
+    if (terrainPomFirstRoot(gapPolynomial.x, gapPolynomial.y, gapPolynomial.z, lower, upper, fraction)) {
+      intersection = sanitize(lerp(startDistance, endDistance, fraction), 0.f);
+      return true;
+    }
+  }
+  return false;
+}
+
+bool terrainQuadtreeIntersection(vec3 position, vec3 normal, vec3 outwardView, vec4 weights, float lod,
+    out float intersection) {
+  const TerrainBlendArgs args = cb.terrainBlendArgs;
+  const float facing = dot(outwardView, normal);
+  const vec2 bounds = terrainReliefBounds(weights);
+  intersection = 0.f;
+  if (facing <= 1e-4f || bounds.y <= bounds.x) {
+    return false;
+  }
+  uint maximumLevel = 0;
+  for (uint layer = 0; layer < 4; ++layer) {
+    if (weights[layer] > 0.f && args.layers[layer].heightTextureIndex != BINDING_INDEX_INVALID) {
+      uint width, height, mipCount;
+      textures[nonuniformEXT(args.layers[layer].heightTextureIndex)].GetDimensions(0, width, height, mipCount);
+      maximumLevel = max(maximumLevel, mipCount - 1);
+    }
+  }
+  const uint minimumLevel = min(uint(max(floor(lod), 0.f)), maximumLevel);
+  // Explicit sampling still applies the terrain sampler's DLSS mip bias.
+  const float leafLod = float(minimumLevel) - cb.totalMipBias;
+  uint level = max(maximumLevel / 2, minimumLevel);
+  float distance = bounds.y / facing;
+  const float endDistance = bounds.x / facing;
+  const float previousGap = distance * facing - terrainReliefHeight(position + outwardView * distance, normal, weights, leafLod);
+  if (previousGap <= 0.f) {
+    intersection = distance;
+    return true;
+  }
+  for (uint iteration = 0; iteration < args.displacementMaxIterations && distance > endDistance; ++iteration) {
+    float maximumHeight, cellExit;
+    terrainQuadtreeCell(position + outwardView * distance, -outwardView, normal, weights, level, minimumLevel,
+      maximumHeight, cellExit);
+    const float nextDistance = max(endDistance, distance - cellExit);
+    if (level > minimumLevel && nextDistance * facing <= maximumHeight) {
+      --level;
+      continue;
+    }
+    if (level == minimumLevel && terrainQuadtreeLeafIntersection(position, normal, outwardView, weights, leafLod,
+        distance, nextDistance, intersection)) {
+      return true;
+    }
+    distance = nextDistance;
+    level = min(level + 1, maximumLevel);
+  }
+  return false;
+}
+
+bool terrainReliefIntersection(vec3 position, vec3 normal, vec3 outwardView, vec4 weights, float lod, out float intersection) {
+  if (cb.terrainBlendArgs.displacementMode == 2) {
+    return terrainQuadtreeIntersection(position, normal, outwardView, weights, lod, intersection);
+  }
+  intersection = terrainRaymarchIntersection(position, normal, outwardView, weights, lod);
+  return true;
+}
+
 float terrainBlendShadowThroughput(MinimalSurfaceInteraction interaction, vec3 lightDirection,
     vec3 outwardViewDirection, vec2 terrainHitData) {
   const TerrainBlendArgs args = cb.terrainBlendArgs;
@@ -185,9 +377,10 @@ float terrainBlendShadowThroughput(MinimalSurfaceInteraction interaction, vec3 l
     return 1.f;
   }
   const vec3 anchor = interaction.position + args.worldOffset.xyz;
-  const float lod = max(terrainHitData.y, 0.f);
+  const float placementLod = max(terrainHitData.y, 0.f);
+  const float lod = args.displacementMode == 2 ? floor(placementLod) - cb.totalMipBias : placementLod;
   const float grazingFade = smoothstep(0.05f, 0.2f, dot(outwardViewDirection, normal));
-  const vec4 weights = terrainPlacementWeights(anchor, normal, lod) * grazingFade;
+  const vec4 weights = terrainPlacementWeights(anchor, normal, placementLod) * grazingFade;
   const vec3 virtualHit = anchor + outwardViewDirection * terrainHitData.x;
   const vec2 bounds = terrainReliefBounds(weights);
   const float surfaceHeight = terrainReliefHeight(virtualHit, normal, weights, lod);
@@ -295,10 +488,12 @@ OpaqueSurfaceMaterialInteraction terrainBlendInteractionCreate(Surface surface, 
 #ifdef TERRAIN_BLEND
   if (args.displacementEnabled != 0 && args.displacementStrength > 0.f && dot(ray.viewDirection, interaction.geometryNormal) > 1e-4f) {
     const float grazingFade = smoothstep(0.05f, 0.2f, dot(ray.viewDirection, interaction.geometryNormal));
-    const float distance = terrainReliefIntersection(position, interaction.geometryNormal, ray.viewDirection, weights * grazingFade, lod);
-    virtualPosition += ray.viewDirection * distance;
-    interaction.textureCoordinates = vec2(distance, lod);
-    hasRelief = true;
+    float distance;
+    hasRelief = terrainReliefIntersection(position, interaction.geometryNormal, ray.viewDirection, weights * grazingFade, lod, distance);
+    if (hasRelief) {
+      virtualPosition += ray.viewDirection * distance;
+      interaction.textureCoordinates = vec2(distance, lod);
+    }
   }
 #endif
   vec3 albedo = 0.f;

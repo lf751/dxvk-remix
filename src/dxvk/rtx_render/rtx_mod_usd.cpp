@@ -839,6 +839,14 @@ void UsdMod::Impl::processTerrainBlend(Args& args, const pxr::UsdStageRefPtr& st
     fail("displacementEnabled must be a bool");
     return;
   }
+  int displacementMode = static_cast<int>(preset->displacementMode);
+  const auto displacementModeAttribute = attribute("displacementMode");
+  if ((displacementModeAttribute.HasAuthoredValueOpinion() && !displacementModeAttribute.Get(&displacementMode)) ||
+      displacementMode < 0 || displacementMode > 2) {
+    fail("displacementMode must be an integer: 0 off, 1 raymarched POM, or 2 quadtree POM");
+    return;
+  }
+  preset->displacementMode = static_cast<TerrainDisplacementMode>(displacementMode);
   const auto readIterations = [&attribute](const char* name, uint32_t& value, int maximum) {
     const auto attr = attribute(name);
     int authored = static_cast<int>(value);

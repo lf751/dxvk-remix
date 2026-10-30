@@ -192,6 +192,7 @@ static void testTerrainPlacementEditsTriggerReload() {
   const auto mode = terrain.CreateAttribute(pxr::TfToken("remix:terrainBlend:rockMode"), pxr::SdfValueTypeNames->Token);
   const auto low = terrain.CreateAttribute(pxr::TfToken("remix:terrainBlend:rockLowElevation"), pxr::SdfValueTypeNames->Float);
   const auto high = terrain.CreateAttribute(pxr::TfToken("remix:terrainBlend:rockHighElevation"), pxr::SdfValueTypeNames->Float);
+  const auto displacementMode = terrain.CreateAttribute(pxr::TfToken("remix:terrainBlend:displacementMode"), pxr::SdfValueTypeNames->Int);
   flip.Set(false);
   mode.Set(pxr::TfToken("slope"));
   low.Set(4.f);
@@ -213,6 +214,10 @@ static void testTerrainPlacementEditsTriggerReload() {
   check();
   mode.Set(pxr::TfToken("slope"));
   check();
+  for (int value = 0; value <= 2; ++value) {
+    displacementMode.Set(value);
+    check();
+  }
   low.Set(-20.f);
   check();
   high.Set(-10.f);

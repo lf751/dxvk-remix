@@ -1608,7 +1608,9 @@ namespace dxvk {
     m_terrainBlendArgs.slopeCosEnd = std::cos(preset->slopeEndDegrees * radiansPerDegree);
     m_terrainBlendArgs.heightBlendStrength = preset->heightBlendStrength;
     m_terrainBlendArgs.heightBlendWidth = preset->heightBlendWidth;
-    m_terrainBlendArgs.displacementEnabled = preset->displacementEnabled ? 1u : 0u;
+    m_terrainBlendArgs.displacementEnabled = preset->displacementEnabled &&
+      preset->displacementMode != TerrainDisplacementMode::Off ? 1u : 0u;
+    m_terrainBlendArgs.displacementMode = static_cast<uint32_t>(preset->displacementMode);
     m_terrainBlendArgs.displacementStrength = preset->displacementStrength;
     m_terrainBlendArgs.displacementMaxIterations = static_cast<uint32_t>(preset->displacementMaxIterations);
     m_terrainBlendArgs.displacementSelfShadowEnabled = preset->displacementSelfShadowEnabled ? 1u : 0u;

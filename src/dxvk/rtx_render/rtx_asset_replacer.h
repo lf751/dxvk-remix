@@ -35,6 +35,7 @@
 
 namespace dxvk {
   enum class TerrainRockMode : uint32_t { Slope = 0, Elevation = 1, Both = 2 };
+  enum class TerrainDisplacementMode : uint32_t { Off = 0, RaymarchPOM = 1, QuadtreePOM = 2 };
 
   struct TerrainBlendPreset {
     bool enabled = true;
@@ -57,6 +58,7 @@ namespace dxvk {
     float dirtMinElevation = 0.0f;
     float dirtElevationFadeWidth = 1.0f;
     bool displacementEnabled = false;
+    TerrainDisplacementMode displacementMode = TerrainDisplacementMode::RaymarchPOM;
     float displacementStrength = 1.0f;
     uint32_t displacementMaxIterations = 64;
     float displacementInward[4] = { 0.1f, 0.1f, 0.1f, 0.1f };
