@@ -449,6 +449,453 @@
 //!>       INDIRECT_SLIM_NEE_CACHE_ONLY=1
 //!>       INDIRECT_SLIM_LEAN_VISIBILITY=1
 
+
+//!variant integrate_indirect_material_opaque_translucent_closestHit_terrain.rchit
+//!>       SURFACE_MATERIAL_RESOLVE_TYPE_ACTIVE_MASK=SURFACE_MATERIAL_RESOLVE_TYPE_OPAQUE_TRANSLUCENT
+//!>       NEE_CACHE_ENABLE=0
+//!>       TERRAIN_BLEND
+
+//!variant integrate_indirect_neeCache_material_opaque_translucent_closestHit_terrain.rchit
+//!>       SURFACE_MATERIAL_RESOLVE_TYPE_ACTIVE_MASK=SURFACE_MATERIAL_RESOLVE_TYPE_OPAQUE_TRANSLUCENT
+//!>       NEE_CACHE_ENABLE=1
+//!>       TERRAIN_BLEND
+
+//!variant integrate_indirect_material_rayportal_closestHit_terrain.rchit
+//!>       SURFACE_MATERIAL_RESOLVE_TYPE_ACTIVE_MASK=SURFACE_MATERIAL_RESOLVE_TYPE_ALL
+//!>       NEE_CACHE_ENABLE=0
+//!>       TERRAIN_BLEND
+
+//!variant integrate_indirect_neeCache_material_rayportal_closestHit_terrain.rchit
+//!>       SURFACE_MATERIAL_RESOLVE_TYPE_ACTIVE_MASK=SURFACE_MATERIAL_RESOLVE_TYPE_ALL
+//!>       NEE_CACHE_ENABLE=1
+//!>       TERRAIN_BLEND
+
+//!variant integrate_indirect_pom_material_opaque_translucent_closestHit_terrain.rchit
+//!>       SURFACE_MATERIAL_RESOLVE_TYPE_ACTIVE_MASK=SURFACE_MATERIAL_RESOLVE_TYPE_OPAQUE_TRANSLUCENT
+//!>       NEE_CACHE_ENABLE=0
+//!>       OPAQUE_MATERIAL_USE_POM=1
+//!>       TERRAIN_BLEND
+
+//!variant integrate_indirect_neeCache_pom_material_opaque_translucent_closestHit_terrain.rchit
+//!>       SURFACE_MATERIAL_RESOLVE_TYPE_ACTIVE_MASK=SURFACE_MATERIAL_RESOLVE_TYPE_OPAQUE_TRANSLUCENT
+//!>       NEE_CACHE_ENABLE=1
+//!>       OPAQUE_MATERIAL_USE_POM=1
+//!>       TERRAIN_BLEND
+
+//!variant integrate_indirect_pom_material_rayportal_closestHit_terrain.rchit
+//!>       SURFACE_MATERIAL_RESOLVE_TYPE_ACTIVE_MASK=SURFACE_MATERIAL_RESOLVE_TYPE_ALL
+//!>       NEE_CACHE_ENABLE=0
+//!>       OPAQUE_MATERIAL_USE_POM=1
+//!>       TERRAIN_BLEND
+
+//!variant integrate_indirect_neeCache_pom_material_rayportal_closestHit_terrain.rchit
+//!>       SURFACE_MATERIAL_RESOLVE_TYPE_ACTIVE_MASK=SURFACE_MATERIAL_RESOLVE_TYPE_ALL
+//!>       NEE_CACHE_ENABLE=1
+//!>       OPAQUE_MATERIAL_USE_POM=1
+//!>       TERRAIN_BLEND
+
+//!variant integrate_indirect_nrc_material_opaque_translucent_closestHit_terrain.rchit
+//!>       SURFACE_MATERIAL_RESOLVE_TYPE_ACTIVE_MASK=SURFACE_MATERIAL_RESOLVE_TYPE_OPAQUE_TRANSLUCENT
+//!>       ENABLE_NRC=1
+//!>       NEE_CACHE_ENABLE=0
+//!>       TERRAIN_BLEND
+
+//!variant integrate_indirect_nrc_neeCache_material_opaque_translucent_closestHit_terrain.rchit
+//!>       SURFACE_MATERIAL_RESOLVE_TYPE_ACTIVE_MASK=SURFACE_MATERIAL_RESOLVE_TYPE_OPAQUE_TRANSLUCENT
+//!>       ENABLE_NRC=1
+//!>       NEE_CACHE_ENABLE=1
+//!>       TERRAIN_BLEND
+
+//!variant integrate_indirect_nrc_material_rayportal_closestHit_terrain.rchit
+//!>       SURFACE_MATERIAL_RESOLVE_TYPE_ACTIVE_MASK=SURFACE_MATERIAL_RESOLVE_TYPE_ALL
+//!>       ENABLE_NRC=1
+//!>       NEE_CACHE_ENABLE=0
+//!>       TERRAIN_BLEND
+
+//!variant integrate_indirect_nrc_neeCache_material_rayportal_closestHit_terrain.rchit
+//!>       SURFACE_MATERIAL_RESOLVE_TYPE_ACTIVE_MASK=SURFACE_MATERIAL_RESOLVE_TYPE_ALL
+//!>       ENABLE_NRC=1
+//!>       NEE_CACHE_ENABLE=1
+//!>       TERRAIN_BLEND
+
+//!variant integrate_indirect_nrc_pom_material_opaque_translucent_closestHit_terrain.rchit
+//!>       SURFACE_MATERIAL_RESOLVE_TYPE_ACTIVE_MASK=SURFACE_MATERIAL_RESOLVE_TYPE_OPAQUE_TRANSLUCENT
+//!>       ENABLE_NRC=1
+//!>       NEE_CACHE_ENABLE=0
+//!>       OPAQUE_MATERIAL_USE_POM=1
+//!>       TERRAIN_BLEND
+
+//!variant integrate_indirect_nrc_neeCache_pom_material_opaque_translucent_closestHit_terrain.rchit
+//!>       SURFACE_MATERIAL_RESOLVE_TYPE_ACTIVE_MASK=SURFACE_MATERIAL_RESOLVE_TYPE_OPAQUE_TRANSLUCENT
+//!>       ENABLE_NRC=1
+//!>       NEE_CACHE_ENABLE=1
+//!>       OPAQUE_MATERIAL_USE_POM=1
+//!>       TERRAIN_BLEND
+
+//!variant integrate_indirect_nrc_pom_material_rayportal_closestHit_terrain.rchit
+//!>       SURFACE_MATERIAL_RESOLVE_TYPE_ACTIVE_MASK=SURFACE_MATERIAL_RESOLVE_TYPE_ALL
+//!>       ENABLE_NRC=1
+//!>       NEE_CACHE_ENABLE=0
+//!>       OPAQUE_MATERIAL_USE_POM=1
+//!>       TERRAIN_BLEND
+
+//!variant integrate_indirect_nrc_neeCache_pom_material_rayportal_closestHit_terrain.rchit
+//!>       SURFACE_MATERIAL_RESOLVE_TYPE_ACTIVE_MASK=SURFACE_MATERIAL_RESOLVE_TYPE_ALL
+//!>       ENABLE_NRC=1
+//!>       NEE_CACHE_ENABLE=1
+//!>       OPAQUE_MATERIAL_USE_POM=1
+//!>       TERRAIN_BLEND
+
+//!variant integrate_indirect_material_opaque_translucent_closestHit_wboit_terrain.rchit
+//!>       SURFACE_MATERIAL_RESOLVE_TYPE_ACTIVE_MASK=SURFACE_MATERIAL_RESOLVE_TYPE_OPAQUE_TRANSLUCENT
+//!>       NEE_CACHE_ENABLE=0
+//!>       UNORDERED_RESOLVE_WBOIT
+//!>       TERRAIN_BLEND
+
+//!variant integrate_indirect_neeCache_material_opaque_translucent_closestHit_wboit_terrain.rchit
+//!>       SURFACE_MATERIAL_RESOLVE_TYPE_ACTIVE_MASK=SURFACE_MATERIAL_RESOLVE_TYPE_OPAQUE_TRANSLUCENT
+//!>       NEE_CACHE_ENABLE=1
+//!>       UNORDERED_RESOLVE_WBOIT
+//!>       TERRAIN_BLEND
+
+//!variant integrate_indirect_material_rayportal_closestHit_wboit_terrain.rchit
+//!>       SURFACE_MATERIAL_RESOLVE_TYPE_ACTIVE_MASK=SURFACE_MATERIAL_RESOLVE_TYPE_ALL
+//!>       NEE_CACHE_ENABLE=0
+//!>       UNORDERED_RESOLVE_WBOIT
+//!>       TERRAIN_BLEND
+
+//!variant integrate_indirect_neeCache_material_rayportal_closestHit_wboit_terrain.rchit
+//!>       SURFACE_MATERIAL_RESOLVE_TYPE_ACTIVE_MASK=SURFACE_MATERIAL_RESOLVE_TYPE_ALL
+//!>       NEE_CACHE_ENABLE=1
+//!>       UNORDERED_RESOLVE_WBOIT
+//!>       TERRAIN_BLEND
+
+//!variant integrate_indirect_pom_material_opaque_translucent_closestHit_wboit_terrain.rchit
+//!>       SURFACE_MATERIAL_RESOLVE_TYPE_ACTIVE_MASK=SURFACE_MATERIAL_RESOLVE_TYPE_OPAQUE_TRANSLUCENT
+//!>       NEE_CACHE_ENABLE=0
+//!>       OPAQUE_MATERIAL_USE_POM=1
+//!>       UNORDERED_RESOLVE_WBOIT
+//!>       TERRAIN_BLEND
+
+//!variant integrate_indirect_neeCache_pom_material_opaque_translucent_closestHit_wboit_terrain.rchit
+//!>       SURFACE_MATERIAL_RESOLVE_TYPE_ACTIVE_MASK=SURFACE_MATERIAL_RESOLVE_TYPE_OPAQUE_TRANSLUCENT
+//!>       NEE_CACHE_ENABLE=1
+//!>       OPAQUE_MATERIAL_USE_POM=1
+//!>       UNORDERED_RESOLVE_WBOIT
+//!>       TERRAIN_BLEND
+
+//!variant integrate_indirect_pom_material_rayportal_closestHit_wboit_terrain.rchit
+//!>       SURFACE_MATERIAL_RESOLVE_TYPE_ACTIVE_MASK=SURFACE_MATERIAL_RESOLVE_TYPE_ALL
+//!>       NEE_CACHE_ENABLE=0
+//!>       OPAQUE_MATERIAL_USE_POM=1
+//!>       UNORDERED_RESOLVE_WBOIT
+//!>       TERRAIN_BLEND
+
+//!variant integrate_indirect_neeCache_pom_material_rayportal_closestHit_wboit_terrain.rchit
+//!>       SURFACE_MATERIAL_RESOLVE_TYPE_ACTIVE_MASK=SURFACE_MATERIAL_RESOLVE_TYPE_ALL
+//!>       NEE_CACHE_ENABLE=1
+//!>       OPAQUE_MATERIAL_USE_POM=1
+//!>       UNORDERED_RESOLVE_WBOIT
+//!>       TERRAIN_BLEND
+
+//!variant integrate_indirect_nrc_material_opaque_translucent_closestHit_wboit_terrain.rchit
+//!>       SURFACE_MATERIAL_RESOLVE_TYPE_ACTIVE_MASK=SURFACE_MATERIAL_RESOLVE_TYPE_OPAQUE_TRANSLUCENT
+//!>       ENABLE_NRC=1
+//!>       NEE_CACHE_ENABLE=0
+//!>       UNORDERED_RESOLVE_WBOIT
+//!>       TERRAIN_BLEND
+
+//!variant integrate_indirect_nrc_neeCache_material_opaque_translucent_closestHit_wboit_terrain.rchit
+//!>       SURFACE_MATERIAL_RESOLVE_TYPE_ACTIVE_MASK=SURFACE_MATERIAL_RESOLVE_TYPE_OPAQUE_TRANSLUCENT
+//!>       ENABLE_NRC=1
+//!>       NEE_CACHE_ENABLE=1
+//!>       UNORDERED_RESOLVE_WBOIT
+//!>       TERRAIN_BLEND
+
+//!variant integrate_indirect_nrc_material_rayportal_closestHit_wboit_terrain.rchit
+//!>       SURFACE_MATERIAL_RESOLVE_TYPE_ACTIVE_MASK=SURFACE_MATERIAL_RESOLVE_TYPE_ALL
+//!>       ENABLE_NRC=1
+//!>       NEE_CACHE_ENABLE=0
+//!>       UNORDERED_RESOLVE_WBOIT
+//!>       TERRAIN_BLEND
+
+//!variant integrate_indirect_nrc_neeCache_material_rayportal_closestHit_wboit_terrain.rchit
+//!>       SURFACE_MATERIAL_RESOLVE_TYPE_ACTIVE_MASK=SURFACE_MATERIAL_RESOLVE_TYPE_ALL
+//!>       ENABLE_NRC=1
+//!>       NEE_CACHE_ENABLE=1
+//!>       UNORDERED_RESOLVE_WBOIT
+//!>       TERRAIN_BLEND
+
+//!variant integrate_indirect_nrc_pom_material_opaque_translucent_closestHit_wboit_terrain.rchit
+//!>       SURFACE_MATERIAL_RESOLVE_TYPE_ACTIVE_MASK=SURFACE_MATERIAL_RESOLVE_TYPE_OPAQUE_TRANSLUCENT
+//!>       ENABLE_NRC=1
+//!>       NEE_CACHE_ENABLE=0
+//!>       OPAQUE_MATERIAL_USE_POM=1
+//!>       UNORDERED_RESOLVE_WBOIT
+//!>       TERRAIN_BLEND
+
+//!variant integrate_indirect_nrc_neeCache_pom_material_opaque_translucent_closestHit_wboit_terrain.rchit
+//!>       SURFACE_MATERIAL_RESOLVE_TYPE_ACTIVE_MASK=SURFACE_MATERIAL_RESOLVE_TYPE_OPAQUE_TRANSLUCENT
+//!>       ENABLE_NRC=1
+//!>       NEE_CACHE_ENABLE=1
+//!>       OPAQUE_MATERIAL_USE_POM=1
+//!>       UNORDERED_RESOLVE_WBOIT
+//!>       TERRAIN_BLEND
+
+//!variant integrate_indirect_nrc_pom_material_rayportal_closestHit_wboit_terrain.rchit
+//!>       SURFACE_MATERIAL_RESOLVE_TYPE_ACTIVE_MASK=SURFACE_MATERIAL_RESOLVE_TYPE_ALL
+//!>       ENABLE_NRC=1
+//!>       NEE_CACHE_ENABLE=0
+//!>       OPAQUE_MATERIAL_USE_POM=1
+//!>       UNORDERED_RESOLVE_WBOIT
+//!>       TERRAIN_BLEND
+
+//!variant integrate_indirect_nrc_neeCache_pom_material_rayportal_closestHit_wboit_terrain.rchit
+//!>       SURFACE_MATERIAL_RESOLVE_TYPE_ACTIVE_MASK=SURFACE_MATERIAL_RESOLVE_TYPE_ALL
+//!>       ENABLE_NRC=1
+//!>       NEE_CACHE_ENABLE=1
+//!>       OPAQUE_MATERIAL_USE_POM=1
+//!>       UNORDERED_RESOLVE_WBOIT
+//!>       TERRAIN_BLEND
+
+//!variant integrate_indirect_sharc_query_closesthit_terrain.rchit
+//!>       SURFACE_MATERIAL_RESOLVE_TYPE_ACTIVE_MASK=SURFACE_MATERIAL_RESOLVE_TYPE_OPAQUE_TRANSLUCENT
+//!>       ENABLE_SHARC=1
+//!>       SHARC_QUERY=1
+//!>       NEE_CACHE_ENABLE=1
+//!>       TERRAIN_BLEND
+
+//!variant integrate_indirect_sharc_query_closesthit_wboit_terrain.rchit
+//!>       SURFACE_MATERIAL_RESOLVE_TYPE_ACTIVE_MASK=SURFACE_MATERIAL_RESOLVE_TYPE_OPAQUE_TRANSLUCENT
+//!>       ENABLE_SHARC=1
+//!>       SHARC_QUERY=1
+//!>       NEE_CACHE_ENABLE=1
+//!>       UNORDERED_RESOLVE_WBOIT
+//!>       TERRAIN_BLEND
+
+//!variant integrate_indirect_sharc_query_closesthit_pom_terrain.rchit
+//!>       SURFACE_MATERIAL_RESOLVE_TYPE_ACTIVE_MASK=SURFACE_MATERIAL_RESOLVE_TYPE_OPAQUE_TRANSLUCENT
+//!>       ENABLE_SHARC=1
+//!>       SHARC_QUERY=1
+//!>       NEE_CACHE_ENABLE=1
+//!>       OPAQUE_MATERIAL_USE_POM=1
+//!>       TERRAIN_BLEND
+
+//!variant integrate_indirect_sharc_query_closesthit_pom_wboit_terrain.rchit
+//!>       SURFACE_MATERIAL_RESOLVE_TYPE_ACTIVE_MASK=SURFACE_MATERIAL_RESOLVE_TYPE_OPAQUE_TRANSLUCENT
+//!>       ENABLE_SHARC=1
+//!>       SHARC_QUERY=1
+//!>       NEE_CACHE_ENABLE=1
+//!>       OPAQUE_MATERIAL_USE_POM=1
+//!>       UNORDERED_RESOLVE_WBOIT
+//!>       TERRAIN_BLEND
+
+//!variant integrate_indirect_sharc_query_closesthit_portals_terrain.rchit
+//!>       SURFACE_MATERIAL_RESOLVE_TYPE_ACTIVE_MASK=SURFACE_MATERIAL_RESOLVE_TYPE_ALL
+//!>       ENABLE_SHARC=1
+//!>       SHARC_QUERY=1
+//!>       NEE_CACHE_ENABLE=1
+//!>       TERRAIN_BLEND
+
+//!variant integrate_indirect_sharc_query_closesthit_portals_wboit_terrain.rchit
+//!>       SURFACE_MATERIAL_RESOLVE_TYPE_ACTIVE_MASK=SURFACE_MATERIAL_RESOLVE_TYPE_ALL
+//!>       ENABLE_SHARC=1
+//!>       SHARC_QUERY=1
+//!>       NEE_CACHE_ENABLE=1
+//!>       UNORDERED_RESOLVE_WBOIT
+//!>       TERRAIN_BLEND
+
+//!variant integrate_indirect_sharc_query_closesthit_portals_pom_terrain.rchit
+//!>       SURFACE_MATERIAL_RESOLVE_TYPE_ACTIVE_MASK=SURFACE_MATERIAL_RESOLVE_TYPE_ALL
+//!>       ENABLE_SHARC=1
+//!>       SHARC_QUERY=1
+//!>       NEE_CACHE_ENABLE=1
+//!>       OPAQUE_MATERIAL_USE_POM=1
+//!>       TERRAIN_BLEND
+
+//!variant integrate_indirect_sharc_query_closesthit_portals_pom_wboit_terrain.rchit
+//!>       SURFACE_MATERIAL_RESOLVE_TYPE_ACTIVE_MASK=SURFACE_MATERIAL_RESOLVE_TYPE_ALL
+//!>       ENABLE_SHARC=1
+//!>       SHARC_QUERY=1
+//!>       NEE_CACHE_ENABLE=1
+//!>       OPAQUE_MATERIAL_USE_POM=1
+//!>       UNORDERED_RESOLVE_WBOIT
+//!>       TERRAIN_BLEND
+
+//!variant integrate_indirect_sharc_query_closesthit_wboit_slim_terrain.rchit
+//!>       SURFACE_MATERIAL_RESOLVE_TYPE_ACTIVE_MASK=SURFACE_MATERIAL_RESOLVE_TYPE_OPAQUE_TRANSLUCENT
+//!>       ENABLE_SHARC=1
+//!>       SHARC_QUERY=1
+//!>       NEE_CACHE_ENABLE=1
+//!>       UNORDERED_RESOLVE_WBOIT
+//!>       INDIRECT_SLIM_NEE_CACHE_ONLY=1
+//!>       TERRAIN_BLEND
+
+//!variant integrate_indirect_sharc_query_closesthit_wboit_lean_terrain.rchit
+//!>       SURFACE_MATERIAL_RESOLVE_TYPE_ACTIVE_MASK=SURFACE_MATERIAL_RESOLVE_TYPE_OPAQUE_TRANSLUCENT
+//!>       ENABLE_SHARC=1
+//!>       SHARC_QUERY=1
+//!>       NEE_CACHE_ENABLE=1
+//!>       UNORDERED_RESOLVE_WBOIT
+//!>       INDIRECT_SLIM_NEE_CACHE_ONLY=1
+//!>       INDIRECT_SLIM_LEAN_VISIBILITY=1
+//!>       TERRAIN_BLEND
+
+//!variant integrate_indirect_sharc_query_closesthit_pom_wboit_slim_terrain.rchit
+//!>       SURFACE_MATERIAL_RESOLVE_TYPE_ACTIVE_MASK=SURFACE_MATERIAL_RESOLVE_TYPE_OPAQUE_TRANSLUCENT
+//!>       ENABLE_SHARC=1
+//!>       SHARC_QUERY=1
+//!>       NEE_CACHE_ENABLE=1
+//!>       OPAQUE_MATERIAL_USE_POM=1
+//!>       UNORDERED_RESOLVE_WBOIT
+//!>       INDIRECT_SLIM_NEE_CACHE_ONLY=1
+//!>       TERRAIN_BLEND
+
+//!variant integrate_indirect_sharc_query_closesthit_pom_wboit_lean_terrain.rchit
+//!>       SURFACE_MATERIAL_RESOLVE_TYPE_ACTIVE_MASK=SURFACE_MATERIAL_RESOLVE_TYPE_OPAQUE_TRANSLUCENT
+//!>       ENABLE_SHARC=1
+//!>       SHARC_QUERY=1
+//!>       NEE_CACHE_ENABLE=1
+//!>       OPAQUE_MATERIAL_USE_POM=1
+//!>       UNORDERED_RESOLVE_WBOIT
+//!>       INDIRECT_SLIM_NEE_CACHE_ONLY=1
+//!>       INDIRECT_SLIM_LEAN_VISIBILITY=1
+//!>       TERRAIN_BLEND
+
+//!variant integrate_indirect_neeCache_material_opaque_translucent_closestHit_wboit_slim_terrain.rchit
+//!>       SURFACE_MATERIAL_RESOLVE_TYPE_ACTIVE_MASK=SURFACE_MATERIAL_RESOLVE_TYPE_OPAQUE_TRANSLUCENT
+//!>       NEE_CACHE_ENABLE=1
+//!>       UNORDERED_RESOLVE_WBOIT
+//!>       INDIRECT_SLIM_NEE_CACHE_ONLY=1
+//!>       TERRAIN_BLEND
+
+//!variant integrate_indirect_neeCache_material_opaque_translucent_closestHit_wboit_lean_terrain.rchit
+//!>       SURFACE_MATERIAL_RESOLVE_TYPE_ACTIVE_MASK=SURFACE_MATERIAL_RESOLVE_TYPE_OPAQUE_TRANSLUCENT
+//!>       NEE_CACHE_ENABLE=1
+//!>       UNORDERED_RESOLVE_WBOIT
+//!>       INDIRECT_SLIM_NEE_CACHE_ONLY=1
+//!>       INDIRECT_SLIM_LEAN_VISIBILITY=1
+//!>       TERRAIN_BLEND
+
+//!variant integrate_indirect_neeCache_pom_material_opaque_translucent_closestHit_wboit_slim_terrain.rchit
+//!>       SURFACE_MATERIAL_RESOLVE_TYPE_ACTIVE_MASK=SURFACE_MATERIAL_RESOLVE_TYPE_OPAQUE_TRANSLUCENT
+//!>       NEE_CACHE_ENABLE=1
+//!>       OPAQUE_MATERIAL_USE_POM=1
+//!>       UNORDERED_RESOLVE_WBOIT
+//!>       INDIRECT_SLIM_NEE_CACHE_ONLY=1
+//!>       TERRAIN_BLEND
+
+//!variant integrate_indirect_neeCache_pom_material_opaque_translucent_closestHit_wboit_lean_terrain.rchit
+//!>       SURFACE_MATERIAL_RESOLVE_TYPE_ACTIVE_MASK=SURFACE_MATERIAL_RESOLVE_TYPE_OPAQUE_TRANSLUCENT
+//!>       NEE_CACHE_ENABLE=1
+//!>       OPAQUE_MATERIAL_USE_POM=1
+//!>       UNORDERED_RESOLVE_WBOIT
+//!>       INDIRECT_SLIM_NEE_CACHE_ONLY=1
+//!>       INDIRECT_SLIM_LEAN_VISIBILITY=1
+//!>       TERRAIN_BLEND
+
+//!variant integrate_indirect_nrc_neeCache_material_opaque_translucent_closestHit_wboit_slim_terrain.rchit
+//!>       SURFACE_MATERIAL_RESOLVE_TYPE_ACTIVE_MASK=SURFACE_MATERIAL_RESOLVE_TYPE_OPAQUE_TRANSLUCENT
+//!>       ENABLE_NRC=1
+//!>       NEE_CACHE_ENABLE=1
+//!>       UNORDERED_RESOLVE_WBOIT
+//!>       INDIRECT_SLIM_NEE_CACHE_ONLY=1
+//!>       TERRAIN_BLEND
+
+//!variant integrate_indirect_nrc_neeCache_material_opaque_translucent_closestHit_wboit_lean_terrain.rchit
+//!>       SURFACE_MATERIAL_RESOLVE_TYPE_ACTIVE_MASK=SURFACE_MATERIAL_RESOLVE_TYPE_OPAQUE_TRANSLUCENT
+//!>       ENABLE_NRC=1
+//!>       NEE_CACHE_ENABLE=1
+//!>       UNORDERED_RESOLVE_WBOIT
+//!>       INDIRECT_SLIM_NEE_CACHE_ONLY=1
+//!>       INDIRECT_SLIM_LEAN_VISIBILITY=1
+//!>       TERRAIN_BLEND
+
+//!variant integrate_indirect_nrc_neeCache_pom_material_opaque_translucent_closestHit_wboit_slim_terrain.rchit
+//!>       SURFACE_MATERIAL_RESOLVE_TYPE_ACTIVE_MASK=SURFACE_MATERIAL_RESOLVE_TYPE_OPAQUE_TRANSLUCENT
+//!>       ENABLE_NRC=1
+//!>       NEE_CACHE_ENABLE=1
+//!>       OPAQUE_MATERIAL_USE_POM=1
+//!>       UNORDERED_RESOLVE_WBOIT
+//!>       INDIRECT_SLIM_NEE_CACHE_ONLY=1
+//!>       TERRAIN_BLEND
+
+//!variant integrate_indirect_nrc_neeCache_pom_material_opaque_translucent_closestHit_wboit_lean_terrain.rchit
+//!>       SURFACE_MATERIAL_RESOLVE_TYPE_ACTIVE_MASK=SURFACE_MATERIAL_RESOLVE_TYPE_OPAQUE_TRANSLUCENT
+//!>       ENABLE_NRC=1
+//!>       NEE_CACHE_ENABLE=1
+//!>       OPAQUE_MATERIAL_USE_POM=1
+//!>       UNORDERED_RESOLVE_WBOIT
+//!>       INDIRECT_SLIM_NEE_CACHE_ONLY=1
+//!>       INDIRECT_SLIM_LEAN_VISIBILITY=1
+//!>       TERRAIN_BLEND
+
+//!variant integrate_indirect_sharc_update4_closesthit_wboit_df_terrain.rchit
+//!>       SURFACE_MATERIAL_RESOLVE_TYPE_ACTIVE_MASK=SURFACE_MATERIAL_RESOLVE_TYPE_OPAQUE_TRANSLUCENT
+//!>       ENABLE_SHARC=1
+//!>       SHARC_UPDATE=1
+//!>       SHARC_DEFERRED_FLUSH=1
+//!>       SHARC_PROPAGATION_DEPTH=4
+//!>       NEE_CACHE_ENABLE=1
+//!>       UNORDERED_RESOLVE_WBOIT
+//!>       TERRAIN_BLEND
+
+//!variant integrate_indirect_sharc_update4_closesthit_wboit_slim_df_terrain.rchit
+//!>       SURFACE_MATERIAL_RESOLVE_TYPE_ACTIVE_MASK=SURFACE_MATERIAL_RESOLVE_TYPE_OPAQUE_TRANSLUCENT
+//!>       ENABLE_SHARC=1
+//!>       SHARC_UPDATE=1
+//!>       SHARC_DEFERRED_FLUSH=1
+//!>       SHARC_PROPAGATION_DEPTH=4
+//!>       NEE_CACHE_ENABLE=1
+//!>       UNORDERED_RESOLVE_WBOIT
+//!>       INDIRECT_SLIM_NEE_CACHE_ONLY=1
+//!>       TERRAIN_BLEND
+
+//!variant integrate_indirect_sharc_update4_closesthit_wboit_lean_df_terrain.rchit
+//!>       SURFACE_MATERIAL_RESOLVE_TYPE_ACTIVE_MASK=SURFACE_MATERIAL_RESOLVE_TYPE_OPAQUE_TRANSLUCENT
+//!>       ENABLE_SHARC=1
+//!>       SHARC_UPDATE=1
+//!>       SHARC_DEFERRED_FLUSH=1
+//!>       SHARC_PROPAGATION_DEPTH=4
+//!>       NEE_CACHE_ENABLE=1
+//!>       UNORDERED_RESOLVE_WBOIT
+//!>       INDIRECT_SLIM_NEE_CACHE_ONLY=1
+//!>       INDIRECT_SLIM_LEAN_VISIBILITY=1
+//!>       TERRAIN_BLEND
+
+//!variant integrate_indirect_sharc_update8_closesthit_wboit_df_terrain.rchit
+//!>       SURFACE_MATERIAL_RESOLVE_TYPE_ACTIVE_MASK=SURFACE_MATERIAL_RESOLVE_TYPE_OPAQUE_TRANSLUCENT
+//!>       ENABLE_SHARC=1
+//!>       SHARC_UPDATE=1
+//!>       SHARC_DEFERRED_FLUSH=1
+//!>       SHARC_PROPAGATION_DEPTH=8
+//!>       NEE_CACHE_ENABLE=1
+//!>       UNORDERED_RESOLVE_WBOIT
+//!>       TERRAIN_BLEND
+
+//!variant integrate_indirect_sharc_update8_closesthit_wboit_slim_df_terrain.rchit
+//!>       SURFACE_MATERIAL_RESOLVE_TYPE_ACTIVE_MASK=SURFACE_MATERIAL_RESOLVE_TYPE_OPAQUE_TRANSLUCENT
+//!>       ENABLE_SHARC=1
+//!>       SHARC_UPDATE=1
+//!>       SHARC_DEFERRED_FLUSH=1
+//!>       SHARC_PROPAGATION_DEPTH=8
+//!>       NEE_CACHE_ENABLE=1
+//!>       UNORDERED_RESOLVE_WBOIT
+//!>       INDIRECT_SLIM_NEE_CACHE_ONLY=1
+//!>       TERRAIN_BLEND
+
+//!variant integrate_indirect_sharc_update8_closesthit_wboit_lean_df_terrain.rchit
+//!>       SURFACE_MATERIAL_RESOLVE_TYPE_ACTIVE_MASK=SURFACE_MATERIAL_RESOLVE_TYPE_OPAQUE_TRANSLUCENT
+//!>       ENABLE_SHARC=1
+//!>       SHARC_UPDATE=1
+//!>       SHARC_DEFERRED_FLUSH=1
+//!>       SHARC_PROPAGATION_DEPTH=8
+//!>       NEE_CACHE_ENABLE=1
+//!>       UNORDERED_RESOLVE_WBOIT
+//!>       INDIRECT_SLIM_NEE_CACHE_ONLY=1
+//!>       INDIRECT_SLIM_LEAN_VISIBILITY=1
+//!>       TERRAIN_BLEND
+
 //!end-variants
 #define ATMOSPHERE_AVAILABLE
 

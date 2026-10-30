@@ -34,6 +34,21 @@
 //!>       GBUFFER_SLIM_NO_THIN_FILM
 //!>       GBUFFER_SLIM_NO_PORTALS
 
+
+//!variant gbuffer_psr_prepare_terrain.comp
+//!>       TERRAIN_BLEND
+
+//!variant gbuffer_psr_prepare_slim_terrain.comp
+//!>       GBUFFER_SLIM_NO_POM
+//!>       GBUFFER_SLIM_NO_THIN_FILM
+//!>       GBUFFER_SLIM_NO_PORTALS
+//!>       TERRAIN_BLEND
+
+//!variant gbuffer_psr_prepare_slimpom_terrain.comp
+//!>       GBUFFER_SLIM_NO_THIN_FILM
+//!>       GBUFFER_SLIM_NO_PORTALS
+//!>       TERRAIN_BLEND
+
 //!end-variants
 
 #define RAY_TRACING_PRIMARY_RAY

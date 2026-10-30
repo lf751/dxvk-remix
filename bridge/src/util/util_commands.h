@@ -457,6 +457,8 @@ namespace Commands {
     IDirect3DQuery9_GetDataSize,
     IDirect3DQuery9_Issue,
     IDirect3DQuery9_GetData,
+    RemixApi_AddTextureHash,
+    RemixApi_dxvk_GetTextureHash,
   };
 
   // Maybe this will be useful...  
@@ -507,6 +509,8 @@ namespace Commands {
     case RemixApi_RegisterDevice: return "RemixApi_RegisterDevice";
     case RemixApi_SetGameValue: return "RemixApi_SetGameValue";
     case RemixApi_GetGameValue: return "RemixApi_GetGameValue";
+    case RemixApi_AddTextureHash: return "RemixApi_AddTextureHash";
+    case RemixApi_dxvk_GetTextureHash: return "RemixApi_dxvk_GetTextureHash";
     case RemixApi_SetColorGradePreset: return "RemixApi_SetColorGradePreset";
     case RemixApi_SetColorGrade: return "RemixApi_SetColorGrade";
     case RemixApi_MixColorGradePresets: return "RemixApi_MixColorGradePresets";

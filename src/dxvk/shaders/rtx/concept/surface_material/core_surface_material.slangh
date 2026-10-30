@@ -87,6 +87,7 @@ struct CoreSurfaceMaterial
   property bool hasMaterialChanged { get { return (alphaDword & CORE_MATERIAL_SURFACE_MATERIAL_CHANGED) != 0; } }
   property bool isMotionBlurMaskOut { get { return (alphaDword & CORE_MATERIAL_SURFACE_MOTION_BLUR_MASK_OUT) != 0; } }
   property bool isPreservePath { get { return (alphaDword & CORE_MATERIAL_SURFACE_PRESERVE_PATH) != 0; } }
+  property bool worldSpaceSecondaryOpacity { get { return (alphaDword & CORE_MATERIAL_SURFACE_WORLD_OPACITY) != 0; } }
 
   // Classes 0 and 2 use the opaque layout, and so do class 3 raytraced render targets.
 

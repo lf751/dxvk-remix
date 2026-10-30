@@ -293,6 +293,12 @@ struct Surface
     set { data0b.y = newValue; }
   }
 
+  property bool isTerrainBlend { get { return packedFlagGet(data0b.z, 1 << 2); } }
+  property bool worldSpaceSecondaryOpacity {
+    get { return packedFlagGet(data0b.z, 1 << 3); }
+    set { data0b.z = newValue ? packedFlagSet(data0b.z, 1 << 3) : packedFlagUnset(data0b.z, 1 << 3); }
+  }
+
   property bool normalsEncoded
   {
     get { return packedFlagGet(data0b.z, 1 << 0); }
@@ -537,6 +543,10 @@ struct SurfaceInteraction : MinimalSurfaceInteraction
   vec2 textureCoordinates = 0..xx;
   vec2 textureGradientX = 0..xx;
   vec2 textureGradientY = 0..xx;
+#ifdef TERRAIN_BLEND
+  vec3 worldPositionGradientX = 0.f;
+  vec3 worldPositionGradientY = 0.f;
+#endif
   vec3 rawTangent = 0.f;
   vec3 rawBitangent = 0.f;
   vec4 vertexColor = 0.0f;

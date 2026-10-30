@@ -225,7 +225,8 @@ namespace dxvk {
     {"ignorealphaontextures","Ignore Alpha Channel of Textures (optional)", &RtxOptions::ignoreAlphaOnTexturesObject()},
     {"raytracedRenderTargetTextures","Raytraced Render Target Textures (optional)", &RtxOptions::raytracedRenderTargetTexturesObject(), ImGUI::kTextureFlagsRenderTarget},
     {"particleemittertextures","Particle Emitters (optional)", &RtxOptions::particleEmitterTexturesObject()},
-    {"smoothnormalstextures","Smooth Normals (optional)", &RtxOptions::smoothNormalsTexturesObject()}
+    {"smoothnormalstextures","Smooth Normals (optional)", &RtxOptions::smoothNormalsTexturesObject()},
+    {"worldspaceopacitytextures","World-space Secondary Opacity (optional)", &LegacyMaterialDefaults::worldSpaceSecondaryOpacityTexturesObject()}
   };
 
   RemixGui::ComboWithKey<RenderPassGBufferRaytraceMode> renderPassGBufferRaytraceModeCombo {
@@ -825,6 +826,8 @@ namespace dxvk {
 
         RemixGui::Checkbox("Use Albedo/Opacity Texture (if present)", &LegacyMaterialDefaults::useAlbedoTextureIfPresentObject());
         RemixGui::Checkbox("Ignore Texture Alpha Channel", &LegacyMaterialDefaults::ignoreAlphaChannelObject());
+        RemixGui::DragFloat("World-space opacity UV scale", &LegacyMaterialDefaults::worldSpaceSecondaryOpacityScaleObject(),
+          0.00001f, 0.000000001f, FLT_MAX, "%.9f", sliderFlags);
         RemixGui::ColorEdit3("Albedo", &LegacyMaterialDefaults::albedoConstantObject());
         RemixGui::DragFloat("Opacity", &LegacyMaterialDefaults::opacityConstantObject(), 0.01f, 0.f, 1.f);
         RemixGui::ColorEdit3("Emissive Color", &LegacyMaterialDefaults::emissiveColorConstantObject());

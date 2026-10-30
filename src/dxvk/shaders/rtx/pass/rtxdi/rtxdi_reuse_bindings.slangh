@@ -50,6 +50,11 @@ Texture2D<float4> PreviousWorldPosition_WorldTriangleNormal;
 layout(rg16_snorm, binding = RTXDI_REUSE_BINDING_VIEW_DIRECTION_INPUT)
 Texture2D<float2> PrimaryViewDirection;
 
+#ifdef TERRAIN_BLEND_SHADOW
+layout(rg32f, binding = RTXDI_REUSE_BINDING_SHARED_TEXTURE_COORD_INPUT)
+Texture2D<float2> SharedTextureCoord;
+#endif
+
 layout(r16f, binding = RTXDI_REUSE_BINDING_CONE_RADIUS_INPUT)
 Texture2D<float> PrimaryConeRadius;
 

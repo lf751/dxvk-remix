@@ -79,6 +79,62 @@
 //!variant integrate_direct_sun_validate_rayquery.comp
 //!>       LIGHT_BVH_DEDICATED_SUN=1 FRAME_FEATURES_VALIDATE=1
 
+
+//!variant integrate_direct_rayquery_terrain_shadow.comp
+//!>       TERRAIN_BLEND TERRAIN_BLEND_SHADOW
+
+//!variant integrate_direct_rayquery_raygen_terrain_shadow.rgen
+//!>       RAY_PIPELINE
+//!>       TERRAIN_BLEND TERRAIN_BLEND_SHADOW
+
+//!variant integrate_direct_nrc_rayquery_terrain_shadow.comp
+//!>       ENABLE_NRC=1
+//!>       TERRAIN_BLEND TERRAIN_BLEND_SHADOW
+
+//!variant integrate_direct_nrc_rayquery_raygen_terrain_shadow.rgen
+//!>       RAY_PIPELINE ENABLE_NRC=1
+//!>       TERRAIN_BLEND TERRAIN_BLEND_SHADOW
+
+//!variant integrate_direct_sun_rayquery_terrain_shadow.comp
+//!>       LIGHT_BVH_DEDICATED_SUN=1
+//!>       TERRAIN_BLEND TERRAIN_BLEND_SHADOW
+
+//!variant integrate_direct_nosss_rayquery_terrain_shadow.comp
+//!>       INTEGRATE_DIRECT_SSS_PROFILE=0
+//!>       TERRAIN_BLEND TERRAIN_BLEND_SHADOW
+
+//!variant integrate_direct_sun_nosss_rayquery_terrain_shadow.comp
+//!>       LIGHT_BVH_DEDICATED_SUN=1 INTEGRATE_DIRECT_SSS_PROFILE=0
+//!>       TERRAIN_BLEND TERRAIN_BLEND_SHADOW
+
+//!variant integrate_direct_split_shade_lean_rayquery_terrain_shadow.comp
+//!>       INTEGRATE_DIRECT_SSS_PROFILE=0 INTEGRATE_DIRECT_LEAN_VISIBILITY=1 INTEGRATE_DIRECT_SPLIT=1
+//!>       TERRAIN_BLEND TERRAIN_BLEND_SHADOW
+
+//!variant integrate_direct_split_shade_sun_lean_rayquery_terrain_shadow.comp
+//!>       LIGHT_BVH_DEDICATED_SUN=1 INTEGRATE_DIRECT_SSS_PROFILE=0 INTEGRATE_DIRECT_LEAN_VISIBILITY=1 INTEGRATE_DIRECT_SPLIT=1
+//!>       TERRAIN_BLEND TERRAIN_BLEND_SHADOW
+
+//!variant integrate_direct_split_trace_lean_rayquery_terrain_shadow.comp
+//!>       INTEGRATE_DIRECT_SSS_PROFILE=0 INTEGRATE_DIRECT_LEAN_VISIBILITY=1 INTEGRATE_DIRECT_SPLIT=2
+//!>       TERRAIN_BLEND TERRAIN_BLEND_SHADOW
+
+//!variant integrate_direct_split_trace_lean_core_rayquery_terrain_shadow.comp
+//!>       INTEGRATE_DIRECT_SSS_PROFILE=0 INTEGRATE_DIRECT_LEAN_VISIBILITY=1 VISIBILITY_CORE_MATERIAL=1 SURFACE_LEGACY_MODULE=0 INTEGRATE_DIRECT_SPLIT=2
+//!>       TERRAIN_BLEND TERRAIN_BLEND_SHADOW
+
+//!variant integrate_direct_split_trace_lean_legacy_rayquery_terrain_shadow.comp
+//!>       INTEGRATE_DIRECT_SSS_PROFILE=0 INTEGRATE_DIRECT_LEAN_VISIBILITY=1 VISIBILITY_CORE_MATERIAL=1 SURFACE_LEGACY_MODULE=1 INTEGRATE_DIRECT_SPLIT=2
+//!>       TERRAIN_BLEND TERRAIN_BLEND_SHADOW
+
+//!variant integrate_direct_validate_rayquery_terrain_shadow.comp
+//!>       FRAME_FEATURES_VALIDATE=1
+//!>       TERRAIN_BLEND TERRAIN_BLEND_SHADOW
+
+//!variant integrate_direct_sun_validate_rayquery_terrain_shadow.comp
+//!>       LIGHT_BVH_DEDICATED_SUN=1 FRAME_FEATURES_VALIDATE=1
+//!>       TERRAIN_BLEND TERRAIN_BLEND_SHADOW
+
 //!end-variants
 #define ATMOSPHERE_AVAILABLE
 // The [LightSamplingStats] counters, gated at runtime by cb.lightSamplingStatsEnabled.

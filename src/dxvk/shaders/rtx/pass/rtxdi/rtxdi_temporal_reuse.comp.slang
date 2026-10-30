@@ -26,6 +26,15 @@
 //!variant rtxdi_temporal_reuse_no_portals.comp
 //!>       RTXDI_NO_PORTALS=1
 
+
+//!variant rtxdi_temporal_reuse_terrain_shadow.comp
+//!>       RTXDI_NO_PORTALS=0
+//!>       TERRAIN_BLEND TERRAIN_BLEND_SHADOW
+
+//!variant rtxdi_temporal_reuse_no_portals_terrain_shadow.comp
+//!>       RTXDI_NO_PORTALS=1
+//!>       TERRAIN_BLEND TERRAIN_BLEND_SHADOW
+
 //!end-variants
 
 #define USE_32BIT_RAY_DIRECTION 1
@@ -93,7 +102,7 @@ void reprojectInactivePixelReservoir(int2 pixelCoordinate) {
     }
   }
 
-  // Decay confidence — inactive pixels gradually lose confidence so they don't
+  // Decay confidence â€” inactive pixels gradually lose confidence so they don't
   // cause a false disocclusion boost when they become active again
   confidence = max(confidence - 1.0 / kReprojectionConfidenceHistoryLength, 0);
 

@@ -76,6 +76,67 @@
 //!>       RAB_HAS_RESTIR_GI_RESERVOIRS=1
 //!>       INDIRECT_SLIM_LEAN_VISIBILITY=1
 
+
+//!variant integrate_nee_plain_terrain_shadow.comp
+//!>       ENABLE_NRC=0
+//!>       TERRAIN_BLEND TERRAIN_BLEND_SHADOW
+
+//!variant integrate_nee_nrc_terrain_shadow.comp
+//!>       ENABLE_NRC=1
+//!>       TERRAIN_BLEND TERRAIN_BLEND_SHADOW
+
+//!variant integrate_nee_restir_gi_terrain_shadow.comp
+//!>       RAB_HAS_RESTIR_GI_RESERVOIRS=1
+//!>       TERRAIN_BLEND TERRAIN_BLEND_SHADOW
+
+//!variant integrate_nee_plain_slim_terrain_shadow.comp
+//!>       ENABLE_NRC=0
+//!>       INDIRECT_SLIM_NO_POM
+//!>       TERRAIN_BLEND TERRAIN_BLEND_SHADOW
+
+//!variant integrate_nee_plain_lean_terrain_shadow.comp
+//!>       ENABLE_NRC=0
+//!>       INDIRECT_SLIM_NO_POM
+//!>       INDIRECT_SLIM_LEAN_VISIBILITY=1
+//!>       TERRAIN_BLEND TERRAIN_BLEND_SHADOW
+
+//!variant integrate_nee_nrc_slim_terrain_shadow.comp
+//!>       ENABLE_NRC=1
+//!>       INDIRECT_SLIM_NO_POM
+//!>       TERRAIN_BLEND TERRAIN_BLEND_SHADOW
+
+//!variant integrate_nee_nrc_lean_terrain_shadow.comp
+//!>       ENABLE_NRC=1
+//!>       INDIRECT_SLIM_NO_POM
+//!>       INDIRECT_SLIM_LEAN_VISIBILITY=1
+//!>       TERRAIN_BLEND TERRAIN_BLEND_SHADOW
+
+//!variant integrate_nee_restir_gi_slim_terrain_shadow.comp
+//!>       RAB_HAS_RESTIR_GI_RESERVOIRS=1
+//!>       INDIRECT_SLIM_NO_POM
+//!>       TERRAIN_BLEND TERRAIN_BLEND_SHADOW
+
+//!variant integrate_nee_restir_gi_lean_terrain_shadow.comp
+//!>       RAB_HAS_RESTIR_GI_RESERVOIRS=1
+//!>       INDIRECT_SLIM_NO_POM
+//!>       INDIRECT_SLIM_LEAN_VISIBILITY=1
+//!>       TERRAIN_BLEND TERRAIN_BLEND_SHADOW
+
+//!variant integrate_nee_plain_leanpom_terrain_shadow.comp
+//!>       ENABLE_NRC=0
+//!>       INDIRECT_SLIM_LEAN_VISIBILITY=1
+//!>       TERRAIN_BLEND TERRAIN_BLEND_SHADOW
+
+//!variant integrate_nee_nrc_leanpom_terrain_shadow.comp
+//!>       ENABLE_NRC=1
+//!>       INDIRECT_SLIM_LEAN_VISIBILITY=1
+//!>       TERRAIN_BLEND TERRAIN_BLEND_SHADOW
+
+//!variant integrate_nee_restir_gi_leanpom_terrain_shadow.comp
+//!>       RAB_HAS_RESTIR_GI_RESERVOIRS=1
+//!>       INDIRECT_SLIM_LEAN_VISIBILITY=1
+//!>       TERRAIN_BLEND TERRAIN_BLEND_SHADOW
+
 //!end-variants
 // NV-DXVK end
 

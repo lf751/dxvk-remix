@@ -39,6 +39,23 @@
 //!variant gbuffer_decal_prepare_particles_wboit_slimpom.comp
 //!>       GBUFFER_SLIM_NO_THIN_FILM GBUFFER_SLIM_NO_PORTALS UNORDERED_RESOLVE_WBOIT GBUFFER_DECAL_PARTICLES=1
 
+
+//!variant gbuffer_decal_prepare_slim_terrain.comp
+//!>       GBUFFER_SLIM_NO_POM GBUFFER_SLIM_NO_THIN_FILM GBUFFER_SLIM_NO_PORTALS
+//!>       TERRAIN_BLEND
+
+//!variant gbuffer_decal_prepare_slimpom_terrain.comp
+//!>       GBUFFER_SLIM_NO_THIN_FILM GBUFFER_SLIM_NO_PORTALS
+//!>       TERRAIN_BLEND
+
+//!variant gbuffer_decal_prepare_particles_wboit_slim_terrain.comp
+//!>       GBUFFER_SLIM_NO_POM GBUFFER_SLIM_NO_THIN_FILM GBUFFER_SLIM_NO_PORTALS UNORDERED_RESOLVE_WBOIT GBUFFER_DECAL_PARTICLES=1
+//!>       TERRAIN_BLEND
+
+//!variant gbuffer_decal_prepare_particles_wboit_slimpom_terrain.comp
+//!>       GBUFFER_SLIM_NO_THIN_FILM GBUFFER_SLIM_NO_PORTALS UNORDERED_RESOLVE_WBOIT GBUFFER_DECAL_PARTICLES=1
+//!>       TERRAIN_BLEND
+
 //!end-variants
 
 #include "rtx/pass/gbuffer/gbuffer_decal_prepare.comp.slang"

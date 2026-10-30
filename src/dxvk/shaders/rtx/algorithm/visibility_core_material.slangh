@@ -154,6 +154,7 @@ Surface coreVisibilityMaterialSurface(CoreSurfaceMaterial core, LegacyTextureOps
   surface.data13.z = ops.textureFlags & 0x3FFFu;
   surface.isTextureFactorBlend = ops.isTextureFactorBlend;
   surface.isVertexColorBakedLighting = ops.isVertexColorBakedLighting;
+  surface.worldSpaceSecondaryOpacity = core.worldSpaceSecondaryOpacity;
   return surface;
 }
 
@@ -216,6 +217,11 @@ float coreVisibilityCalcOpacity(CoreSurfaceMaterial core, LegacyTextureOps ops, 
   memory.data[3] = coreVisibilityZeroRow();
   OpaqueSurfaceMaterial flagsOnly = reinterpret<OpaqueSurfaceMaterial>(memory);
   flagsOnly.flags = uint16_t(core.flags);
+  flagsOnly.secondaryTextureIndex = BINDING_INDEX_INVALID;
+  if (core.worldSpaceSecondaryOpacity && core.extensionIndex != SURFACE_INDEX_INVALID) {
+    const uint4 row = coreMaterialRows[cb.coreMaterialExtTable][core.extensionIndex * 4 + 2];
+    flagsOnly.secondaryTextureIndex = uint16_t(row.z >> 16);
+  }
 
   vec3 emissiveColor = vec3(0.0f);
   float emissiveBlendOverrideInfluence = float(1.0f);

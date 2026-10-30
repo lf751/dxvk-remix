@@ -19,6 +19,14 @@
 * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 * DEALINGS IN THE SOFTWARE.
 */
+
+//!variant restir_gi_temporal_reuse.comp
+
+//!variant restir_gi_temporal_reuse_terrain_shadow.comp
+//!>       TERRAIN_BLEND TERRAIN_BLEND_SHADOW
+
+//!end-variants
+
 #define RAB_HAS_PREVIOUS_GBUFFER 1
 #define RAB_HAS_CURRENT_GBUFFER 1
 #define RAB_HAS_RESTIR_GI_RESERVOIRS 1

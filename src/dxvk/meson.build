@@ -549,6 +549,8 @@ dxvk_src = files([
   'imgui/implot_demo.cpp',
   'imgui/implot_internal.h',
   'imgui/implot_items.cpp',
+  'shaders/rtx/pass/terrain_blend_args.h',
+  'shaders/rtx/pass/terrain_pom_math.h',
 ])
 
 thread_dep = dependency('threads')

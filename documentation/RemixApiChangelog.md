@@ -56,6 +56,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `requestHostRelease` is set from level 2 (High) by default.
 
 ### Added
+- 2026-10-30: The 32-bit D3D9 bridge now forwards `AddTextureHash` and `dxvk_GetTextureHash` through existing interface
+  slots, allowing clients to classify textures using the runtime's 64-bit content hashes. The calls return the server's
+  result synchronously. No interface layout or API version changes. The bridge client and server must be built together.
 - 2026-10-27: color grading, as named exports: `remixapi_SetColorGradePreset`,
   `remixapi_SetColorGrade`, `remixapi_MixColorGradePresets`, `remixapi_GetColorGrade` and
   `remixapi_SaveColorGradePreset`, with `remixapi_ColorGradeEXT`

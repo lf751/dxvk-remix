@@ -52,6 +52,28 @@
 #include "rtx_opacity_micromap_manager.h"
 #include "rtx_scene_manager.h"
 
+
+#include <rtx_shaders/integrate_direct_nosss_rayquery_terrain_shadow.h>
+#include <rtx_shaders/integrate_direct_nrc_rayquery_raygen_terrain_shadow.h>
+#include <rtx_shaders/integrate_direct_nrc_rayquery_terrain_shadow.h>
+#include <rtx_shaders/integrate_direct_rayquery_raygen_terrain_shadow.h>
+#include <rtx_shaders/integrate_direct_rayquery_terrain_shadow.h>
+#include <rtx_shaders/integrate_direct_split_shade_lean_rayquery_terrain_shadow.h>
+#include <rtx_shaders/integrate_direct_split_shade_sun_lean_rayquery_terrain_shadow.h>
+#include <rtx_shaders/integrate_direct_split_trace_lean_core_rayquery_terrain_shadow.h>
+#include <rtx_shaders/integrate_direct_split_trace_lean_legacy_rayquery_terrain_shadow.h>
+#include <rtx_shaders/integrate_direct_split_trace_lean_rayquery_terrain_shadow.h>
+#include <rtx_shaders/integrate_direct_sun_nosss_rayquery_terrain_shadow.h>
+#include <rtx_shaders/integrate_direct_sun_rayquery_terrain_shadow.h>
+#include <rtx_shaders/integrate_direct_sun_validate_rayquery_terrain_shadow.h>
+#include <rtx_shaders/integrate_direct_validate_rayquery_terrain_shadow.h>
+
+#define GET_TERRAIN_SHADOW_SHADER_VARIANT(stage, shaderClass, code) \
+  (terrainShadowsEnabled \
+    ? GET_SHADER_VARIANT(stage, shaderClass, code##_terrain_shadow) \
+    : GET_SHADER_VARIANT(stage, shaderClass, code))
+
+
 namespace dxvk {
 
   // Defined within an unnamed namespace to ensure unique definition across binary
@@ -215,6 +237,9 @@ namespace dxvk {
   }
 
   void DxvkPathtracerIntegrateDirect::prewarmShaders(DxvkPipelineManager& pipelineManager) const {
+    const auto& terrain = m_device->getCommon()->getSceneManager().getTerrainBlendArgs();
+    const bool terrainShadowsEnabled = terrain.enabled && terrain.displacementEnabled && terrain.displacementStrength > 0.f && terrain.displacementSelfShadowEnabled && terrain.displacementShadowStrength > 0.f;
+
     ScopedCpuProfileZoneN("Direct Integrate Shader Prewarming");
 
     const bool isOpacityMicromapSupported = OpacityMicromapManager::checkIsOpacityMicromapSupported(*m_device);
@@ -222,16 +247,16 @@ namespace dxvk {
     if (RtxOptions::Shader::prewarmAllVariants()) {
       for (int32_t deferredNrcTrainingSetup = 1; deferredNrcTrainingSetup >= 0; deferredNrcTrainingSetup--) {
         for (int32_t ommEnabled = isOpacityMicromapSupported; ommEnabled > 0; ommEnabled--) {
-          pipelineManager.registerRaytracingShaders(getPipelineShaders(true, ommEnabled, deferredNrcTrainingSetup));
+          pipelineManager.registerRaytracingShaders(getPipelineShaders(true, ommEnabled, deferredNrcTrainingSetup, false));
         }
 
         getComputeShader(deferredNrcTrainingSetup, SlimLevel::Full);
       }
       // Dedicated-sun variant (rtx.lightSampling.bvhDedicatedSunSample).
-      GET_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateDirectRayGenShader, integrate_direct_sun_rayquery);
+      GET_TERRAIN_SHADOW_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateDirectRayGenShader, integrate_direct_sun_rayquery);
       // The slim levels.
-      GET_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateDirectRayGenShader, integrate_direct_nosss_rayquery);
-      GET_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateDirectRayGenShader, integrate_direct_sun_nosss_rayquery);
+      GET_TERRAIN_SHADOW_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateDirectRayGenShader, integrate_direct_nosss_rayquery);
+      GET_TERRAIN_SHADOW_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateDirectRayGenShader, integrate_direct_sun_nosss_rayquery);
       getSplitShadeShader(false);
       getSplitShadeShader(true);
       getSplitTraceShader(SlimLevel::Lean);
@@ -264,7 +289,7 @@ namespace dxvk {
         }
         break;
       case RaytraceMode::RayQueryRayGen:
-        pipelineManager.registerRaytracingShaders(getPipelineShaders(true, ommEnabled, deferredNrcTrainingSetup));
+        pipelineManager.registerRaytracingShaders(getPipelineShaders(true, ommEnabled, deferredNrcTrainingSetup, false));
         break;
       default:
         assert(false && "Invalid renderPassIntegrateDirectRaytraceMode in DxvkPathtracerIntegrateDirect::prewarmShaders");
@@ -276,6 +301,10 @@ namespace dxvk {
   void DxvkPathtracerIntegrateDirect::dispatch(
     RtxContext* ctx, 
     const Resources::RaytracingOutput& rtOutput) {
+    const auto& terrain = rtOutput.m_raytraceArgs.terrainBlendArgs;
+    const bool terrainShadowsEnabled = terrain.enabled != 0 && terrain.displacementEnabled != 0 &&
+      terrain.displacementStrength > 0.f && terrain.displacementSelfShadowEnabled != 0 &&
+      terrain.displacementShadowStrength > 0.f;
     ScopedGpuProfileZone(ctx, "Integrate Direct Raytracing");
     ctx->setFramePassStage(RtxFramePassStage::DirectIntegration);
     const uint32_t frameId = ctx->getDevice()->getCurrentFrameId();
@@ -395,7 +424,7 @@ namespace dxvk {
       sparseRendering.dispatchLaunch(*ctx, sparseArgs, COMPACT_ACTIVE_PIXELS_LAUNCH_INTEGRATE_DIRECT, workgroups);
       break;
     case RaytraceMode::RayQueryRayGen:
-      ctx->bindRaytracingPipelineShaders(getPipelineShaders(true, ommEnabled, deferredNrcTrainingSetup));
+      ctx->bindRaytracingPipelineShaders(getPipelineShaders(true, ommEnabled, deferredNrcTrainingSetup, terrainShadowsEnabled));
       ctx->traceRays(rayDims.width, rayDims.height, rayDims.depth);
       break;
     default:
@@ -407,15 +436,16 @@ namespace dxvk {
   DxvkRaytracingPipelineShaders DxvkPathtracerIntegrateDirect::getPipelineShaders(
     const bool useRayQuery,
     const bool ommEnabled,
-    const bool deferredNrcTrainingSetup) {
+    const bool deferredNrcTrainingSetup,
+    const bool terrainShadowsEnabled) {
 
     DxvkRaytracingPipelineShaders shaders;
     if (useRayQuery) {
       shaders.debugName = deferredNrcTrainingSetup ? "Integrate Direct NRC RayQuery (RGS)" : "Integrate Direct RayQuery (RGS)";
       if (deferredNrcTrainingSetup) {
-        shaders.addGeneralShader(GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateDirectRayGenShader, integrate_direct_nrc_rayquery_raygen));
+        shaders.addGeneralShader(GET_TERRAIN_SHADOW_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateDirectRayGenShader, integrate_direct_nrc_rayquery_raygen));
       } else {
-        shaders.addGeneralShader(GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateDirectRayGenShader, integrate_direct_rayquery_raygen));
+        shaders.addGeneralShader(GET_TERRAIN_SHADOW_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateDirectRayGenShader, integrate_direct_rayquery_raygen));
       }
     } else {
       assert(!"TraceRay versions of the Integrate Direct pass are not implemented.");
@@ -578,15 +608,18 @@ namespace dxvk {
   }
 
   Rc<DxvkShader> DxvkPathtracerIntegrateDirect::getComputeShader(const bool deferredNrcTrainingSetup, const SlimLevel slimLevel) const {
+    const auto& terrain = m_device->getCommon()->getSceneManager().getTerrainBlendArgs();
+    const bool terrainShadowsEnabled = terrain.enabled && terrain.displacementEnabled && terrain.displacementStrength > 0.f && terrain.displacementSelfShadowEnabled && terrain.displacementShadowStrength > 0.f;
+
     if (deferredNrcTrainingSetup) {
-      return GET_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateDirectRayGenShader, integrate_direct_nrc_rayquery);
+      return GET_TERRAIN_SHADOW_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateDirectRayGenShader, integrate_direct_nrc_rayquery);
     }
 
     // rtx.frameFeatures.validate. The Full kernels' validation variants (sampled light types).
     if (RtxOptions::FrameFeatures::validate()) {
       return LightBvh::dedicatedSunActive()
-        ? GET_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateDirectRayGenShader, integrate_direct_sun_validate_rayquery)
-        : GET_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateDirectRayGenShader, integrate_direct_validate_rayquery);
+        ? GET_TERRAIN_SHADOW_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateDirectRayGenShader, integrate_direct_sun_validate_rayquery)
+        : GET_TERRAIN_SHADOW_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateDirectRayGenShader, integrate_direct_validate_rayquery);
     }
 
     // The dedicated distant-light sample is a variant, because a second visibility-ray site in the default kernel costs
@@ -597,12 +630,12 @@ namespace dxvk {
     const bool full = slimLevel == SlimLevel::Full;
     if (LightBvh::dedicatedSunActive()) {
       return full
-        ? GET_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateDirectRayGenShader, integrate_direct_sun_rayquery)
-        : GET_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateDirectRayGenShader, integrate_direct_sun_nosss_rayquery);
+        ? GET_TERRAIN_SHADOW_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateDirectRayGenShader, integrate_direct_sun_rayquery)
+        : GET_TERRAIN_SHADOW_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateDirectRayGenShader, integrate_direct_sun_nosss_rayquery);
     }
     return full
-      ? GET_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateDirectRayGenShader, integrate_direct_rayquery)
-      : GET_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateDirectRayGenShader, integrate_direct_nosss_rayquery);
+      ? GET_TERRAIN_SHADOW_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateDirectRayGenShader, integrate_direct_rayquery)
+      : GET_TERRAIN_SHADOW_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateDirectRayGenShader, integrate_direct_nosss_rayquery);
   }
 
   bool DxvkPathtracerIntegrateDirect::isSplitLevel(const SlimLevel level) {
@@ -610,6 +643,9 @@ namespace dxvk {
   }
 
   void DxvkPathtracerIntegrateDirect::prewarmLevel(const bool deferredNrcTrainingSetup, const SlimLevel level) const {
+    const auto& terrain = m_device->getCommon()->getSceneManager().getTerrainBlendArgs();
+    const bool terrainShadowsEnabled = terrain.enabled && terrain.displacementEnabled && terrain.displacementStrength > 0.f && terrain.displacementSelfShadowEnabled && terrain.displacementShadowStrength > 0.f;
+
     // dedicatedSunActive() turns on during the run, once a sky provider renders, so the sun kernels are warmed
     // whenever the options allow them.
     const bool sunPossible = !deferredNrcTrainingSetup && LightBvh::dedicatedSunPossible();
@@ -623,9 +659,9 @@ namespace dxvk {
       getComputeShader(deferredNrcTrainingSetup, level);
       if (sunPossible && !RtxOptions::FrameFeatures::validate()) {
         if (level == SlimLevel::Full) {
-          GET_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateDirectRayGenShader, integrate_direct_sun_rayquery);
+          GET_TERRAIN_SHADOW_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateDirectRayGenShader, integrate_direct_sun_rayquery);
         } else {
-          GET_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateDirectRayGenShader, integrate_direct_sun_nosss_rayquery);
+          GET_TERRAIN_SHADOW_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateDirectRayGenShader, integrate_direct_sun_nosss_rayquery);
         }
       }
     }
@@ -640,22 +676,28 @@ namespace dxvk {
   }
 
   Rc<DxvkShader> DxvkPathtracerIntegrateDirect::getSplitShadeShader(const bool dedicatedSun) const {
+    const auto& terrain = m_device->getCommon()->getSceneManager().getTerrainBlendArgs();
+    const bool terrainShadowsEnabled = terrain.enabled && terrain.displacementEnabled && terrain.displacementStrength > 0.f && terrain.displacementSelfShadowEnabled && terrain.displacementShadowStrength > 0.f;
+
     // The shade kernel traces nothing, so one serves Lean, LeanCore and LeanLegacy.
     return dedicatedSun
-      ? GET_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateDirectSplitShader, integrate_direct_split_shade_sun_lean_rayquery)
-      : GET_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateDirectSplitShader, integrate_direct_split_shade_lean_rayquery);
+      ? GET_TERRAIN_SHADOW_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateDirectSplitShader, integrate_direct_split_shade_sun_lean_rayquery)
+      : GET_TERRAIN_SHADOW_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateDirectSplitShader, integrate_direct_split_shade_lean_rayquery);
   }
 
   Rc<DxvkShader> DxvkPathtracerIntegrateDirect::getSplitTraceShader(const SlimLevel slimLevel) const {
+    const auto& terrain = m_device->getCommon()->getSceneManager().getTerrainBlendArgs();
+    const bool terrainShadowsEnabled = terrain.enabled && terrain.displacementEnabled && terrain.displacementStrength > 0.f && terrain.displacementSelfShadowEnabled && terrain.displacementShadowStrength > 0.f;
+
     // The trace kernel carries the level's visibility form (old record, core, core + legacy). Any dedicated sun sample is
     // in the record.
     switch (slimLevel) {
     case SlimLevel::LeanCore:
-      return GET_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateDirectSplitShader, integrate_direct_split_trace_lean_core_rayquery);
+      return GET_TERRAIN_SHADOW_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateDirectSplitShader, integrate_direct_split_trace_lean_core_rayquery);
     case SlimLevel::LeanLegacy:
-      return GET_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateDirectSplitShader, integrate_direct_split_trace_lean_legacy_rayquery);
+      return GET_TERRAIN_SHADOW_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateDirectSplitShader, integrate_direct_split_trace_lean_legacy_rayquery);
     default:
-      return GET_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateDirectSplitShader, integrate_direct_split_trace_lean_rayquery);
+      return GET_TERRAIN_SHADOW_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateDirectSplitShader, integrate_direct_split_trace_lean_rayquery);
     }
   }
 
@@ -712,3 +754,5 @@ namespace dxvk {
     }
   }
 }
+
+#undef GET_TERRAIN_SHADOW_SHADER_VARIANT

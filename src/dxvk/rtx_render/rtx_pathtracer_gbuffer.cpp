@@ -118,10 +118,75 @@
 #include <rtx_shaders/gbuffer_psr_nrc_material_opaque_translucent_closesthit_wboit.h>
 #include <rtx_shaders/gbuffer_psr_nrc_material_rayPortal_closesthit_wboit.h>
 
+#include <rtx_shaders/gbuffer_material_opaque_translucent_closestHit_terrain.h>
+#include <rtx_shaders/gbuffer_material_rayportal_closestHit_terrain.h>
+#include <rtx_shaders/gbuffer_nrc_material_opaque_translucent_closestHit_terrain.h>
+#include <rtx_shaders/gbuffer_nrc_material_rayportal_closestHit_terrain.h>
+#include <rtx_shaders/gbuffer_psr_material_opaque_translucent_closestHit_terrain.h>
+#include <rtx_shaders/gbuffer_psr_material_rayportal_closestHit_terrain.h>
+#include <rtx_shaders/gbuffer_psr_nrc_material_opaque_translucent_closestHit_terrain.h>
+#include <rtx_shaders/gbuffer_psr_nrc_material_rayportal_closestHit_terrain.h>
+#include <rtx_shaders/gbuffer_material_opaque_translucent_closestHit_wboit_terrain.h>
+#include <rtx_shaders/gbuffer_material_rayportal_closestHit_wboit_terrain.h>
+#include <rtx_shaders/gbuffer_nrc_material_opaque_translucent_closestHit_wboit_terrain.h>
+#include <rtx_shaders/gbuffer_nrc_material_rayportal_closestHit_wboit_terrain.h>
+#include <rtx_shaders/gbuffer_psr_material_opaque_translucent_closestHit_wboit_terrain.h>
+#include <rtx_shaders/gbuffer_psr_material_rayportal_closestHit_wboit_terrain.h>
+#include <rtx_shaders/gbuffer_psr_nrc_material_opaque_translucent_closestHit_wboit_terrain.h>
+#include <rtx_shaders/gbuffer_psr_nrc_material_rayportal_closestHit_wboit_terrain.h>
+
 #include "dxvk_scoped_annotation.h"
 #include "rtx_context.h"
+#include "rtx_scene_manager.h"
 #include "rtx_opacity_micromap_manager.h"
 #include "rtx_sparse_rendering.h"
+
+#include <rtx_shaders/gbuffer_decal_prepare_particles_wboit_slim_terrain.h>
+#include <rtx_shaders/gbuffer_decal_prepare_particles_wboit_slimpom_terrain.h>
+#include <rtx_shaders/gbuffer_decal_prepare_slim_terrain.h>
+#include <rtx_shaders/gbuffer_decal_prepare_slimpom_terrain.h>
+#include <rtx_shaders/gbuffer_psr_prepare_slim_terrain.h>
+#include <rtx_shaders/gbuffer_psr_prepare_slimpom_terrain.h>
+#include <rtx_shaders/gbuffer_psr_prepare_terrain.h>
+#include <rtx_shaders/gbuffer_rayquery_psr_inline_nrc_wboit_lean_terrain.h>
+#include <rtx_shaders/gbuffer_rayquery_psr_inline_nrc_wboit_leanpom_terrain.h>
+#include <rtx_shaders/gbuffer_rayquery_psr_inline_nrc_wboit_slim_terrain.h>
+#include <rtx_shaders/gbuffer_rayquery_psr_inline_nrc_wboit_slimpom_terrain.h>
+#include <rtx_shaders/gbuffer_rayquery_psr_inline_nrc_wboit_validate_terrain.h>
+#include <rtx_shaders/gbuffer_rayquery_psr_inline_psr_nrc_wboit_lean_terrain.h>
+#include <rtx_shaders/gbuffer_rayquery_psr_inline_psr_nrc_wboit_leanpom_terrain.h>
+#include <rtx_shaders/gbuffer_rayquery_psr_inline_psr_nrc_wboit_slim_terrain.h>
+#include <rtx_shaders/gbuffer_rayquery_psr_inline_psr_nrc_wboit_slimpom_terrain.h>
+#include <rtx_shaders/gbuffer_rayquery_psr_prepare_psr_compact_terrain.h>
+#include <rtx_shaders/gbuffer_rayquery_psr_prepare_psr_wboit_compact_terrain.h>
+#include <rtx_shaders/gbuffer_rayquery_psr_prepare_psr_wboit_lean_compact_terrain.h>
+#include <rtx_shaders/gbuffer_rayquery_psr_prepare_psr_wboit_lean_terrain.h>
+#include <rtx_shaders/gbuffer_rayquery_psr_prepare_psr_wboit_leanpom_compact_terrain.h>
+#include <rtx_shaders/gbuffer_rayquery_psr_prepare_psr_wboit_leanpom_terrain.h>
+#include <rtx_shaders/gbuffer_rayquery_psr_prepare_psr_wboit_slim_compact_terrain.h>
+#include <rtx_shaders/gbuffer_rayquery_psr_prepare_psr_wboit_slim_terrain.h>
+#include <rtx_shaders/gbuffer_rayquery_psr_prepare_psr_wboit_slimpom_compact_terrain.h>
+#include <rtx_shaders/gbuffer_rayquery_psr_prepare_psr_wboit_slimpom_terrain.h>
+#include <rtx_shaders/gbuffer_rayquery_psr_prepare_stochastic_alpha_psr_compact_terrain.h>
+#include <rtx_shaders/gbuffer_rayquery_psr_prepare_stochastic_alpha_psr_wboit_compact_terrain.h>
+#include <rtx_shaders/gbuffer_rayquery_psr_prepare_stochastic_alpha_psr_wboit_lean_compact_terrain.h>
+#include <rtx_shaders/gbuffer_rayquery_psr_prepare_stochastic_alpha_psr_wboit_lean_terrain.h>
+#include <rtx_shaders/gbuffer_rayquery_psr_prepare_stochastic_alpha_psr_wboit_leanpom_compact_terrain.h>
+#include <rtx_shaders/gbuffer_rayquery_psr_prepare_stochastic_alpha_psr_wboit_leanpom_terrain.h>
+#include <rtx_shaders/gbuffer_rayquery_psr_prepare_stochastic_alpha_psr_wboit_slim_compact_terrain.h>
+#include <rtx_shaders/gbuffer_rayquery_psr_prepare_stochastic_alpha_psr_wboit_slim_terrain.h>
+#include <rtx_shaders/gbuffer_rayquery_psr_prepare_stochastic_alpha_psr_wboit_slimpom_compact_terrain.h>
+#include <rtx_shaders/gbuffer_rayquery_psr_prepare_stochastic_alpha_psr_wboit_slimpom_terrain.h>
+#include <rtx_shaders/gbuffer_rayquery_psr_prepare_stochastic_alpha_wboit_lean_terrain.h>
+#include <rtx_shaders/gbuffer_rayquery_psr_prepare_stochastic_alpha_wboit_leanpom_terrain.h>
+#include <rtx_shaders/gbuffer_rayquery_psr_prepare_stochastic_alpha_wboit_slim_terrain.h>
+#include <rtx_shaders/gbuffer_rayquery_psr_prepare_stochastic_alpha_wboit_slimpom_terrain.h>
+#include <rtx_shaders/gbuffer_rayquery_psr_prepare_stochastic_alpha_wboit_validate_terrain.h>
+#include <rtx_shaders/gbuffer_rayquery_psr_prepare_wboit_lean_terrain.h>
+#include <rtx_shaders/gbuffer_rayquery_psr_prepare_wboit_leanpom_terrain.h>
+#include <rtx_shaders/gbuffer_rayquery_psr_prepare_wboit_slim_terrain.h>
+#include <rtx_shaders/gbuffer_rayquery_psr_prepare_wboit_slimpom_terrain.h>
+#include <rtx_shaders/gbuffer_rayquery_psr_prepare_wboit_validate_terrain.h>
 
 namespace dxvk {
 
@@ -238,6 +303,20 @@ namespace dxvk {
       BEGIN_PARAMETER()
       END_PARAMETER()
     };
+
+    constexpr uint32_t kGbufferVariantTerrain = 1u << 11;
+
+    static_assert(RTX_SHADER_VARIANT_MATRIX_GBUFFER_TERRAIN_TERRAIN ==
+      RTX_SHADER_VARIANT_MATRIX_GBUFFER_RAYQUERY_TERRAIN_TERRAIN);
+
+    constexpr uint32_t getGbufferTerrainVariantKey(const uint32_t terrain) {
+      return terrain != 0u ? kGbufferVariantTerrain : 0u;
+    }
+
+    uint32_t getGbufferTerrainVariantKey(const TerrainBlendArgs& terrain) {
+      return getGbufferTerrainVariantKey(terrain.enabled != 0u
+        ? RTX_SHADER_VARIANT_MATRIX_GBUFFER_TERRAIN_TERRAIN : 0u);
+    }
 
     constexpr uint32_t kGbufferVariantPSR = 1u << 0;
     constexpr uint32_t kGbufferVariantWBOIT = 1u << 1;
@@ -419,8 +498,8 @@ namespace dxvk {
 
     Rc<DxvkShader> getGbufferRayQueryRayGenShader(const uint32_t key) {
       switch (key) {
-#define GBUFFER_RAYQUERY_RAYGEN_CASE(features, psr, pipeline, nrc, wboit, code) \
-        case getGbufferMatrixVariantKey(features, psr, nrc, wboit): \
+#define GBUFFER_RAYQUERY_RAYGEN_CASE(features, psr, pipeline, nrc, wboit, terrain, code) \
+        case getGbufferMatrixVariantKey(features, psr, nrc, wboit) | getGbufferTerrainVariantKey(terrain): \
           return GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, GbufferRayGenShader, code);
         RTX_SHADER_VARIANT_MATRIX_GBUFFER_PIPELINE_RAYQUERY_RAYGEN_RGEN(GBUFFER_RAYQUERY_RAYGEN_CASE)
 #undef GBUFFER_RAYQUERY_RAYGEN_CASE
@@ -432,8 +511,8 @@ namespace dxvk {
 
     Rc<DxvkShader> getGbufferTraceRayGenShader(const uint32_t key) {
       switch (key) {
-#define GBUFFER_TRACE_RAYGEN_CASE(features, psr, pipeline, nrc, wboit, code) \
-        case getGbufferTraceRayGenVariantKey(features, psr, pipeline, nrc, wboit): \
+#define GBUFFER_TRACE_RAYGEN_CASE(features, psr, pipeline, nrc, wboit, terrain, code) \
+        case getGbufferTraceRayGenVariantKey(features, psr, pipeline, nrc, wboit) | getGbufferTerrainVariantKey(terrain): \
           return GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, GbufferRayGenShader, code);
         RTX_SHADER_VARIANT_MATRIX_GBUFFER_PIPELINE_RAYGEN_RGEN(GBUFFER_TRACE_RAYGEN_CASE)
         RTX_SHADER_VARIANT_MATRIX_GBUFFER_PIPELINE_RAYGEN_SER_RGEN(GBUFFER_TRACE_RAYGEN_CASE)
@@ -446,8 +525,8 @@ namespace dxvk {
 
     Rc<DxvkShader> getGbufferRayQueryComputeShader(const uint32_t key) {
       switch (key) {
-#define GBUFFER_RAYQUERY_COMPUTE_CASE(features, pass, nrc, wboit, code) \
-        case getGbufferRayQueryMatrixVariantKey(features, pass, nrc, wboit): \
+#define GBUFFER_RAYQUERY_COMPUTE_CASE(features, pass, nrc, wboit, terrain, code) \
+        case getGbufferRayQueryMatrixVariantKey(features, pass, nrc, wboit) | getGbufferTerrainVariantKey(terrain): \
           return GET_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, GbufferRayGenShader, code);
         RTX_SHADER_VARIANT_MATRIX_GBUFFER_RAYQUERY_PASS_NONE_COMP(GBUFFER_RAYQUERY_COMPUTE_CASE)
         RTX_SHADER_VARIANT_MATRIX_GBUFFER_RAYQUERY_PASS_PSR_COMP(GBUFFER_RAYQUERY_COMPUTE_CASE)
@@ -458,14 +537,15 @@ namespace dxvk {
       }
     }
 
-    Rc<DxvkShader> getGbufferPSRPrepareComputeShader() {
-      return GET_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, GbufferRayGenShader, gbuffer_psr_prepare);
+#define GBUFFER_SLIM_COMPUTE(code) (terrainEnabled ? GET_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, GbufferRayGenShader, code##_terrain) : GET_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, GbufferRayGenShader, code))
+    Rc<DxvkShader> getGbufferPSRPrepareComputeShader(const bool terrainEnabled) {
+      return GBUFFER_SLIM_COMPUTE(gbuffer_psr_prepare);
     }
 
-    Rc<DxvkShader> getGbufferDecalPrepareComputeShader(const uint32_t key) {
-      switch (key) {
-#define GBUFFER_DECAL_PREPARE_CASE(debug, code) \
-        case getGbufferDecalPrepareMatrixVariantKey(debug): \
+    Rc<DxvkShader> getGbufferDecalPrepareComputeShader(const uint32_t key, const bool terrainEnabled = false) {
+      switch (key | getGbufferTerrainVariantKey(uint32_t(terrainEnabled))) {
+#define GBUFFER_DECAL_PREPARE_CASE(debug, terrain, code) \
+        case getGbufferDecalPrepareMatrixVariantKey(debug) | getGbufferTerrainVariantKey(terrain): \
           return GET_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, GbufferRayGenShader, code);
         RTX_SHADER_VARIANT_MATRIX_GBUFFER_DECAL_PREPARE_DEBUG_NONE_COMP(GBUFFER_DECAL_PREPARE_CASE)
         RTX_SHADER_VARIANT_MATRIX_GBUFFER_DECAL_PREPARE_DEBUG_DEBUG_COMP(GBUFFER_DECAL_PREPARE_CASE)
@@ -486,10 +566,9 @@ namespace dxvk {
     static_assert(kGbufferRayQueryFeaturesPsrPrepareStochasticAlpha ==
                   RTX_SHADER_VARIANT_MATRIX_GBUFFER_RAYQUERY_FEATURES_PSR_PREPARE +
                   getGbufferRayQueryPSRPrepareFeatureMask(kGbufferRayQueryFeatureStochasticAlpha));
-#define GBUFFER_SLIM_COMPUTE(code) GET_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, GbufferRayGenShader, code)
     // The validation variant of the Full primary-ray kernel for this frame's feature set, or null (the
     // plain Full kernel runs and the G-buffer is not validated this frame). Same feature sets as the slim variants.
-    Rc<DxvkShader> getGbufferRayQueryValidateComputeShader(const uint32_t featureVariant, const bool nrcEnabled, const bool wboitEnabled) {
+    Rc<DxvkShader> getGbufferRayQueryValidateComputeShader(const uint32_t featureVariant, const bool nrcEnabled, const bool wboitEnabled, const bool terrainEnabled) {
       if (!wboitEnabled) {
         return nullptr;
       }
@@ -504,7 +583,7 @@ namespace dxvk {
       }
       return nullptr;
     }
-    Rc<DxvkShader> getGbufferRayQuerySlimComputeShader(const uint32_t featureVariant, const bool isPSRPass, const GbufferSlimLevel level) {
+    Rc<DxvkShader> getGbufferRayQuerySlimComputeShader(const uint32_t featureVariant, const bool isPSRPass, const GbufferSlimLevel level, const bool terrainEnabled) {
       const bool psrInlineNrc = featureVariant == RTX_SHADER_VARIANT_MATRIX_GBUFFER_RAYQUERY_FEATURES_PSR_INLINE;
       if (featureVariant == kGbufferRayQueryFeaturesPsrPrepareStochasticAlpha) {
         if (!isPSRPass) {
@@ -571,21 +650,21 @@ namespace dxvk {
       return level == GbufferSlimLevel::SlimPom || level == GbufferSlimLevel::LeanPom;
     }
 
-    Rc<DxvkShader> getGbufferPSRPrepareSlimComputeShader(const GbufferSlimLevel level) {
+    Rc<DxvkShader> getGbufferPSRPrepareSlimComputeShader(const GbufferSlimLevel level, const bool terrainEnabled) {
       if (level == GbufferSlimLevel::Full) {
         return GBUFFER_SLIM_COMPUTE(gbuffer_psr_prepare);
       }
       return gbufferSlimKeepsPom(level) ? GBUFFER_SLIM_COMPUTE(gbuffer_psr_prepare_slimpom) : GBUFFER_SLIM_COMPUTE(gbuffer_psr_prepare_slim);
     }
 
-    Rc<DxvkShader> getGbufferDecalPrepareSlimComputeShader(const GbufferSlimLevel level) {
+    Rc<DxvkShader> getGbufferDecalPrepareSlimComputeShader(const GbufferSlimLevel level, const bool terrainEnabled) {
       assert(level != GbufferSlimLevel::Full);
       return gbufferSlimKeepsPom(level) ? GBUFFER_SLIM_COMPUTE(gbuffer_decal_prepare_slimpom) : GBUFFER_SLIM_COMPUTE(gbuffer_decal_prepare_slim);
     }
 
     // Returns the deferred decal kernel that also resolves the primary rays' unordered particles (WBOIT, slim levels).
     // The lean levels share the slim decal binaries.
-    Rc<DxvkShader> getGbufferDecalPrepareParticlesComputeShader(const GbufferSlimLevel level) {
+    Rc<DxvkShader> getGbufferDecalPrepareParticlesComputeShader(const GbufferSlimLevel level, const bool terrainEnabled) {
       assert(level != GbufferSlimLevel::Full);
       return gbufferSlimKeepsPom(level) ? GBUFFER_SLIM_COMPUTE(gbuffer_decal_prepare_particles_wboit_slimpom)
                                         : GBUFFER_SLIM_COMPUTE(gbuffer_decal_prepare_particles_wboit_slim);
@@ -594,7 +673,7 @@ namespace dxvk {
     // The compact PSR pass kernel of the psr_prepare feature sets (no NRC) dispatched over
     // the PSR Prepare lists (gbuffer_rayquery_compact.comp.slang): psr_prepare and psr_prepare_stochastic_alpha, each full with
     // or without WBOIT and every slim level (WBOIT).
-    Rc<DxvkShader> getGbufferRayQueryCompactPSRComputeShader(const bool stochasticAlpha, const bool wboitEnabled, const GbufferSlimLevel level) {
+    Rc<DxvkShader> getGbufferRayQueryCompactPSRComputeShader(const bool stochasticAlpha, const bool wboitEnabled, const GbufferSlimLevel level, const bool terrainEnabled) {
       if (stochasticAlpha) {
         switch (level) {
         case GbufferSlimLevel::Full:
@@ -622,14 +701,14 @@ namespace dxvk {
     }
 
     void prewarmGbufferCompactPSRComputeShaders(const bool wboitEnabled) {
-      getGbufferRayQueryCompactPSRComputeShader(true, wboitEnabled, GbufferSlimLevel::Full);
-      getGbufferRayQueryCompactPSRComputeShader(false, wboitEnabled, GbufferSlimLevel::Full);
+      getGbufferRayQueryCompactPSRComputeShader(true, wboitEnabled, GbufferSlimLevel::Full, false);
+      getGbufferRayQueryCompactPSRComputeShader(false, wboitEnabled, GbufferSlimLevel::Full, false);
       if (wboitEnabled) {
         for (int32_t stochasticAlpha = 1; stochasticAlpha >= 0; stochasticAlpha--) {
-          getGbufferRayQueryCompactPSRComputeShader(stochasticAlpha, true, GbufferSlimLevel::Slim);
-          getGbufferRayQueryCompactPSRComputeShader(stochasticAlpha, true, GbufferSlimLevel::Lean);
-          getGbufferRayQueryCompactPSRComputeShader(stochasticAlpha, true, GbufferSlimLevel::SlimPom);
-          getGbufferRayQueryCompactPSRComputeShader(stochasticAlpha, true, GbufferSlimLevel::LeanPom);
+          getGbufferRayQueryCompactPSRComputeShader(stochasticAlpha, true, GbufferSlimLevel::Slim, false);
+          getGbufferRayQueryCompactPSRComputeShader(stochasticAlpha, true, GbufferSlimLevel::Lean, false);
+          getGbufferRayQueryCompactPSRComputeShader(stochasticAlpha, true, GbufferSlimLevel::SlimPom, false);
+          getGbufferRayQueryCompactPSRComputeShader(stochasticAlpha, true, GbufferSlimLevel::LeanPom, false);
         }
       }
     }
@@ -642,19 +721,19 @@ namespace dxvk {
       for (const GbufferSlimLevel level : levels) {
         for (int32_t isPSRPass = 1; isPSRPass >= 0; isPSRPass--) {
           if (prepareSet) {
-            getGbufferRayQuerySlimComputeShader(RTX_SHADER_VARIANT_MATRIX_GBUFFER_RAYQUERY_FEATURES_PSR_PREPARE, isPSRPass, level);
+            getGbufferRayQuerySlimComputeShader(RTX_SHADER_VARIANT_MATRIX_GBUFFER_RAYQUERY_FEATURES_PSR_PREPARE, isPSRPass, level, false);
           }
           if (prepareStochasticAlphaSet) {
-            getGbufferRayQuerySlimComputeShader(kGbufferRayQueryFeaturesPsrPrepareStochasticAlpha, isPSRPass, level);
+            getGbufferRayQuerySlimComputeShader(kGbufferRayQueryFeaturesPsrPrepareStochasticAlpha, isPSRPass, level, false);
           }
           if (inlineNrcSet) {
-            getGbufferRayQuerySlimComputeShader(RTX_SHADER_VARIANT_MATRIX_GBUFFER_RAYQUERY_FEATURES_PSR_INLINE, isPSRPass, level);
+            getGbufferRayQuerySlimComputeShader(RTX_SHADER_VARIANT_MATRIX_GBUFFER_RAYQUERY_FEATURES_PSR_INLINE, isPSRPass, level, false);
           }
         }
         if (prepareSet || prepareStochasticAlphaSet) {
-          getGbufferPSRPrepareSlimComputeShader(level);
+          getGbufferPSRPrepareSlimComputeShader(level, false);
         }
-        getGbufferDecalPrepareSlimComputeShader(level);
+        getGbufferDecalPrepareSlimComputeShader(level, false);
       }
     }
 
@@ -725,40 +804,72 @@ namespace dxvk {
       }
     }
 
-    Rc<DxvkShader> getGbufferClosestHitShader(const uint32_t key) {
+    Rc<DxvkShader> getGbufferClosestHitShader(const uint32_t key, const bool terrainEnabled) {
       switch (key) {
       case 0:
-        return GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_material_opaque_translucent_closestHit);
+        return (terrainEnabled
+          ? GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_material_opaque_translucent_closestHit_terrain)
+          : GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_material_opaque_translucent_closestHit));
       case kGbufferVariantPortals:
-        return GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_material_rayportal_closestHit);
+        return (terrainEnabled
+          ? GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_material_rayportal_closestHit_terrain)
+          : GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_material_rayportal_closestHit));
       case kGbufferVariantNRC:
-        return GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_nrc_material_opaque_translucent_closestHit);
+        return (terrainEnabled
+          ? GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_nrc_material_opaque_translucent_closestHit_terrain)
+          : GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_nrc_material_opaque_translucent_closestHit));
       case kGbufferVariantNRC | kGbufferVariantPortals:
-        return GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_nrc_material_rayportal_closestHit);
+        return (terrainEnabled
+          ? GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_nrc_material_rayportal_closestHit_terrain)
+          : GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_nrc_material_rayportal_closestHit));
       case kGbufferVariantPSR:
-        return GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_psr_material_opaque_translucent_closestHit);
+        return (terrainEnabled
+          ? GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_psr_material_opaque_translucent_closestHit_terrain)
+          : GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_psr_material_opaque_translucent_closestHit));
       case kGbufferVariantPSR | kGbufferVariantPortals:
-        return GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_psr_material_rayportal_closestHit);
+        return (terrainEnabled
+          ? GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_psr_material_rayportal_closestHit_terrain)
+          : GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_psr_material_rayportal_closestHit));
       case kGbufferVariantPSR | kGbufferVariantNRC:
-        return GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_psr_nrc_material_opaque_translucent_closestHit);
+        return (terrainEnabled
+          ? GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_psr_nrc_material_opaque_translucent_closestHit_terrain)
+          : GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_psr_nrc_material_opaque_translucent_closestHit));
       case kGbufferVariantPSR | kGbufferVariantNRC | kGbufferVariantPortals:
-        return GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_psr_nrc_material_rayportal_closestHit);
+        return (terrainEnabled
+          ? GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_psr_nrc_material_rayportal_closestHit_terrain)
+          : GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_psr_nrc_material_rayportal_closestHit));
       case kGbufferVariantWBOIT:
-        return GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_material_opaque_translucent_closestHit_wboit);
+        return (terrainEnabled
+          ? GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_material_opaque_translucent_closestHit_wboit_terrain)
+          : GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_material_opaque_translucent_closestHit_wboit));
       case kGbufferVariantWBOIT | kGbufferVariantPortals:
-        return GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_material_rayportal_closestHit_wboit);
+        return (terrainEnabled
+          ? GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_material_rayportal_closestHit_wboit_terrain)
+          : GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_material_rayportal_closestHit_wboit));
       case kGbufferVariantNRC | kGbufferVariantWBOIT:
-        return GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_nrc_material_opaque_translucent_closestHit_wboit);
+        return (terrainEnabled
+          ? GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_nrc_material_opaque_translucent_closestHit_wboit_terrain)
+          : GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_nrc_material_opaque_translucent_closestHit_wboit));
       case kGbufferVariantNRC | kGbufferVariantWBOIT | kGbufferVariantPortals:
-        return GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_nrc_material_rayportal_closestHit_wboit);
+        return (terrainEnabled
+          ? GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_nrc_material_rayportal_closestHit_wboit_terrain)
+          : GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_nrc_material_rayportal_closestHit_wboit));
       case kGbufferVariantPSR | kGbufferVariantWBOIT:
-        return GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_psr_material_opaque_translucent_closestHit_wboit);
+        return (terrainEnabled
+          ? GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_psr_material_opaque_translucent_closestHit_wboit_terrain)
+          : GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_psr_material_opaque_translucent_closestHit_wboit));
       case kGbufferVariantPSR | kGbufferVariantWBOIT | kGbufferVariantPortals:
-        return GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_psr_material_rayportal_closestHit_wboit);
+        return (terrainEnabled
+          ? GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_psr_material_rayportal_closestHit_wboit_terrain)
+          : GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_psr_material_rayportal_closestHit_wboit));
       case kGbufferVariantPSR | kGbufferVariantNRC | kGbufferVariantWBOIT:
-        return GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_psr_nrc_material_opaque_translucent_closestHit_wboit);
+        return (terrainEnabled
+          ? GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_psr_nrc_material_opaque_translucent_closestHit_wboit_terrain)
+          : GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_psr_nrc_material_opaque_translucent_closestHit_wboit));
       case kGbufferVariantPSR | kGbufferVariantNRC | kGbufferVariantWBOIT | kGbufferVariantPortals:
-        return GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_psr_nrc_material_rayportal_closestHit_wboit);
+        return (terrainEnabled
+          ? GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_psr_nrc_material_rayportal_closestHit_wboit_terrain)
+          : GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, GbufferClosestHitShader, gbuffer_psr_nrc_material_rayportal_closestHit_wboit));
       default:
         assert(false && "Invalid GBuffer closest hit shader variant");
         return nullptr;
@@ -845,7 +956,8 @@ namespace dxvk {
     // Warm every kernel of every entry of the configured mode key, plus Full, for the configured feature set
     // (psr_inline with NRC, otherwise psr_prepare with or without stochastic alpha). Requests only: compiles run on the
     // state cache workers like the rest of the prewarm.
-    void prewarmGbufferVariantTable(const bool nrcEnabled, const bool stochasticAlpha, const bool wboitEnabled) {
+    void prewarmGbufferVariantTable(const bool nrcEnabled, const bool stochasticAlpha, const bool wboitEnabled,
+                                    const TerrainBlendArgs& terrainArgs) {
       const uint32_t key = gbufferConfiguredVariantModeKey();
       const uint32_t featureVariant = nrcEnabled
         ? RTX_SHADER_VARIANT_MATRIX_GBUFFER_RAYQUERY_FEATURES_PSR_INLINE
@@ -857,25 +969,25 @@ namespace dxvk {
         const GbufferSlimLevel level = (GbufferSlimLevel) entry.level;
         if (level == GbufferSlimLevel::Full) {
           for (int32_t isPSRPass = 1; isPSRPass >= 0; isPSRPass--) {
-            getGbufferRayQueryComputeShader(getGbufferRayQueryVariantKey(featureVariant, isPSRPass, nrcEnabled, wboitEnabled));
+            getGbufferRayQueryComputeShader(getGbufferRayQueryVariantKey(featureVariant, isPSRPass, nrcEnabled, wboitEnabled) | getGbufferTerrainVariantKey(terrainArgs));
           }
           if (!nrcEnabled) {
-            getGbufferPSRPrepareComputeShader();
+            getGbufferPSRPrepareComputeShader(terrainArgs.enabled);
           }
           if (!nrcEnabled) {
-            getGbufferRayQueryCompactPSRComputeShader(stochasticAlpha, wboitEnabled, level);
+            getGbufferRayQueryCompactPSRComputeShader(stochasticAlpha, wboitEnabled, level, terrainArgs.enabled);
           }
           continue;
         }
         for (int32_t isPSRPass = 1; isPSRPass >= 0; isPSRPass--) {
-          getGbufferRayQuerySlimComputeShader(featureVariant, isPSRPass, level);
+          getGbufferRayQuerySlimComputeShader(featureVariant, isPSRPass, level, terrainArgs.enabled);
         }
         if (!nrcEnabled) {
-          getGbufferPSRPrepareSlimComputeShader(level);
+          getGbufferPSRPrepareSlimComputeShader(level, terrainArgs.enabled);
         }
-        getGbufferDecalPrepareSlimComputeShader(level);
+        getGbufferDecalPrepareSlimComputeShader(level, terrainArgs.enabled);
         if (!nrcEnabled) {
-          getGbufferRayQueryCompactPSRComputeShader(stochasticAlpha, true, level);
+          getGbufferRayQueryCompactPSRComputeShader(stochasticAlpha, true, level, terrainArgs.enabled);
         }
       }
     }
@@ -921,13 +1033,13 @@ namespace dxvk {
       }
 
       prewarmGbufferRayQueryComputeShaders(true, isNrcSupported, false);
-      getGbufferPSRPrepareComputeShader();
+      getGbufferPSRPrepareComputeShader(m_device->getCommon()->getSceneManager().getTerrainBlendArgs().enabled);
       prewarmGbufferDecalPrepareComputeShaders();
       // The slim levels.
       prewarmGbufferSlimComputeShaders(true, true, isNrcSupported);
       // The deferred unordered particle resolve.
-      getGbufferDecalPrepareParticlesComputeShader(GbufferSlimLevel::Slim);
-      getGbufferDecalPrepareParticlesComputeShader(GbufferSlimLevel::SlimPom);
+      getGbufferDecalPrepareParticlesComputeShader(GbufferSlimLevel::Slim, m_device->getCommon()->getSceneManager().getTerrainBlendArgs().enabled);
+      getGbufferDecalPrepareParticlesComputeShader(GbufferSlimLevel::SlimPom, m_device->getCommon()->getSceneManager().getTerrainBlendArgs().enabled);
       // The compact PSR kernels.
       prewarmGbufferCompactPSRComputeShaders(false);
       prewarmGbufferCompactPSRComputeShaders(true);
@@ -960,13 +1072,14 @@ namespace dxvk {
         }
         // The deferred unordered particle resolve, only when it can bind (slim levels, WBOIT, no NRC).
         if (wboitEnabled && !nrcEnabled) {
-          getGbufferDecalPrepareParticlesComputeShader(GbufferSlimLevel::Slim);
-          getGbufferDecalPrepareParticlesComputeShader(GbufferSlimLevel::SlimPom);
+          getGbufferDecalPrepareParticlesComputeShader(GbufferSlimLevel::Slim, m_device->getCommon()->getSceneManager().getTerrainBlendArgs().enabled);
+          getGbufferDecalPrepareParticlesComputeShader(GbufferSlimLevel::SlimPom, m_device->getCommon()->getSceneManager().getTerrainBlendArgs().enabled);
         }
         // Every variant table entry of the configured mode key plus Full. The blocks
         // above already request these (they warm every level of the configured feature set); this adds the Full PSR
         // Prepare kernel with portals configured and follows the table when entries are added.
-        prewarmGbufferVariantTable(nrcEnabled, CompositePass::enableStochasticAlphaBlend(), wboitEnabled);
+        prewarmGbufferVariantTable(nrcEnabled, CompositePass::enableStochasticAlphaBlend(), wboitEnabled,
+                                  m_device->getCommon()->getSceneManager().getTerrainBlendArgs());
         break;
       case RaytraceMode::RayQueryRayGen:
       case RaytraceMode::TraceRay:
@@ -993,7 +1106,7 @@ namespace dxvk {
       }
 
       if (!portalsEnabled) {
-        getGbufferPSRPrepareComputeShader();
+        getGbufferPSRPrepareComputeShader(m_device->getCommon()->getSceneManager().getTerrainBlendArgs().enabled);
       }
 
       prewarmGbufferDecalPrepareComputeShaders();
@@ -1194,15 +1307,15 @@ namespace dxvk {
       const auto levelReady = [&](const SlimLevel level) {
         bool ready = isVariantComputeShaderReady(*ctx, getComputeShader(rayQueryFeatureVariant, false, nrcEnabled, wboitEnabled, level));
         ready = isVariantComputeShaderReady(*ctx, compactPsrActive
-          ? getGbufferRayQueryCompactPSRComputeShader(compactPsrStochasticAlpha, wboitEnabled, level)
+          ? getGbufferRayQueryCompactPSRComputeShader(compactPsrStochasticAlpha, wboitEnabled, level, m_device->getCommon()->getSceneManager().getTerrainBlendArgs().enabled)
           : getComputeShader(rayQueryFeatureVariant, true, nrcEnabled, wboitEnabled, level)) && ready;
         if (usePSRPrepare) {
-          ready = isVariantComputeShaderReady(*ctx, getGbufferPSRPrepareSlimComputeShader(level)) && ready;
+          ready = isVariantComputeShaderReady(*ctx, getGbufferPSRPrepareSlimComputeShader(level, m_device->getCommon()->getSceneManager().getTerrainBlendArgs().enabled)) && ready;
         }
         if (deferUnorderedDecals) {
           ready = isVariantComputeShaderReady(*ctx, level == SlimLevel::Full
-            ? getGbufferDecalPrepareComputeShader(decalPrepareVariantKey)
-            : getGbufferDecalPrepareSlimComputeShader(level)) && ready;
+            ? getGbufferDecalPrepareComputeShader(decalPrepareVariantKey, m_device->getCommon()->getSceneManager().getTerrainBlendArgs().enabled)
+            : getGbufferDecalPrepareSlimComputeShader(level, m_device->getCommon()->getSceneManager().getTerrainBlendArgs().enabled)) && ready;
         }
         return ready;
       };
@@ -1234,7 +1347,7 @@ namespace dxvk {
       wboitEnabled && slimLevel != SlimLevel::Full && usePSRPrepare && deferUnorderedDecals &&
       !debugViewEnabled && !rtOutput.m_raytraceArgs.enableObjectPicking && !RtxOptions::FrameFeatures::validate();
     if (deferParticles && variantTables && variantFallbackActive(*ctx)) {
-      deferParticles = isVariantComputeShaderReady(*ctx, getGbufferDecalPrepareParticlesComputeShader(slimLevel));
+      deferParticles = isVariantComputeShaderReady(*ctx, getGbufferDecalPrepareParticlesComputeShader(slimLevel, m_device->getCommon()->getSceneManager().getTerrainBlendArgs().enabled));
     }
     if (deferParticles != m_loggedDeferParticles) {
       m_loggedDeferParticles = deferParticles;
@@ -1285,7 +1398,7 @@ namespace dxvk {
         ctx->bindResourceBuffer(GBUFFER_BINDING_COMPACT_PSR_LIST, DxvkBufferSlice(m_compactPsrList));
         ctx->bindResourceBuffer(GBUFFER_BINDING_COMPACT_PSR_ARGS, DxvkBufferSlice(m_compactPsrArgs));
       }
-      ctx->bindShader(VK_SHADER_STAGE_COMPUTE_BIT, getGbufferPSRPrepareSlimComputeShader(slimLevel));
+      ctx->bindShader(VK_SHADER_STAGE_COMPUTE_BIT, getGbufferPSRPrepareSlimComputeShader(slimLevel, m_device->getCommon()->getSceneManager().getTerrainBlendArgs().enabled));
       ctx->dispatch(workgroups.width, workgroups.height, workgroups.depth);
       stamp("GBufferPSRPrepare");
     };
@@ -1301,10 +1414,10 @@ namespace dxvk {
       ScopedGpuProfileZone(ctx, "Unordered Decal Prepare");
       // The particle variant whenever Primary Rays skipped their particle walk.
       ctx->bindShader(VK_SHADER_STAGE_COMPUTE_BIT, deferParticles
-        ? getGbufferDecalPrepareParticlesComputeShader(slimLevel)
+        ? getGbufferDecalPrepareParticlesComputeShader(slimLevel, m_device->getCommon()->getSceneManager().getTerrainBlendArgs().enabled)
         : slimLevel == SlimLevel::Full
-        ? getGbufferDecalPrepareComputeShader(decalPrepareVariantKey)
-        : getGbufferDecalPrepareSlimComputeShader(slimLevel));
+        ? getGbufferDecalPrepareComputeShader(decalPrepareVariantKey, m_device->getCommon()->getSceneManager().getTerrainBlendArgs().enabled)
+        : getGbufferDecalPrepareSlimComputeShader(slimLevel, m_device->getCommon()->getSceneManager().getTerrainBlendArgs().enabled));
       ctx->dispatch(workgroups.width, workgroups.height, workgroups.depth);
       stamp("GBufferDecals");
     };
@@ -1321,7 +1434,7 @@ namespace dxvk {
         ScopedGpuProfileZone(ctx, "Primary Rays");
         // rtx.frameFeatures.validate binds the Full kernel's validation variant when one exists.
         Rc<DxvkShader> validateShader = RtxOptions::FrameFeatures::validate()
-          ? getGbufferRayQueryValidateComputeShader(rayQueryFeatureVariant, nrcEnabled, wboitEnabled) : nullptr;
+          ? getGbufferRayQueryValidateComputeShader(rayQueryFeatureVariant, nrcEnabled, wboitEnabled, m_device->getCommon()->getSceneManager().getTerrainBlendArgs().enabled) : nullptr;
         if (validateShader != nullptr) {
           noteFrameFeaturesValidateKernel(FrameFeaturesValidateKernel::GBuffer);
           ctx->bindShader(VK_SHADER_STAGE_COMPUTE_BIT, validateShader);
@@ -1342,7 +1455,7 @@ namespace dxvk {
         ctx->setFramePassStage(RtxFramePassStage::ReflectionPSR);
         if (compactPsrActive) {
           // One thread per pixel of the list (args written by PSR Prepare).
-          ctx->bindShader(VK_SHADER_STAGE_COMPUTE_BIT, getGbufferRayQueryCompactPSRComputeShader(compactPsrStochasticAlpha, wboitEnabled, slimLevel));
+          ctx->bindShader(VK_SHADER_STAGE_COMPUTE_BIT, getGbufferRayQueryCompactPSRComputeShader(compactPsrStochasticAlpha, wboitEnabled, slimLevel, m_device->getCommon()->getSceneManager().getTerrainBlendArgs().enabled));
           ctx->bindDrawBuffers(DxvkBufferSlice(m_compactPsrArgs), DxvkBufferSlice());
           ctx->dispatchIndirect(0);
         } else {
@@ -1703,10 +1816,13 @@ namespace dxvk {
     const bool ommEnabled,
     const bool includePortals,
     const bool nrcEnabled,
-    const bool wboitEnabled) {
+    const bool wboitEnabled) const {
     ScopedCpuProfileZone();
 
-    const uint32_t rayGenBaseKey = getGbufferVariantKey(featureVariant, isPSRPass, nrcEnabled, wboitEnabled);
+    const auto& terrain = m_device->getCommon()->getSceneManager().getTerrainBlendArgs();
+    const bool terrainEnabled = terrain.enabled != 0u;
+    const uint32_t terrainKey = getGbufferTerrainVariantKey(terrain);
+    const uint32_t rayGenBaseKey = getGbufferVariantKey(featureVariant, isPSRPass, nrcEnabled, wboitEnabled) | terrainKey;
     const uint32_t passKey = getGbufferPassVariantKey(isPSRPass, nrcEnabled, wboitEnabled);
     DxvkRaytracingPipelineShaders shaders;
 
@@ -1719,7 +1835,7 @@ namespace dxvk {
 
       shaders.addGeneralShader(getGbufferTraceRayGenShader(rayGenKey));
       shaders.addGeneralShader(getGbufferMissShader(passKey));
-      shaders.addHitGroup(getGbufferClosestHitShader(closestHitKey), nullptr, nullptr);
+      shaders.addHitGroup(getGbufferClosestHitShader(closestHitKey, terrainEnabled), nullptr, nullptr);
       shaders.debugName = isPSRPass ? "GBuffer PSR TraceRay (RGS)" : "GBuffer TraceRay (RGS)";
     }
 
@@ -1739,9 +1855,9 @@ namespace dxvk {
     if (slimLevel != SlimLevel::Full) {
       // selectSlimLevel returns a slim level only for the psr_prepare (with or without stochastic alpha)
       // and psr_inline + NRC feature sets (WBOIT).
-      return getGbufferRayQuerySlimComputeShader(featureVariant, isPSRPass, slimLevel);
+      return getGbufferRayQuerySlimComputeShader(featureVariant, isPSRPass, slimLevel, m_device->getCommon()->getSceneManager().getTerrainBlendArgs().enabled);
     }
-    return getGbufferRayQueryComputeShader(getGbufferRayQueryVariantKey(featureVariant, isPSRPass, nrcEnabled, wboitEnabled));
+    return getGbufferRayQueryComputeShader(getGbufferRayQueryVariantKey(featureVariant, isPSRPass, nrcEnabled, wboitEnabled) | getGbufferTerrainVariantKey(m_device->getCommon()->getSceneManager().getTerrainBlendArgs()));
   }
 
   const char* DxvkPathtracerGbuffer::raytraceModeToString(RaytraceMode raytraceMode)

@@ -3468,6 +3468,44 @@ void ProcessDeviceCommandQueue() {
         break;
       }
 
+      case RemixApi_AddTextureHash:
+      {
+        void* categoryData = nullptr;
+        const uint32_t categorySize = DeviceBridge::get_data(&categoryData);
+        const std::string category(static_cast<const char*>(categoryData), categorySize);
+        void* hashData = nullptr;
+        const uint32_t hashSize = DeviceBridge::get_data(&hashData);
+        const std::string hash(static_cast<const char*>(hashData), hashSize);
+        remixapi_ErrorCode result = REMIXAPI_ERROR_CODE_GENERAL_FAILURE;
+        if (remixapi::g_remix.AddTextureHash) {
+          result = remixapi::g_remix.AddTextureHash(category.c_str(), hash.c_str());
+        } else {
+          Logger::err("[RemixApi_AddTextureHash] Runtime function is unavailable.");
+        }
+        ServerMessage response(Commands::Bridge_Response, currentUID);
+        response.send_data(static_cast<uint32_t>(result));
+        break;
+      }
+      case RemixApi_dxvk_GetTextureHash:
+      {
+        const uint32_t textureHandle = DeviceBridge::get_data();
+        uint64_t textureHash = 0;
+        remixapi_ErrorCode result = REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
+        const auto entry = gpD3DResources.find(textureHandle);
+        if (entry != gpD3DResources.end() && entry->second != nullptr && entry->second->GetType() == D3DRTYPE_TEXTURE) {
+          if (remixapi::g_remix.dxvk_GetTextureHash) {
+            result = remixapi::g_remix.dxvk_GetTextureHash(static_cast<IDirect3DTexture9*>(entry->second), &textureHash);
+          } else {
+            Logger::err("[RemixApi_dxvk_GetTextureHash] Runtime function is unavailable.");
+            result = REMIXAPI_ERROR_CODE_GENERAL_FAILURE;
+          }
+        }
+        ServerMessage response(Commands::Bridge_Response, currentUID);
+        response.send_data(static_cast<uint32_t>(result));
+        response.send_data(static_cast<uint32_t>(textureHash));
+        response.send_data(static_cast<uint32_t>(textureHash >> 32));
+        break;
+      }
       case RemixApi_SetGameValue:
       {
         void* key_ptr = nullptr;

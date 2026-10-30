@@ -33,6 +33,7 @@ parser.add_argument('-force', action='store_true', dest='force')
 parser.add_argument('-parallel', action='store_true', dest='parallel')
 parser.add_argument('-binary', action='store_true', dest='binary')
 parser.add_argument('-debug', action='store_true', dest='debug')
+parser.add_argument('-compress', action='store_true', dest='compress')
 parser.add_argument('-spirvopt', required=False, type=str, dest='spirvopt', default=None)
 args = parser.parse_args()
 
@@ -42,7 +43,7 @@ generateSlangRepro = False
 includePaths = ' '.join([f'-I{path}' for path in args.includes])
 slangDll = os.path.join(os.path.dirname(args.slangc), 'slang.dll')
 
-tools = [args.glslang, args.slangc, slangDll, __file__]
+tools = [args.glslang, args.slangc, slangDll, __file__, os.path.join(os.path.dirname(__file__), 'shader_xxd.py')]
 if args.spirvopt:
     tools.append(args.spirvopt)
 newestTool = max([os.path.getmtime(x) for x in tools])
@@ -78,6 +79,17 @@ spirvOptFlags = ' '.join([f'--{p}' for p in spirvOptPasses]) \
 spirvValFlags = '--target-env vulkan1.2 --scalar-block-layout'
 
 os.makedirs(args.output, exist_ok = True)
+
+headerModePath = os.path.join(args.output, '_shader_header_mode.txt')
+headerMode = 'compressed' if args.compress else 'raw'
+if not args.binary:
+    previousMode = None
+    if os.path.exists(headerModePath):
+        with open(headerModePath, encoding='utf-8') as modeFile:
+            previousMode = modeFile.read()
+    if previousMode != headerMode:
+        args.force = True
+
 
 
 def printFromThread(what):
@@ -213,7 +225,7 @@ def getShaderName(inputFile):
 def createBasicTask(inputFile, destFile, targetName, depFile):
     task = Task()
     try:
-        lines = open(depFile, 'r').readlines()
+        lines = open(depFile, 'r', encoding='utf-8').readlines()
         task.inputs = depfile.parse(lines, targetName)
     except:
         task.inputs = []
@@ -288,6 +300,8 @@ def createSlangTask(inputFile, variantSpec):
         script_dir = os.path.dirname(os.path.realpath(__file__))
         shader_xxd = os.path.join(script_dir, 'shader_xxd.py')
         command2 = f'"{sys.executable}" {shader_xxd} -i {destFile} -o {headerFile}'
+        if args.compress:
+            command2 += ' --compress'
 
         task.commands = compileCommands + [command2]
 
@@ -437,11 +451,11 @@ def writeVariantMatrixHeader(inputFile, matrix, axisOrder, variants):
 
     contents = "\n".join(lines)
     if os.path.exists(destFile):
-        with open(destFile, "r") as file:
+        with open(destFile, "r", encoding="utf-8") as file:
             if file.read() == contents:
                 return
 
-    with open(destFile, "w") as file:
+    with open(destFile, "w", encoding="utf-8") as file:
         file.write(contents)
 
 def expandVariantMatrix(inputFile, lineno, inputType, matrix):
@@ -521,7 +535,7 @@ def parseShaderVariants(inputFile):
     inputName, inputType = os.path.splitext(inputWithType)
     endvariantsFound = False
     matrix = None
-    with open(inputFile, "r") as file:
+    with open(inputFile, "r", encoding="utf-8") as file:
         for line in file:
             lineno += 1
             if line.startswith("//!variant-matrix"):
@@ -676,3 +690,7 @@ if len(tasks):
 
 if terminate:
     sys.exit(1)
+
+if not args.binary:
+    with open(headerModePath, 'w', encoding='utf-8') as modeFile:
+        modeFile.write(headerMode)

@@ -80,20 +80,20 @@ namespace dxvk {
     void dispatch(RtxContext* ctx, const Resources::RaytracingOutput& rtOutput);
     void dispatchNEE(RtxContext* ctx, const AssemblyResources& resources, const SlimLevel slimLevel);
 
-    static DxvkRaytracingPipelineShaders getPipelineShaders(const bool useRayQuery, const bool serEnabled, const bool ommEnabled, const bool useNeeCache, const bool includePortals, const bool pomEnabled, const bool nrcEnabled, const bool wboitEnbaled, const SlimLevel slimLevel = SlimLevel::Full);
+    DxvkRaytracingPipelineShaders getPipelineShaders(const bool useRayQuery, const bool serEnabled, const bool ommEnabled, const bool useNeeCache, const bool includePortals, const bool pomEnabled, const bool nrcEnabled, const bool wboitEnbaled, const SlimLevel slimLevel = SlimLevel::Full) const;
     // Full unless the TraceRay slim variants exist for this
     // configuration and the frame cannot use what they compile out.
     static SlimLevel selectNonSharcSlimLevel(RtxContext* ctx, const RaytraceArgs& args, const bool useRayQuery, const bool ommEnabled,
                                              const bool useNeeCache, const bool includePortals, const bool wboitEnabled);
     Rc<DxvkShader> getComputeShader(const bool useNeeCache, const bool nrcEnabled, const bool wboitEnabled) const;
-    static DxvkRaytracingPipelineShaders getSharcQueryPipelineShaders(const bool serEnabled, const bool ommEnabled, const bool includePortals, const bool pomEnabled, const bool wboitEnabled, const SlimLevel slimLevel = SlimLevel::Full);
-    static DxvkRaytracingPipelineShaders getSharcUpdatePipelineShaders(const bool depth4, const bool ommEnabled, const bool wboitEnabled, const SlimLevel slimLevel, const bool deferredFlush);
+    DxvkRaytracingPipelineShaders getSharcQueryPipelineShaders(const bool serEnabled, const bool ommEnabled, const bool includePortals, const bool pomEnabled, const bool wboitEnabled, const SlimLevel slimLevel = SlimLevel::Full) const;
+    DxvkRaytracingPipelineShaders getSharcUpdatePipelineShaders(const bool depth4, const bool ommEnabled, const bool wboitEnabled, const SlimLevel slimLevel, const bool deferredFlush) const;
     // True when rtx.sharc.deferredFlush is on and a _df update variant exists for this configuration.
     static bool sharcDeferredFlushPossible(const bool ommEnabled, const bool wboitEnabled);
     // True when the TraceRay + SER update variants exist for this configuration (SER,
     // deferred flush, no portals); the caller also checks the level (Full / Slim / Lean) and POM.
     static bool sharcUpdateSerPossible(const bool serEnabled, const bool ommEnabled, const bool wboitEnabled, const bool includePortals);
-    static DxvkRaytracingPipelineShaders getSharcUpdateSerPipelineShaders(const bool depth4, const bool ommEnabled, const SlimLevel slimLevel);
+    DxvkRaytracingPipelineShaders getSharcUpdateSerPipelineShaders(const bool depth4, const bool ommEnabled, const SlimLevel slimLevel) const;
     void prewarmSharcShaders(DxvkPipelineManager& pipelineManager) const;
     static SlimLevel selectSharcSlimLevel(RtxContext* ctx, const Resources::RaytracingOutput& rtOutput, const bool ommEnabled, const bool includePortals, const bool wboitEnabled);
     // The selectors on a given mask (the RtxContext overloads pass this frame's), for the table check.
@@ -106,8 +106,8 @@ namespace dxvk {
     // requireNeeCacheOnly: the caller's variants also compile out the RIS / light BVH fallback of secondary NEE
     // (INDIRECT_SLIM_NEE_CACHE_ONLY).
     static SlimLevel selectIndirectSlimLevel(const RtFrameFeatures& features, const bool pomCompiledOutOk, const bool requireNeeCacheOnly);
-    static SlimLevel selectAssemblySlimLevel(RtxContext* ctx, const RaytraceArgs& args);
-    static Rc<DxvkShader> getAssemblyShader(const bool nrcEnabled, const bool restirGiEnabled, const SlimLevel slimLevel);
+    SlimLevel selectAssemblySlimLevel(RtxContext* ctx, const RaytraceArgs& args) const;
+    Rc<DxvkShader> getAssemblyShader(const bool nrcEnabled, const bool restirGiEnabled, const SlimLevel slimLevel) const;
     void dispatchSharc(RtxContext* ctx, const Resources::RaytracingOutput& rtOutput, const VkExtent3D& rayDims, const bool serEnabled, const bool ommEnabled, const bool includePortals, const bool pomEnabled, const bool wboitEnabled);
     void logIntegrateIndirectMode();
 

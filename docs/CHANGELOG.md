@@ -28,6 +28,35 @@ Entry format:
 - Docs: [RemixApi.md](RemixApi.md)   (only if a public doc covers it)
 ```
 
+## 2026-10-30
+
+### Optional lossless embedded shader compression
+The build can pack embedded SPIR-V using DXVK's existing word codec and decode it
+when a shader is first created. Runtime shader recompilation still emits ordinary
+SPIR-V; release optimization, validation and shader variants are unchanged.
+- Options: added Meson `compress_embedded_shaders` (default false).
+- Commits: compression port from bf7babd02.
+- Docs: [TerrainBlend.md](../documentation/TerrainBlend.md).
+
+### Authored terrain blending and coverage
+USD terrain presets supply grass, sand, rock and coverage-driven dirt independently
+of captured texture hashes. Presets include smooth normals, selectable Off /
+Raymarched POM / Quadtree POM displacement, signed relief and self-shadowing.
+The port preserves the 2.0 frontend/backend split and shader variants. Terrain
+and world-space opacity tags use per-surface flags; core visibility carries the
+opacity tag and secondary texture in its extension table.
+- Options: added `rtx.legacyMaterial.worldSpaceSecondaryOpacityTextures` (empty by default) and `rtx.legacyMaterial.worldSpaceSecondaryOpacityScale` (default 1). Terrain presets are inactive unless authored and enabled.
+- Commits: terrain feature port from ab48b452c onto 268fb5b24.
+- Docs: [TerrainBlend.md](../documentation/TerrainBlend.md).
+
+### Bridge texture hash calls
+The bridge implements the existing `AddTextureHash` and `dxvk_GetTextureHash`
+interface slots so adapters can classify generated textures. Commands are appended
+without renumbering existing IDs; deploy the client and server from the same build.
+- Options: none; API version and interface layout unchanged.
+- Commits: bridge compatibility port from ab48b452c onto 268fb5b24.
+- Docs: [RemixApi-Migration.md](RemixApi-Migration.md), [RemixApiChangelog.md](../documentation/RemixApiChangelog.md).
+
 ## 2026-10-28
 
 ### Developer menu: settings search

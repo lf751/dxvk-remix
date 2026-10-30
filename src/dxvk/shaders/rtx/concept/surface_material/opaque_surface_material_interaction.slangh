@@ -22,6 +22,9 @@
 #pragma once
 
 #include "opaque_surface_material_blending.slangh"
+#ifdef TERRAIN_BLEND
+#include "terrain_blend.slangh"
+#endif
 
 // Opaque Surface Material Interaction Constants
 
@@ -752,6 +755,15 @@ void opaqueSurfaceMaterialApplyTextureOperations(
     chooseTextureArgument(textureAlphaArg2, surface.textureAlphaArg2Source, opacity, surfaceInteraction.vertexColor.a, tFactor.a, float(1.0f));
     chooseTextureOperationAlpha(opacity, surface.textureAlphaOperation, textureAlphaArg1, textureAlphaArg2);
 
+    if (surface.worldSpaceSecondaryOpacity && opaqueSurfaceMaterial.secondaryTextureIndex != BINDING_INDEX_INVALID) {
+      const TerrainBlendArgs coverage = cb.terrainBlendArgs;
+      const vec3 position = surfaceInteraction.position + coverage.worldOffset.xyz;
+      const vec2 plane = coverage.zUp ? position.xy : position.xz;
+      const vec2 uv = plane * coverage.coverageUvScaleOffset.xy + coverage.coverageUvScaleOffset.zw;
+      opacity *= textures[nonuniformEXT(uint(opaqueSurfaceMaterial.secondaryTextureIndex))]
+        .SampleLevel(samplers[nonuniformEXT(uint(opaqueSurfaceMaterial.samplerIndex))], uv, 0).a;
+    }
+
     // Ensure we perform these opacity calculations after the texture operations have been applied to abledo and alpha.
     calcOpaqueSurfaceMaterialOpacity(
       albedo, opacity, surface, opacity, emissiveBlendOverrideInfluence, cb.wboitEnabled);
@@ -803,6 +815,11 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
   inout SurfaceInteraction surfaceInteraction,
   MinimalRayInteraction minimalRayInteraction)
 {
+#ifdef TERRAIN_BLEND
+  if (cb.terrainBlendArgs.enabled != 0 && surface.isTerrainBlend) {
+    return terrainBlendInteractionCreate(surface, surfaceInteraction, minimalRayInteraction);
+  }
+#endif
   OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteraction;
   // Note: need initialize the flags explicitely to get rid of garbage data.
   // NV-DXVK start: The existing interaction flag mask preserves this bit through G-buffer serialization.

@@ -23,7 +23,9 @@
 //!variant-matrix gbuffer_decal_prepare
 //!> axis debug -
 //!> axis debug debug GBUFFER_FEATURE_DEBUG_VIEW=1 GBUFFER_FEATURE_OBJECT_PICKING=1
-//!> order debug
+//!> axis terrain -
+//!> axis terrain terrain TERRAIN_BLEND
+//!> order debug terrain
 //!end-variants
 
 #define RAY_TRACING_PRIMARY_RAY

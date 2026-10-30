@@ -517,7 +517,8 @@ VisibilityResult traceVisibilityRay<let VisibilityMode : uint>(
   // SharedTextureCoord in full (sccrSharedTextureCoord), not just the texture coordinates.
   uint primarySurfaceIndex = SURFACE_INDEX_INVALID, float4 texCoords = vec4(0.0f),
   bool isThinOpaqueSubsurface = false,
-  vec3 shadingNormal = vec3(0.0f), bool clearOpaqueHitAttenuation = true)
+  vec3 shadingNormal = vec3(0.0f), bool clearOpaqueHitAttenuation = true,
+  vec3 outwardViewDirection = vec3(0.0f))
 {
   MinimalRayInteraction minimalRayInteraction = (MinimalRayInteraction) 0;
   minimalRayInteraction.coneRadius = coneRadius;
@@ -537,6 +538,32 @@ VisibilityResult traceVisibilityRay<let VisibilityMode : uint>(
   }
 
   visibilityRay.tMax *= tMaxFactor;
+
+#if defined(TERRAIN_BLEND) || defined(TERRAIN_BLEND_SHADOW)
+  float terrainAttenuation = 1.0f;
+  const TerrainBlendArgs terrainArgs = cb.terrainBlendArgs;
+  if ((VisibilityMode & visibilityModeEnablePom) && primarySurfaceIndex != SURFACE_INDEX_INVALID &&
+      terrainSharedTextureCoordHasHeight(texCoords) &&
+      terrainArgs.enabled != 0 && terrainArgs.displacementEnabled != 0 &&
+      terrainArgs.displacementStrength > 0.f && terrainArgs.displacementSelfShadowEnabled != 0 &&
+      terrainArgs.displacementShadowStrength > 0.f)
+  {
+    if (surfaces[primarySurfaceIndex].isTerrainBlend)
+    {
+      terrainAttenuation = terrainBlendShadowThroughput(
+        minimalSurfaceInteraction, visibilityRay.direction, outwardViewDirection, texCoords.xy);
+      if (terrainAttenuation <= 0.001f)
+      {
+        VisibilityResult result = (VisibilityResult) 0;
+        result.hasOpaqueHit = true;
+        result.rayDirection = visibilityRay.direction;
+        result.hitDistance = visibilityRay.tMax;
+        result.hasPOMHit = true;
+        return result;
+      }
+    }
+  }
+#endif
 
 #ifdef OPAQUE_MATERIAL_USE_POM
 
@@ -576,7 +603,11 @@ VisibilityResult traceVisibilityRay<let VisibilityMode : uint>(
     if (primarySurfaceIndex != SURFACE_INDEX_INVALID)
     {
       const MemoryPolymorphicSurfaceMaterial memoryPolymorphicSurfaceMaterial = surfaceMaterials[primarySurfaceIndex];
-      if (memoryPolymorphicSurfaceMaterial.hasValidDisplacement())
+      if (memoryPolymorphicSurfaceMaterial.hasValidDisplacement()
+#if defined(TERRAIN_BLEND) || defined(TERRAIN_BLEND_SHADOW)
+          && !surfaces[primarySurfaceIndex].isTerrainBlend
+#endif
+          )
       {
         OpaqueSurfaceMaterial opaqueSurfaceMaterial = opaqueSurfaceMaterialCreate(memoryPolymorphicSurfaceMaterial, true);
         
@@ -627,6 +658,10 @@ VisibilityResult traceVisibilityRay<let VisibilityMode : uint>(
   VisibilityResult result = traceVisibilityRay<VisibilityMode>(visibilityRay, rayMask, expectedRayPortalIndex, rayOriginPortalSpace, hasRayOriginatedFromViewModel, usePreviousTLAS, clearOpaqueHitAttenuation);
 
   // We want to calculate the attenuation from the light to the surface - which is why we use targetPosition (light) and neg-direction (light to surface)
+#if defined(TERRAIN_BLEND) || defined(TERRAIN_BLEND_SHADOW)
+  result.attenuation *= terrainAttenuation;
+#endif
+
   result.attenuation *= calcVolumetricAttenuation(cb.volumeArgs, none, false, result.hitDistance, targetPosition, -visibilityRay.direction);
 
 #ifdef OPAQUE_MATERIAL_USE_POM

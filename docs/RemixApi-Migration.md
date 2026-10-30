@@ -588,7 +588,10 @@ its input. For `CreateTexture` pixel data, keep the buffer alive until the call 
 `exposeRemixApi = True` in `bridge.conf`. It fills only these slots: `CreateMaterial`, `DestroyMaterial`,
 `CreateTexture`, `DestroyTexture`, `CreateMesh`, `DestroyMesh`, `DrawInstance`, `CreateLight`, `DestroyLight`,
 `DrawLightInstance`, `SetConfigVariable`, `dxvk_CreateD3D9`, `dxvk_RegisterD3D9Device`, `SetGameValue` and
-`GetGameValue`. `GetUIState`, `SetUIState`, `AutoInstancePersistentLights` and `UpdateLightDefinition` are stubs that
+`GetGameValue`, `AddTextureHash` and `dxvk_GetTextureHash`. The texture hash call accepts a live 2D texture created
+through the bridge's D3D9 device and returns the server runtime's full 64-bit hash. These two hash calls wait for the
+server result. `RemoveTextureHash` remains unavailable. Build the bridge client and server together because their
+shared command stream includes the hash requests. `GetUIState`, `SetUIState`, `AutoInstancePersistentLights` and `UpdateLightDefinition` are stubs that
 log once and do nothing. Every other slot, `SetupCamera`, `Startup` and `Present` included, is null: the game's own
 D3D9 device drives the frame. The client exports `remixapi_RegisterCallbacks` but none of the named exports in
 section 4. It forwards these chained structs: on materials the opaque, subsurface, translucent and portal

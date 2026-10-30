@@ -132,7 +132,8 @@ struct RtSurface {
     uint16_t flags0 = 0;
     flags0 |= normalFormat == VK_FORMAT_R32_UINT ? 1 : 0;
     flags0 |= isVertexColorBakedLighting ? (1 << 1) : 0;
-    // NOTE: Spare flags bits here
+    flags0 |= terrainBlend ? (1 << 2) : 0;
+    flags0 |= worldSpaceSecondaryOpacity ? (1 << 3) : 0;
 
     writeGPUHelper(data, offset, flags0);
 
@@ -348,6 +349,8 @@ struct RtSurface {
   bool isStatic = false;
   // True when SceneManager took the preserve replacement-instance path (usePreservePath); unrelated to motion isStatic.
   bool isPreservePath = false;
+  bool terrainBlend = false;
+  bool worldSpaceSecondaryOpacity = false;
   bool hasMaterialChanged = false;
   bool isAnimatedWater = false;
   bool isClipPlaneEnabled = false;
@@ -510,6 +513,12 @@ struct RtSurface {
 // Shared Material Defaults/Limits
 
 struct LegacyMaterialDefaults {
+  RTX_OPTION_ARGS("rtx.legacyMaterial", fast_unordered_set, worldSpaceSecondaryOpacityTextures, {},
+    "Textures whose secondary alpha mask is sampled in world-space coordinates.",
+    args.flags = RtxOptionFlags::InvalidatesDrawcallTranslation);
+  RTX_OPTION("rtx.legacyMaterial", float, worldSpaceSecondaryOpacityScale, 1.f,
+    "World-space secondary opacity texture coordinates per world unit.");
+
   friend class ImGUI;
   RTX_OPTION("rtx.legacyMaterial", float, specularLevel, 1.0f,
              "Scales the dielectric base reflectivity (F0) of non-replaced legacy materials, from 0 to 1. 1 keeps the "
@@ -678,6 +687,7 @@ inline uint32_t rtSurfaceCoreAlphaDword(const RtSurface& surf) {
   dword |= surf.hasMaterialChanged ? CORE_MATERIAL_SURFACE_MATERIAL_CHANGED : 0u;
   dword |= surf.isMotionBlurMaskOut ? CORE_MATERIAL_SURFACE_MOTION_BLUR_MASK_OUT : 0u;
   dword |= surf.isPreservePath ? CORE_MATERIAL_SURFACE_PRESERVE_PATH : 0u;
+  dword |= surf.worldSpaceSecondaryOpacity ? CORE_MATERIAL_SURFACE_WORLD_OPACITY : 0u;
   return dword;
 }
 
@@ -1903,7 +1913,8 @@ struct RtSurfaceMaterial {
       extensionTable[extensionIndex].getType() == RtSurfaceMaterialType::Subsurface &&
       extensionTable[extensionIndex].getSubsurfaceMaterial().hasSubsurface();
     return subsurface || opaque.hasValidDisplacement() || opaque.getEnableThinFilm() ||
-           opaque.getTangentTextureIndex() != kSurfaceMaterialInvalidTextureIndex;
+           opaque.getTangentTextureIndex() != kSurfaceMaterialInvalidTextureIndex ||
+           opaque.getSecondaryTextureIndex() != kSurfaceMaterialInvalidTextureIndex;
   }
 
   // The 64 B core side table entry of an opaque material (CORE_MATERIAL_EXT_*). The POM / thin-film
@@ -1933,6 +1944,7 @@ struct RtSurfaceMaterial {
       std::memcpy(entry + CORE_MATERIAL_EXT_OFFSET_DISPLACE_IN, old + 16, 2);
       std::memcpy(entry + CORE_MATERIAL_EXT_OFFSET_DISPLACE_OUT, old + 18, 2);
       std::memcpy(entry + CORE_MATERIAL_EXT_OFFSET_THIN_FILM_THICKNESS, old + 22, 2);
+      std::memcpy(entry + CORE_MATERIAL_EXT_OFFSET_SECONDARY_TEXTURE, old + 6, 2);
     }
     std::memcpy(data + offset, entry, CORE_MATERIAL_EXT_SIZE);
     offset += CORE_MATERIAL_EXT_SIZE;

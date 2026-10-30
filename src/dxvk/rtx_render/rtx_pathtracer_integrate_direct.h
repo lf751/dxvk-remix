@@ -65,7 +65,7 @@ namespace dxvk {
     static void runVariantTableSelfCheck(VariantTableSelfCheckResult& result);
 
   private:
-    static DxvkRaytracingPipelineShaders getPipelineShaders(const bool useRayQuery, const bool ommEnabled, const bool deferredNrcTrainingSetup);
+    static DxvkRaytracingPipelineShaders getPipelineShaders(const bool useRayQuery, const bool ommEnabled, const bool deferredNrcTrainingSetup, const bool terrainShadowsEnabled);
     Rc<DxvkShader> getComputeShader(const bool deferredNrcTrainingSetup, const SlimLevel slimLevel) const;
     static SlimLevel selectSlimLevel(const RtFrameFeatures& features);
     static const char* slimLevelToString(SlimLevel level);

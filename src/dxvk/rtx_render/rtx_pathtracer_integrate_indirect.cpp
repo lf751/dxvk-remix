@@ -31,6 +31,7 @@
 #include "rtx_restir_gi_rayquery.h"
 #include "rtx_debug_view.h"
 #include "rtx_sharc.h"
+#include "rtx_scene_manager.h"
 
 #include "rtx/pass/common_binding_indices.h"
 #include "rtx/pass/integrate/integrate_indirect_binding_indices.h"
@@ -229,6 +230,174 @@
 #include "rtx_opacity_micromap_manager.h"
 #include "rtx_neural_radiance_cache.h"
 
+
+
+#include <rtx_shaders/integrate_indirect_material_opaque_translucent_closestHit_terrain.h>
+#include <rtx_shaders/integrate_indirect_material_opaque_translucent_closestHit_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_material_rayportal_closestHit_terrain.h>
+#include <rtx_shaders/integrate_indirect_material_rayportal_closestHit_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_neeCache_material_opaque_translucent_closestHit_terrain.h>
+#include <rtx_shaders/integrate_indirect_neeCache_material_opaque_translucent_closestHit_wboit_lean_terrain.h>
+#include <rtx_shaders/integrate_indirect_neeCache_material_opaque_translucent_closestHit_wboit_slim_terrain.h>
+#include <rtx_shaders/integrate_indirect_neeCache_material_opaque_translucent_closestHit_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_neeCache_material_rayportal_closestHit_terrain.h>
+#include <rtx_shaders/integrate_indirect_neeCache_material_rayportal_closestHit_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_neeCache_pom_material_opaque_translucent_closestHit_terrain.h>
+#include <rtx_shaders/integrate_indirect_neeCache_pom_material_opaque_translucent_closestHit_wboit_lean_terrain.h>
+#include <rtx_shaders/integrate_indirect_neeCache_pom_material_opaque_translucent_closestHit_wboit_slim_terrain.h>
+#include <rtx_shaders/integrate_indirect_neeCache_pom_material_opaque_translucent_closestHit_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_neeCache_pom_material_rayportal_closestHit_terrain.h>
+#include <rtx_shaders/integrate_indirect_neeCache_pom_material_rayportal_closestHit_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_nrc_material_opaque_translucent_closestHit_terrain.h>
+#include <rtx_shaders/integrate_indirect_nrc_material_opaque_translucent_closestHit_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_nrc_material_rayportal_closestHit_terrain.h>
+#include <rtx_shaders/integrate_indirect_nrc_material_rayportal_closestHit_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_nrc_neeCache_material_opaque_translucent_closestHit_terrain.h>
+#include <rtx_shaders/integrate_indirect_nrc_neeCache_material_opaque_translucent_closestHit_wboit_lean_terrain.h>
+#include <rtx_shaders/integrate_indirect_nrc_neeCache_material_opaque_translucent_closestHit_wboit_slim_terrain.h>
+#include <rtx_shaders/integrate_indirect_nrc_neeCache_material_opaque_translucent_closestHit_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_nrc_neeCache_material_rayportal_closestHit_terrain.h>
+#include <rtx_shaders/integrate_indirect_nrc_neeCache_material_rayportal_closestHit_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_nrc_neeCache_pom_material_opaque_translucent_closestHit_terrain.h>
+#include <rtx_shaders/integrate_indirect_nrc_neeCache_pom_material_opaque_translucent_closestHit_wboit_lean_terrain.h>
+#include <rtx_shaders/integrate_indirect_nrc_neeCache_pom_material_opaque_translucent_closestHit_wboit_slim_terrain.h>
+#include <rtx_shaders/integrate_indirect_nrc_neeCache_pom_material_opaque_translucent_closestHit_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_nrc_neeCache_pom_material_rayportal_closestHit_terrain.h>
+#include <rtx_shaders/integrate_indirect_nrc_neeCache_pom_material_rayportal_closestHit_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_nrc_pom_material_opaque_translucent_closestHit_terrain.h>
+#include <rtx_shaders/integrate_indirect_nrc_pom_material_opaque_translucent_closestHit_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_nrc_pom_material_rayportal_closestHit_terrain.h>
+#include <rtx_shaders/integrate_indirect_nrc_pom_material_rayportal_closestHit_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_pom_material_opaque_translucent_closestHit_terrain.h>
+#include <rtx_shaders/integrate_indirect_pom_material_opaque_translucent_closestHit_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_pom_material_rayportal_closestHit_terrain.h>
+#include <rtx_shaders/integrate_indirect_pom_material_rayportal_closestHit_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_raygen_neeCache_terrain.h>
+#include <rtx_shaders/integrate_indirect_raygen_neeCache_wboit_nopom_terrain.h>
+#include <rtx_shaders/integrate_indirect_raygen_neeCache_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_raygen_nrc_neeCache_terrain.h>
+#include <rtx_shaders/integrate_indirect_raygen_nrc_neeCache_wboit_nopom_terrain.h>
+#include <rtx_shaders/integrate_indirect_raygen_nrc_neeCache_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_raygen_nrc_terrain.h>
+#include <rtx_shaders/integrate_indirect_raygen_nrc_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_raygen_ser_neeCache_omm2_terrain.h>
+#include <rtx_shaders/integrate_indirect_raygen_ser_neeCache_terrain.h>
+#include <rtx_shaders/integrate_indirect_raygen_ser_neeCache_wboit_nopom_terrain.h>
+#include <rtx_shaders/integrate_indirect_raygen_ser_neeCache_wboit_omm2_terrain.h>
+#include <rtx_shaders/integrate_indirect_raygen_ser_neeCache_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_raygen_ser_nrc_neeCache_terrain.h>
+#include <rtx_shaders/integrate_indirect_raygen_ser_nrc_neeCache_wboit_nopom_terrain.h>
+#include <rtx_shaders/integrate_indirect_raygen_ser_nrc_neeCache_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_raygen_ser_nrc_terrain.h>
+#include <rtx_shaders/integrate_indirect_raygen_ser_nrc_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_raygen_ser_omm2_terrain.h>
+#include <rtx_shaders/integrate_indirect_raygen_ser_terrain.h>
+#include <rtx_shaders/integrate_indirect_raygen_ser_wboit_omm2_terrain.h>
+#include <rtx_shaders/integrate_indirect_raygen_ser_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_raygen_terrain.h>
+#include <rtx_shaders/integrate_indirect_raygen_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_rayquery_neeCache_terrain.h>
+#include <rtx_shaders/integrate_indirect_rayquery_neeCache_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_rayquery_nrc_neeCache_terrain.h>
+#include <rtx_shaders/integrate_indirect_rayquery_nrc_neeCache_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_rayquery_nrc_terrain.h>
+#include <rtx_shaders/integrate_indirect_rayquery_nrc_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_rayquery_raygen_neeCache_terrain.h>
+#include <rtx_shaders/integrate_indirect_rayquery_raygen_neeCache_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_rayquery_raygen_nrc_neeCache_terrain.h>
+#include <rtx_shaders/integrate_indirect_rayquery_raygen_nrc_neeCache_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_rayquery_raygen_nrc_terrain.h>
+#include <rtx_shaders/integrate_indirect_rayquery_raygen_nrc_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_rayquery_raygen_terrain.h>
+#include <rtx_shaders/integrate_indirect_rayquery_raygen_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_rayquery_terrain.h>
+#include <rtx_shaders/integrate_indirect_rayquery_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_query_closesthit_pom_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_query_closesthit_pom_wboit_lean_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_query_closesthit_pom_wboit_slim_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_query_closesthit_pom_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_query_closesthit_portals_pom_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_query_closesthit_portals_pom_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_query_closesthit_portals_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_query_closesthit_portals_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_query_closesthit_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_query_closesthit_wboit_lean_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_query_closesthit_wboit_slim_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_query_closesthit_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_query_omm2_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_query_ser_omm2_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_query_ser_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_query_ser_wboit_lean_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_query_ser_wboit_omm2_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_query_ser_wboit_slim_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_query_ser_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_query_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_query_wboit_lean_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_query_wboit_omm2_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_query_wboit_slim_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_query_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_update4_closesthit_wboit_df_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_update4_closesthit_wboit_lean_df_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_update4_closesthit_wboit_slim_df_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_update4_omm2_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_update4_ser_wboit_df_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_update4_ser_wboit_lean_df_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_update4_ser_wboit_slim_df_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_update4_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_update4_wboit_df_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_update4_wboit_lean_df_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_update4_wboit_lean_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_update4_wboit_leanpom_df_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_update4_wboit_leanpom_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_update4_wboit_omm2_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_update4_wboit_slim_df_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_update4_wboit_slim_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_update4_wboit_slimpom_df_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_update4_wboit_slimpom_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_update4_wboit_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_update8_closesthit_wboit_df_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_update8_closesthit_wboit_lean_df_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_update8_closesthit_wboit_slim_df_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_update8_omm2_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_update8_ser_wboit_df_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_update8_ser_wboit_lean_df_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_update8_ser_wboit_slim_df_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_update8_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_update8_wboit_df_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_update8_wboit_lean_df_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_update8_wboit_lean_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_update8_wboit_leanpom_df_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_update8_wboit_leanpom_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_update8_wboit_omm2_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_update8_wboit_slim_df_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_update8_wboit_slim_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_update8_wboit_slimpom_df_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_update8_wboit_slimpom_terrain.h>
+#include <rtx_shaders/integrate_indirect_sharc_update8_wboit_terrain.h>
+#include <rtx_shaders/integrate_nee_nrc_lean_terrain_shadow.h>
+#include <rtx_shaders/integrate_nee_nrc_leanpom_terrain_shadow.h>
+#include <rtx_shaders/integrate_nee_nrc_slim_terrain_shadow.h>
+#include <rtx_shaders/integrate_nee_nrc_terrain_shadow.h>
+#include <rtx_shaders/integrate_nee_plain_lean_terrain_shadow.h>
+#include <rtx_shaders/integrate_nee_plain_leanpom_terrain_shadow.h>
+#include <rtx_shaders/integrate_nee_plain_slim_terrain_shadow.h>
+#include <rtx_shaders/integrate_nee_plain_terrain_shadow.h>
+#include <rtx_shaders/integrate_nee_restir_gi_lean_terrain_shadow.h>
+#include <rtx_shaders/integrate_nee_restir_gi_leanpom_terrain_shadow.h>
+#include <rtx_shaders/integrate_nee_restir_gi_slim_terrain_shadow.h>
+#include <rtx_shaders/integrate_nee_restir_gi_terrain_shadow.h>
+
+#define GET_TERRAIN_SHADER_VARIANT(stage, shaderClass, code) \
+  (terrainEnabled \
+    ? GET_SHADER_VARIANT(stage, shaderClass, code##_terrain) \
+    : GET_SHADER_VARIANT(stage, shaderClass, code))
+
+#define GET_TERRAIN_SHADOW_SHADER_VARIANT(stage, shaderClass, code) \
+  (terrainShadowsEnabled \
+    ? GET_SHADER_VARIANT(stage, shaderClass, code##_terrain_shadow) \
+    : GET_SHADER_VARIANT(stage, shaderClass, code))
+
+
 namespace dxvk {
 
   // The _omm2 variants declare the SPV_EXT_opacity_micromap capability, so they
@@ -394,6 +563,7 @@ namespace dxvk {
         TEXTURE2D(INTEGRATE_INDIRECT_BINDING_PRIMARY_CONE_RADIUS_INPUT)
         TEXTURE2D(INTEGRATE_INDIRECT_BINDING_SECONDARY_CONE_RADIUS_INPUT)
         TEXTURE2D(INTEGRATE_INDIRECT_BINDING_PRIMARY_WORLD_POSITION_INPUT)
+        TEXTURE2D(INTEGRATE_INDIRECT_BINDING_PRIMARY_VIEW_DIRECTION_INPUT)
         RW_STRUCTURED_BUFFER(INTEGRATE_INDIRECT_BINDING_PRIMARY_RTXDI_RESERVOIR)
 
         TEXTURE2D(INTEGRATE_INDIRECT_BINDING_RAY_ORIGIN_DIRECTION_INPUT)
@@ -652,12 +822,15 @@ namespace dxvk {
   }
 
   void DxvkPathtracerIntegrateIndirect::prewarmShaders(DxvkPipelineManager& pipelineManager) const {
+    const auto& terrain = m_device->getCommon()->getSceneManager().getTerrainBlendArgs();
+    const bool terrainShadowsEnabled = terrain.enabled && terrain.displacementEnabled && terrain.displacementStrength > 0.f && terrain.displacementSelfShadowEnabled && terrain.displacementShadowStrength > 0.f;
+
     ScopedCpuProfileZoneN("Indirect Integrate Shader Prewarming");
 
     IntegrateNEEShader::getShader();
-    GET_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateNEEPlainShader, integrate_nee_plain);
-    GET_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateNEEShader, integrate_nee_nrc);
-    GET_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateNEEShader, integrate_nee_restir_gi);
+    GET_TERRAIN_SHADOW_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateNEEPlainShader, integrate_nee_plain);
+    GET_TERRAIN_SHADOW_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateNEEShader, integrate_nee_nrc);
+    GET_TERRAIN_SHADOW_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateNEEShader, integrate_nee_restir_gi);
     // The assembly slim levels of the configured mode only.
     {
       const IntegrateIndirectMode mode = RtxOptions::integrateIndirectMode();
@@ -783,7 +956,9 @@ namespace dxvk {
   }
 
   DxvkRaytracingPipelineShaders DxvkPathtracerIntegrateIndirect::getSharcUpdatePipelineShaders(
-    const bool depth4, const bool ommEnabled, const bool wboitEnabled, const SlimLevel slimLevel, const bool deferredFlush) {
+    const bool depth4, const bool ommEnabled, const bool wboitEnabled, const SlimLevel slimLevel, const bool deferredFlush) const {
+    const bool terrainEnabled = m_device->getCommon()->getSceneManager().getTerrainBlendArgs().enabled;
+
     DxvkRaytracingPipelineShaders shaders;
     if (deferredFlush) {
       // rtx.sharc.deferredFlush, one _df variant per slim level (WBOIT, no OMM 2-state; see
@@ -791,28 +966,28 @@ namespace dxvk {
       switch (slimLevel) {
       case SlimLevel::Full:
         shaders.addGeneralShader(depth4
-          ? GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcUpdateDeferredShader, integrate_indirect_sharc_update4_wboit_df)
-          : GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcUpdateDeferredShader, integrate_indirect_sharc_update8_wboit_df));
+          ? GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcUpdateDeferredShader, integrate_indirect_sharc_update4_wboit_df)
+          : GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcUpdateDeferredShader, integrate_indirect_sharc_update8_wboit_df));
         break;
       case SlimLevel::Slim:
         shaders.addGeneralShader(depth4
-          ? GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcUpdateDeferredShader, integrate_indirect_sharc_update4_wboit_slim_df)
-          : GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcUpdateDeferredShader, integrate_indirect_sharc_update8_wboit_slim_df));
+          ? GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcUpdateDeferredShader, integrate_indirect_sharc_update4_wboit_slim_df)
+          : GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcUpdateDeferredShader, integrate_indirect_sharc_update8_wboit_slim_df));
         break;
       case SlimLevel::Lean:
         shaders.addGeneralShader(depth4
-          ? GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcUpdateDeferredShader, integrate_indirect_sharc_update4_wboit_lean_df)
-          : GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcUpdateDeferredShader, integrate_indirect_sharc_update8_wboit_lean_df));
+          ? GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcUpdateDeferredShader, integrate_indirect_sharc_update4_wboit_lean_df)
+          : GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcUpdateDeferredShader, integrate_indirect_sharc_update8_wboit_lean_df));
         break;
       case SlimLevel::SlimPom:
         shaders.addGeneralShader(depth4
-          ? GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcUpdateDeferredShader, integrate_indirect_sharc_update4_wboit_slimpom_df)
-          : GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcUpdateDeferredShader, integrate_indirect_sharc_update8_wboit_slimpom_df));
+          ? GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcUpdateDeferredShader, integrate_indirect_sharc_update4_wboit_slimpom_df)
+          : GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcUpdateDeferredShader, integrate_indirect_sharc_update8_wboit_slimpom_df));
         break;
       case SlimLevel::LeanPom:
         shaders.addGeneralShader(depth4
-          ? GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcUpdateDeferredShader, integrate_indirect_sharc_update4_wboit_leanpom_df)
-          : GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcUpdateDeferredShader, integrate_indirect_sharc_update8_wboit_leanpom_df));
+          ? GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcUpdateDeferredShader, integrate_indirect_sharc_update4_wboit_leanpom_df)
+          : GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcUpdateDeferredShader, integrate_indirect_sharc_update8_wboit_leanpom_df));
         break;
       }
     } else if (slimLevel == SlimLevel::SlimPom || slimLevel == SlimLevel::LeanPom) {
@@ -820,38 +995,38 @@ namespace dxvk {
       const bool lean = slimLevel == SlimLevel::LeanPom;
       shaders.addGeneralShader(depth4
         ? (lean
-          ? GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcUpdateShader, integrate_indirect_sharc_update4_wboit_leanpom)
-          : GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcUpdateShader, integrate_indirect_sharc_update4_wboit_slimpom))
+          ? GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcUpdateShader, integrate_indirect_sharc_update4_wboit_leanpom)
+          : GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcUpdateShader, integrate_indirect_sharc_update4_wboit_slimpom))
         : (lean
-          ? GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcUpdateShader, integrate_indirect_sharc_update8_wboit_leanpom)
-          : GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcUpdateShader, integrate_indirect_sharc_update8_wboit_slimpom)));
+          ? GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcUpdateShader, integrate_indirect_sharc_update8_wboit_leanpom)
+          : GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcUpdateShader, integrate_indirect_sharc_update8_wboit_slimpom)));
     } else if (slimLevel != SlimLevel::Full) {
       // The slim levels (WBOIT, no OMM 2-state; see selectSharcSlimLevel).
       const bool lean = slimLevel == SlimLevel::Lean;
       shaders.addGeneralShader(depth4
         ? (lean
-          ? GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcUpdateShader, integrate_indirect_sharc_update4_wboit_lean)
-          : GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcUpdateShader, integrate_indirect_sharc_update4_wboit_slim))
+          ? GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcUpdateShader, integrate_indirect_sharc_update4_wboit_lean)
+          : GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcUpdateShader, integrate_indirect_sharc_update4_wboit_slim))
         : (lean
-          ? GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcUpdateShader, integrate_indirect_sharc_update8_wboit_lean)
-          : GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcUpdateShader, integrate_indirect_sharc_update8_wboit_slim)));
+          ? GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcUpdateShader, integrate_indirect_sharc_update8_wboit_lean)
+          : GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcUpdateShader, integrate_indirect_sharc_update8_wboit_slim)));
     } else if (useFoliageRaysOmm2StateVariant(ommEnabled)) {
       // OMM 2-state foliage-ray variants (rtx.foliageRays.fastRayMode).
       shaders.addGeneralShader(depth4
         ? (wboitEnabled
-          ? GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcUpdateShader, integrate_indirect_sharc_update4_wboit_omm2)
-          : GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcUpdateShader, integrate_indirect_sharc_update4_omm2))
+          ? GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcUpdateShader, integrate_indirect_sharc_update4_wboit_omm2)
+          : GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcUpdateShader, integrate_indirect_sharc_update4_omm2))
         : (wboitEnabled
-          ? GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcUpdateShader, integrate_indirect_sharc_update8_wboit_omm2)
-          : GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcUpdateShader, integrate_indirect_sharc_update8_omm2)));
+          ? GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcUpdateShader, integrate_indirect_sharc_update8_wboit_omm2)
+          : GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcUpdateShader, integrate_indirect_sharc_update8_omm2)));
     } else if (depth4) {
       shaders.addGeneralShader(wboitEnabled
-        ? GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcUpdateShader, integrate_indirect_sharc_update4_wboit)
-        : GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcUpdateShader, integrate_indirect_sharc_update4));
+        ? GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcUpdateShader, integrate_indirect_sharc_update4_wboit)
+        : GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcUpdateShader, integrate_indirect_sharc_update4));
     } else {
       shaders.addGeneralShader(wboitEnabled
-        ? GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcUpdateShader, integrate_indirect_sharc_update8_wboit)
-        : GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcUpdateShader, integrate_indirect_sharc_update8));
+        ? GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcUpdateShader, integrate_indirect_sharc_update8_wboit)
+        : GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcUpdateShader, integrate_indirect_sharc_update8));
     }
     if (ommEnabled) {
       shaders.pipelineFlags |= VK_PIPELINE_CREATE_RAY_TRACING_OPACITY_MICROMAP_BIT_EXT;
@@ -875,7 +1050,9 @@ namespace dxvk {
   }
 
   DxvkRaytracingPipelineShaders DxvkPathtracerIntegrateIndirect::getSharcUpdateSerPipelineShaders(
-    const bool depth4, const bool ommEnabled, const SlimLevel slimLevel) {
+    const bool depth4, const bool ommEnabled, const SlimLevel slimLevel) const {
+    const bool terrainEnabled = m_device->getCommon()->getSceneManager().getTerrainBlendArgs().enabled;
+
     // The TraceRay + SER update. Raygen with SER, the update hit shader of the same level and the update miss
     // shader, all with the deferred-flush payload (SHARC_DEFERRED_FLUSH) of the propagation depth.
     DxvkRaytracingPipelineShaders shaders;
@@ -883,28 +1060,28 @@ namespace dxvk {
     const bool slim = slimLevel == SlimLevel::Slim;
     if (depth4) {
       shaders.addGeneralShader(lean
-        ? GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcUpdateDeferredShader, integrate_indirect_sharc_update4_ser_wboit_lean_df)
+        ? GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcUpdateDeferredShader, integrate_indirect_sharc_update4_ser_wboit_lean_df)
         : slim
-        ? GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcUpdateDeferredShader, integrate_indirect_sharc_update4_ser_wboit_slim_df)
-        : GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcUpdateDeferredShader, integrate_indirect_sharc_update4_ser_wboit_df));
+        ? GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcUpdateDeferredShader, integrate_indirect_sharc_update4_ser_wboit_slim_df)
+        : GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcUpdateDeferredShader, integrate_indirect_sharc_update4_ser_wboit_df));
       shaders.addGeneralShader(GET_SHADER_VARIANT(VK_SHADER_STAGE_MISS_BIT_KHR, IntegrateIndirectMissShader, integrate_indirect_sharc_update4_miss_wboit_df));
       shaders.addHitGroup(lean
-        ? GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_sharc_update4_closesthit_wboit_lean_df)
+        ? GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_sharc_update4_closesthit_wboit_lean_df)
         : slim
-        ? GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_sharc_update4_closesthit_wboit_slim_df)
-        : GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_sharc_update4_closesthit_wboit_df), nullptr, nullptr);
+        ? GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_sharc_update4_closesthit_wboit_slim_df)
+        : GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_sharc_update4_closesthit_wboit_df), nullptr, nullptr);
     } else {
       shaders.addGeneralShader(lean
-        ? GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcUpdateDeferredShader, integrate_indirect_sharc_update8_ser_wboit_lean_df)
+        ? GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcUpdateDeferredShader, integrate_indirect_sharc_update8_ser_wboit_lean_df)
         : slim
-        ? GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcUpdateDeferredShader, integrate_indirect_sharc_update8_ser_wboit_slim_df)
-        : GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcUpdateDeferredShader, integrate_indirect_sharc_update8_ser_wboit_df));
+        ? GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcUpdateDeferredShader, integrate_indirect_sharc_update8_ser_wboit_slim_df)
+        : GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcUpdateDeferredShader, integrate_indirect_sharc_update8_ser_wboit_df));
       shaders.addGeneralShader(GET_SHADER_VARIANT(VK_SHADER_STAGE_MISS_BIT_KHR, IntegrateIndirectMissShader, integrate_indirect_sharc_update8_miss_wboit_df));
       shaders.addHitGroup(lean
-        ? GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_sharc_update8_closesthit_wboit_lean_df)
+        ? GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_sharc_update8_closesthit_wboit_lean_df)
         : slim
-        ? GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_sharc_update8_closesthit_wboit_slim_df)
-        : GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_sharc_update8_closesthit_wboit_df), nullptr, nullptr);
+        ? GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_sharc_update8_closesthit_wboit_slim_df)
+        : GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_sharc_update8_closesthit_wboit_df), nullptr, nullptr);
     }
     if (ommEnabled) {
       shaders.pipelineFlags |= VK_PIPELINE_CREATE_RAY_TRACING_OPACITY_MICROMAP_BIT_EXT;
@@ -1028,7 +1205,7 @@ namespace dxvk {
   }
 
   DxvkPathtracerIntegrateIndirect::SlimLevel DxvkPathtracerIntegrateIndirect::selectAssemblySlimLevel(
-    RtxContext* ctx, const RaytraceArgs& args) {
+    RtxContext* ctx, const RaytraceArgs& args) const {
     return selectAssemblySlimLevel(ctx->getFrameFeatures());
   }
 
@@ -1043,34 +1220,37 @@ namespace dxvk {
     return level == SlimLevel::SlimPom ? SlimLevel::Full : level;
   }
 
-  Rc<DxvkShader> DxvkPathtracerIntegrateIndirect::getAssemblyShader(const bool nrcEnabled, const bool restirGiEnabled, const SlimLevel slimLevel) {
+  Rc<DxvkShader> DxvkPathtracerIntegrateIndirect::getAssemblyShader(const bool nrcEnabled, const bool restirGiEnabled, const SlimLevel slimLevel) const {
+    const auto& terrain = m_device->getCommon()->getSceneManager().getTerrainBlendArgs();
+    const bool terrainShadowsEnabled = terrain.enabled && terrain.displacementEnabled && terrain.displacementStrength > 0.f && terrain.displacementSelfShadowEnabled && terrain.displacementShadowStrength > 0.f;
+
     // The assembly slim levels (see selectAssemblySlimLevel; SlimPom is mapped to Full).
     const bool lean = slimLevel == SlimLevel::Lean;
     if (nrcEnabled && !restirGiEnabled) {
       switch (slimLevel) {
-      case SlimLevel::Full: case SlimLevel::SlimPom: return GET_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateNEEShader, integrate_nee_nrc);
-      case SlimLevel::LeanPom: return GET_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateNEEShader, integrate_nee_nrc_leanpom);
+      case SlimLevel::Full: case SlimLevel::SlimPom: return GET_TERRAIN_SHADOW_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateNEEShader, integrate_nee_nrc);
+      case SlimLevel::LeanPom: return GET_TERRAIN_SHADOW_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateNEEShader, integrate_nee_nrc_leanpom);
       default: return lean
-        ? GET_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateNEEShader, integrate_nee_nrc_lean)
-        : GET_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateNEEShader, integrate_nee_nrc_slim);
+        ? GET_TERRAIN_SHADOW_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateNEEShader, integrate_nee_nrc_lean)
+        : GET_TERRAIN_SHADOW_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateNEEShader, integrate_nee_nrc_slim);
       }
     } else if (restirGiEnabled && !nrcEnabled) {
       switch (slimLevel) {
-      case SlimLevel::Full: case SlimLevel::SlimPom: return GET_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateNEEShader, integrate_nee_restir_gi);
-      case SlimLevel::LeanPom: return GET_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateNEEShader, integrate_nee_restir_gi_leanpom);
+      case SlimLevel::Full: case SlimLevel::SlimPom: return GET_TERRAIN_SHADOW_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateNEEShader, integrate_nee_restir_gi);
+      case SlimLevel::LeanPom: return GET_TERRAIN_SHADOW_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateNEEShader, integrate_nee_restir_gi_leanpom);
       default: return lean
-        ? GET_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateNEEShader, integrate_nee_restir_gi_lean)
-        : GET_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateNEEShader, integrate_nee_restir_gi_slim);
+        ? GET_TERRAIN_SHADOW_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateNEEShader, integrate_nee_restir_gi_lean)
+        : GET_TERRAIN_SHADOW_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateNEEShader, integrate_nee_restir_gi_slim);
       }
     }
     // Unreachable for both active: NRC and ReSTIR GI both reduce to integrateIndirectMode, which holds one value.
     assert(!(nrcEnabled && restirGiEnabled) && "NRC and ReSTIR GI cannot both be active");
     switch (slimLevel) {
-    case SlimLevel::Full: case SlimLevel::SlimPom: return GET_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateNEEPlainShader, integrate_nee_plain);
-    case SlimLevel::LeanPom: return GET_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateNEEPlainShader, integrate_nee_plain_leanpom);
+    case SlimLevel::Full: case SlimLevel::SlimPom: return GET_TERRAIN_SHADOW_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateNEEPlainShader, integrate_nee_plain);
+    case SlimLevel::LeanPom: return GET_TERRAIN_SHADOW_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateNEEPlainShader, integrate_nee_plain_leanpom);
     default: return lean
-      ? GET_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateNEEPlainShader, integrate_nee_plain_lean)
-      : GET_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateNEEPlainShader, integrate_nee_plain_slim);
+      ? GET_TERRAIN_SHADOW_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateNEEPlainShader, integrate_nee_plain_lean)
+      : GET_TERRAIN_SHADOW_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateNEEPlainShader, integrate_nee_plain_slim);
     }
   }
 
@@ -1234,7 +1414,9 @@ namespace dxvk {
     const bool includePortals,
     const bool pomEnabled,
     const bool wboitEnabled,
-    const SlimLevel slimLevel) {
+    const SlimLevel slimLevel) const {
+    const bool terrainEnabled = m_device->getCommon()->getSceneManager().getTerrainBlendArgs().enabled;
+
 
     DxvkRaytracingPipelineShaders shaders;
 
@@ -1245,27 +1427,27 @@ namespace dxvk {
       if (slimLevelKeepsPom(slimLevel)) {
         // rtx.integrateIndirect.slimKeepPom: the TraceRay raygen holds no slim feature besides POM, so the base one.
         shaders.addGeneralShader(serEnabled
-          ? GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcQueryShader, integrate_indirect_sharc_query_ser_wboit)
-          : GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcQueryShader, integrate_indirect_sharc_query_wboit));
+          ? GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcQueryShader, integrate_indirect_sharc_query_ser_wboit)
+          : GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcQueryShader, integrate_indirect_sharc_query_wboit));
       } else {
         shaders.addGeneralShader(serEnabled
           ? (lean
-            ? GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcQueryShader, integrate_indirect_sharc_query_ser_wboit_lean)
-            : GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcQueryShader, integrate_indirect_sharc_query_ser_wboit_slim))
+            ? GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcQueryShader, integrate_indirect_sharc_query_ser_wboit_lean)
+            : GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcQueryShader, integrate_indirect_sharc_query_ser_wboit_slim))
           : (lean
-            ? GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcQueryShader, integrate_indirect_sharc_query_wboit_lean)
-            : GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcQueryShader, integrate_indirect_sharc_query_wboit_slim)));
+            ? GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcQueryShader, integrate_indirect_sharc_query_wboit_lean)
+            : GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcQueryShader, integrate_indirect_sharc_query_wboit_slim)));
       }
       shaders.addGeneralShader(GET_SHADER_VARIANT(VK_SHADER_STAGE_MISS_BIT_KHR, IntegrateIndirectMissShader, integrate_indirect_sharc_query_miss_wboit));
       // The hit shader carries POM only while pomEnabled (POM on and rtx.displacement.enableIndirectHit), as for Full.
       if (slimLevelKeepsPom(slimLevel) && pomEnabled) {
         shaders.addHitGroup(lean
-          ? GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_sharc_query_closesthit_pom_wboit_lean)
-          : GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_sharc_query_closesthit_pom_wboit_slim), nullptr, nullptr);
+          ? GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_sharc_query_closesthit_pom_wboit_lean)
+          : GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_sharc_query_closesthit_pom_wboit_slim), nullptr, nullptr);
       } else {
         shaders.addHitGroup(lean
-          ? GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_sharc_query_closesthit_wboit_lean)
-          : GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_sharc_query_closesthit_wboit_slim), nullptr, nullptr);
+          ? GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_sharc_query_closesthit_wboit_lean)
+          : GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_sharc_query_closesthit_wboit_slim), nullptr, nullptr);
       }
       if (ommEnabled) {
         shaders.pipelineFlags |= VK_PIPELINE_CREATE_RAY_TRACING_OPACITY_MICROMAP_BIT_EXT;
@@ -1278,19 +1460,19 @@ namespace dxvk {
     if (useFoliageRaysOmm2StateVariant(ommEnabled)) {
       shaders.addGeneralShader(serEnabled
         ? (wboitEnabled
-          ? GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcQueryShader, integrate_indirect_sharc_query_ser_wboit_omm2)
-          : GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcQueryShader, integrate_indirect_sharc_query_ser_omm2))
+          ? GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcQueryShader, integrate_indirect_sharc_query_ser_wboit_omm2)
+          : GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcQueryShader, integrate_indirect_sharc_query_ser_omm2))
         : (wboitEnabled
-          ? GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcQueryShader, integrate_indirect_sharc_query_wboit_omm2)
-          : GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcQueryShader, integrate_indirect_sharc_query_omm2)));
+          ? GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcQueryShader, integrate_indirect_sharc_query_wboit_omm2)
+          : GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcQueryShader, integrate_indirect_sharc_query_omm2)));
     } else if (serEnabled) {
       shaders.addGeneralShader(wboitEnabled
-        ? GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcQueryShader, integrate_indirect_sharc_query_ser_wboit)
-        : GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcQueryShader, integrate_indirect_sharc_query_ser));
+        ? GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcQueryShader, integrate_indirect_sharc_query_ser_wboit)
+        : GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcQueryShader, integrate_indirect_sharc_query_ser));
     } else {
       shaders.addGeneralShader(wboitEnabled
-        ? GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcQueryShader, integrate_indirect_sharc_query_wboit)
-        : GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcQueryShader, integrate_indirect_sharc_query));
+        ? GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcQueryShader, integrate_indirect_sharc_query_wboit)
+        : GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectSharcQueryShader, integrate_indirect_sharc_query));
     }
 
     if (includePortals) {
@@ -1299,12 +1481,12 @@ namespace dxvk {
         : GET_SHADER_VARIANT(VK_SHADER_STAGE_MISS_BIT_KHR, IntegrateIndirectMissShader, integrate_indirect_sharc_query_miss_portals));
       if (pomEnabled) {
         shaders.addHitGroup(wboitEnabled
-          ? GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_sharc_query_closesthit_portals_pom_wboit)
-          : GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_sharc_query_closesthit_portals_pom), nullptr, nullptr);
+          ? GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_sharc_query_closesthit_portals_pom_wboit)
+          : GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_sharc_query_closesthit_portals_pom), nullptr, nullptr);
       } else {
         shaders.addHitGroup(wboitEnabled
-          ? GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_sharc_query_closesthit_portals_wboit)
-          : GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_sharc_query_closesthit_portals), nullptr, nullptr);
+          ? GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_sharc_query_closesthit_portals_wboit)
+          : GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_sharc_query_closesthit_portals), nullptr, nullptr);
       }
     } else {
       shaders.addGeneralShader(wboitEnabled
@@ -1312,12 +1494,12 @@ namespace dxvk {
         : GET_SHADER_VARIANT(VK_SHADER_STAGE_MISS_BIT_KHR, IntegrateIndirectMissShader, integrate_indirect_sharc_query_miss));
       if (pomEnabled) {
         shaders.addHitGroup(wboitEnabled
-          ? GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_sharc_query_closesthit_pom_wboit)
-          : GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_sharc_query_closesthit_pom), nullptr, nullptr);
+          ? GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_sharc_query_closesthit_pom_wboit)
+          : GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_sharc_query_closesthit_pom), nullptr, nullptr);
       } else {
         shaders.addHitGroup(wboitEnabled
-          ? GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_sharc_query_closesthit_wboit)
-          : GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_sharc_query_closesthit), nullptr, nullptr);
+          ? GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_sharc_query_closesthit_wboit)
+          : GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_sharc_query_closesthit), nullptr, nullptr);
       }
     }
 
@@ -1448,6 +1630,7 @@ namespace dxvk {
     ctx->bindResourceView(INTEGRATE_INDIRECT_BINDING_PRIMARY_CONE_RADIUS_INPUT, rtOutput.m_primaryConeRadius.view, nullptr);
     ctx->bindResourceView(INTEGRATE_INDIRECT_BINDING_SECONDARY_CONE_RADIUS_INPUT, rtOutput.m_secondaryConeRadius.view(Resources::AccessType::Read), nullptr);
     ctx->bindResourceView(INTEGRATE_INDIRECT_BINDING_PRIMARY_WORLD_POSITION_INPUT, rtOutput.getCurrentPrimaryWorldPositionWorldTriangleNormal().view(Resources::AccessType::Read), nullptr);
+    ctx->bindResourceView(INTEGRATE_INDIRECT_BINDING_PRIMARY_VIEW_DIRECTION_INPUT, rtOutput.m_primaryViewDirection.view, nullptr);
     ctx->bindResourceBuffer(INTEGRATE_INDIRECT_BINDING_PRIMARY_RTXDI_RESERVOIR, rtOutput.m_rtxdiReservoirBuffer.slice(Resources::AccessType::Read, RtxOptions::primaryReservoirsActive()));
     ctx->bindResourceView(INTEGRATE_INDIRECT_BINDING_RAY_ORIGIN_DIRECTION_INPUT, rtOutput.m_indirectRayOriginDirection.view(Resources::AccessType::Read), nullptr);
     ctx->bindResourceView(INTEGRATE_INDIRECT_BINDING_ACTIVE_LOCAL_PIXEL_COORDS_INPUT, rtOutput.m_sparseRenderingActiveLocalPixelCoords.view, nullptr);
@@ -1738,7 +1921,9 @@ namespace dxvk {
     const bool pomEnabled,
     const bool nrcEnabled,
     const bool wboitEnabled,
-    const SlimLevel slimLevel) {
+    const SlimLevel slimLevel) const {
+    const bool terrainEnabled = m_device->getCommon()->getSceneManager().getTerrainBlendArgs().enabled;
+
 
     DxvkRaytracingPipelineShaders shaders;
 
@@ -1751,19 +1936,19 @@ namespace dxvk {
       if (slimLevelKeepsPom(slimLevel)) {
         shaders.addGeneralShader(nrcEnabled
           ? (serEnabled
-            ? GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_raygen_ser_nrc_neeCache_wboit)
-            : GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_raygen_nrc_neeCache_wboit))
+            ? GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_raygen_ser_nrc_neeCache_wboit)
+            : GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_raygen_nrc_neeCache_wboit))
           : (serEnabled
-            ? GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_raygen_ser_neeCache_wboit)
-            : GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_raygen_neeCache_wboit)));
+            ? GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_raygen_ser_neeCache_wboit)
+            : GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_raygen_neeCache_wboit)));
       } else {
         shaders.addGeneralShader(nrcEnabled
           ? (serEnabled
-            ? GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_raygen_ser_nrc_neeCache_wboit_nopom)
-            : GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_raygen_nrc_neeCache_wboit_nopom))
+            ? GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_raygen_ser_nrc_neeCache_wboit_nopom)
+            : GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_raygen_nrc_neeCache_wboit_nopom))
           : (serEnabled
-            ? GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_raygen_ser_neeCache_wboit_nopom)
-            : GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_raygen_neeCache_wboit_nopom)));
+            ? GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_raygen_ser_neeCache_wboit_nopom)
+            : GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_raygen_neeCache_wboit_nopom)));
       }
       shaders.addGeneralShader(nrcEnabled
         ? GET_SHADER_VARIANT(VK_SHADER_STAGE_MISS_BIT_KHR, IntegrateIndirectMissShader, integrate_indirect_miss_nrc_neeCache_wboit)
@@ -1773,19 +1958,19 @@ namespace dxvk {
       if (nrcEnabled) {
         shaders.addHitGroup(pomHit
           ? (lean
-            ? GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_nrc_neeCache_pom_material_opaque_translucent_closestHit_wboit_lean)
-            : GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_nrc_neeCache_pom_material_opaque_translucent_closestHit_wboit_slim))
+            ? GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_nrc_neeCache_pom_material_opaque_translucent_closestHit_wboit_lean)
+            : GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_nrc_neeCache_pom_material_opaque_translucent_closestHit_wboit_slim))
           : (lean
-            ? GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_nrc_neeCache_material_opaque_translucent_closestHit_wboit_lean)
-            : GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_nrc_neeCache_material_opaque_translucent_closestHit_wboit_slim)), nullptr, nullptr);
+            ? GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_nrc_neeCache_material_opaque_translucent_closestHit_wboit_lean)
+            : GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_nrc_neeCache_material_opaque_translucent_closestHit_wboit_slim)), nullptr, nullptr);
       } else {
         shaders.addHitGroup(pomHit
           ? (lean
-            ? GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_neeCache_pom_material_opaque_translucent_closestHit_wboit_lean)
-            : GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_neeCache_pom_material_opaque_translucent_closestHit_wboit_slim))
+            ? GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_neeCache_pom_material_opaque_translucent_closestHit_wboit_lean)
+            : GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_neeCache_pom_material_opaque_translucent_closestHit_wboit_slim))
           : (lean
-            ? GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_neeCache_material_opaque_translucent_closestHit_wboit_lean)
-            : GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_neeCache_material_opaque_translucent_closestHit_wboit_slim)), nullptr, nullptr);
+            ? GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_neeCache_material_opaque_translucent_closestHit_wboit_lean)
+            : GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_neeCache_material_opaque_translucent_closestHit_wboit_slim)), nullptr, nullptr);
       }
       if (ommEnabled) {
         shaders.pipelineFlags |= VK_PIPELINE_CREATE_RAY_TRACING_OPACITY_MICROMAP_BIT_EXT;
@@ -1798,15 +1983,15 @@ namespace dxvk {
       if (useRayQuery) {
         if (nrcEnabled) {
           if (useNeeCache) {
-            shaders.addGeneralShader(GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_rayquery_raygen_nrc_neeCache_wboit));
+            shaders.addGeneralShader(GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_rayquery_raygen_nrc_neeCache_wboit));
           } else {
-            shaders.addGeneralShader(GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_rayquery_raygen_nrc_wboit));
+            shaders.addGeneralShader(GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_rayquery_raygen_nrc_wboit));
           }
         } else {
           if (useNeeCache) {
-            shaders.addGeneralShader(GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_rayquery_raygen_neeCache_wboit));
+            shaders.addGeneralShader(GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_rayquery_raygen_neeCache_wboit));
           } else {
-            shaders.addGeneralShader(GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_rayquery_raygen_wboit));
+            shaders.addGeneralShader(GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_rayquery_raygen_wboit));
           }
         }
         shaders.debugName = "Integrate Indirect RayQuery (RGS)";
@@ -1814,15 +1999,15 @@ namespace dxvk {
         if (nrcEnabled) {
           if (serEnabled) {
             if (useNeeCache) {
-              shaders.addGeneralShader(GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_raygen_ser_nrc_neeCache_wboit));
+              shaders.addGeneralShader(GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_raygen_ser_nrc_neeCache_wboit));
             } else {
-              shaders.addGeneralShader(GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_raygen_ser_nrc_wboit));
+              shaders.addGeneralShader(GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_raygen_ser_nrc_wboit));
             }
           } else {
             if (useNeeCache) {
-              shaders.addGeneralShader(GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_raygen_nrc_neeCache_wboit));
+              shaders.addGeneralShader(GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_raygen_nrc_neeCache_wboit));
             } else {
-              shaders.addGeneralShader(GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_raygen_nrc_wboit));
+              shaders.addGeneralShader(GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_raygen_nrc_wboit));
             }
           }
         } else {
@@ -1830,18 +2015,18 @@ namespace dxvk {
             // OMM 2-state foliage-ray variants (rtx.foliageRays.fastRayMode).
             if (useFoliageRaysOmm2StateVariant(ommEnabled)) {
               shaders.addGeneralShader(useNeeCache
-                ? GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_raygen_ser_neeCache_wboit_omm2)
-                : GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_raygen_ser_wboit_omm2));
+                ? GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_raygen_ser_neeCache_wboit_omm2)
+                : GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_raygen_ser_wboit_omm2));
             } else if (useNeeCache) {
-              shaders.addGeneralShader(GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_raygen_ser_neeCache_wboit));
+              shaders.addGeneralShader(GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_raygen_ser_neeCache_wboit));
             } else {
-              shaders.addGeneralShader(GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_raygen_ser_wboit));
+              shaders.addGeneralShader(GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_raygen_ser_wboit));
             }
           } else {
             if (useNeeCache) {
-              shaders.addGeneralShader(GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_raygen_neeCache_wboit));
+              shaders.addGeneralShader(GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_raygen_neeCache_wboit));
             } else {
-              shaders.addGeneralShader(GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_raygen_wboit));
+              shaders.addGeneralShader(GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_raygen_wboit));
             }
           }
         }
@@ -1864,29 +2049,29 @@ namespace dxvk {
           if (useNeeCache) {
             if (pomEnabled) {
               if (includePortals) {
-                shaders.addHitGroup(GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_nrc_neeCache_pom_material_rayportal_closestHit_wboit), nullptr, nullptr);
+                shaders.addHitGroup(GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_nrc_neeCache_pom_material_rayportal_closestHit_wboit), nullptr, nullptr);
               } else {
-                shaders.addHitGroup(GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_nrc_neeCache_pom_material_opaque_translucent_closestHit_wboit), nullptr, nullptr);
+                shaders.addHitGroup(GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_nrc_neeCache_pom_material_opaque_translucent_closestHit_wboit), nullptr, nullptr);
               }
             } else {
               if (includePortals) {
-                shaders.addHitGroup(GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_nrc_neeCache_material_rayportal_closestHit_wboit), nullptr, nullptr);
+                shaders.addHitGroup(GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_nrc_neeCache_material_rayportal_closestHit_wboit), nullptr, nullptr);
               } else {
-                shaders.addHitGroup(GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_nrc_neeCache_material_opaque_translucent_closestHit_wboit), nullptr, nullptr);
+                shaders.addHitGroup(GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_nrc_neeCache_material_opaque_translucent_closestHit_wboit), nullptr, nullptr);
               }
             }
           } else {
             if (pomEnabled) {
               if (includePortals) {
-                shaders.addHitGroup(GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_nrc_pom_material_rayportal_closestHit_wboit), nullptr, nullptr);
+                shaders.addHitGroup(GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_nrc_pom_material_rayportal_closestHit_wboit), nullptr, nullptr);
               } else {
-                shaders.addHitGroup(GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_nrc_pom_material_opaque_translucent_closestHit_wboit), nullptr, nullptr);
+                shaders.addHitGroup(GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_nrc_pom_material_opaque_translucent_closestHit_wboit), nullptr, nullptr);
               }
             } else {
               if (includePortals) {
-                shaders.addHitGroup(GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_nrc_material_rayportal_closestHit_wboit), nullptr, nullptr);
+                shaders.addHitGroup(GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_nrc_material_rayportal_closestHit_wboit), nullptr, nullptr);
               } else {
-                shaders.addHitGroup(GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_nrc_material_opaque_translucent_closestHit_wboit), nullptr, nullptr);
+                shaders.addHitGroup(GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_nrc_material_opaque_translucent_closestHit_wboit), nullptr, nullptr);
               }
             }
           }
@@ -1894,29 +2079,29 @@ namespace dxvk {
           if (useNeeCache) {
             if (pomEnabled) {
               if (includePortals) {
-                shaders.addHitGroup(GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_neeCache_pom_material_rayportal_closestHit_wboit), nullptr, nullptr);
+                shaders.addHitGroup(GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_neeCache_pom_material_rayportal_closestHit_wboit), nullptr, nullptr);
               } else {
-                shaders.addHitGroup(GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_neeCache_pom_material_opaque_translucent_closestHit_wboit), nullptr, nullptr);
+                shaders.addHitGroup(GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_neeCache_pom_material_opaque_translucent_closestHit_wboit), nullptr, nullptr);
               }
             } else {
               if (includePortals) {
-                shaders.addHitGroup(GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_neeCache_material_rayportal_closestHit_wboit), nullptr, nullptr);
+                shaders.addHitGroup(GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_neeCache_material_rayportal_closestHit_wboit), nullptr, nullptr);
               } else {
-                shaders.addHitGroup(GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_neeCache_material_opaque_translucent_closestHit_wboit), nullptr, nullptr);
+                shaders.addHitGroup(GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_neeCache_material_opaque_translucent_closestHit_wboit), nullptr, nullptr);
               }
             }
           } else {
             if (pomEnabled) {
               if (includePortals) {
-                shaders.addHitGroup(GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_pom_material_rayportal_closestHit_wboit), nullptr, nullptr);
+                shaders.addHitGroup(GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_pom_material_rayportal_closestHit_wboit), nullptr, nullptr);
               } else {
-                shaders.addHitGroup(GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_pom_material_opaque_translucent_closestHit_wboit), nullptr, nullptr);
+                shaders.addHitGroup(GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_pom_material_opaque_translucent_closestHit_wboit), nullptr, nullptr);
               }
             } else {
               if (includePortals) {
-                shaders.addHitGroup(GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_material_rayportal_closestHit_wboit), nullptr, nullptr);
+                shaders.addHitGroup(GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_material_rayportal_closestHit_wboit), nullptr, nullptr);
               } else {
-                shaders.addHitGroup(GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_material_opaque_translucent_closestHit_wboit), nullptr, nullptr);
+                shaders.addHitGroup(GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_material_opaque_translucent_closestHit_wboit), nullptr, nullptr);
               }
             }
           }
@@ -1927,15 +2112,15 @@ namespace dxvk {
       if (useRayQuery) {
         if (nrcEnabled) {
           if (useNeeCache) {
-            shaders.addGeneralShader(GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_rayquery_raygen_nrc_neeCache));
+            shaders.addGeneralShader(GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_rayquery_raygen_nrc_neeCache));
           } else {
-            shaders.addGeneralShader(GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_rayquery_raygen_nrc));
+            shaders.addGeneralShader(GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_rayquery_raygen_nrc));
           }
         } else {
           if (useNeeCache) {
-            shaders.addGeneralShader(GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_rayquery_raygen_neeCache));
+            shaders.addGeneralShader(GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_rayquery_raygen_neeCache));
           } else {
-            shaders.addGeneralShader(GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_rayquery_raygen));
+            shaders.addGeneralShader(GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_rayquery_raygen));
           }
         }
         shaders.debugName = "Integrate Indirect RayQuery (RGS)";
@@ -1943,15 +2128,15 @@ namespace dxvk {
         if (nrcEnabled) {
           if (serEnabled) {
             if (useNeeCache) {
-              shaders.addGeneralShader(GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_raygen_ser_nrc_neeCache));
+              shaders.addGeneralShader(GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_raygen_ser_nrc_neeCache));
             } else {
-              shaders.addGeneralShader(GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_raygen_ser_nrc));
+              shaders.addGeneralShader(GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_raygen_ser_nrc));
             }
           } else {
             if (useNeeCache) {
-              shaders.addGeneralShader(GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_raygen_nrc_neeCache));
+              shaders.addGeneralShader(GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_raygen_nrc_neeCache));
             } else {
-              shaders.addGeneralShader(GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_raygen_nrc));
+              shaders.addGeneralShader(GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_raygen_nrc));
             }
           }
         } else {
@@ -1959,18 +2144,18 @@ namespace dxvk {
             // OMM 2-state foliage-ray variants (rtx.foliageRays.fastRayMode).
             if (useFoliageRaysOmm2StateVariant(ommEnabled)) {
               shaders.addGeneralShader(useNeeCache
-                ? GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_raygen_ser_neeCache_omm2)
-                : GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_raygen_ser_omm2));
+                ? GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_raygen_ser_neeCache_omm2)
+                : GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_raygen_ser_omm2));
             } else if (useNeeCache) {
-              shaders.addGeneralShader(GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_raygen_ser_neeCache));
+              shaders.addGeneralShader(GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_raygen_ser_neeCache));
             } else {
-              shaders.addGeneralShader(GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_raygen_ser));
+              shaders.addGeneralShader(GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_raygen_ser));
             }
           } else {
             if (useNeeCache) {
-              shaders.addGeneralShader(GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_raygen_neeCache));
+              shaders.addGeneralShader(GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_raygen_neeCache));
             } else {
-              shaders.addGeneralShader(GET_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_raygen));
+              shaders.addGeneralShader(GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_RAYGEN_BIT_KHR, IntegrateIndirectRayGenShader, integrate_indirect_raygen));
             }
           }
         }
@@ -1993,29 +2178,29 @@ namespace dxvk {
           if (useNeeCache) {
             if (pomEnabled) {
               if (includePortals) {
-                shaders.addHitGroup(GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_nrc_neeCache_pom_material_rayportal_closestHit), nullptr, nullptr);
+                shaders.addHitGroup(GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_nrc_neeCache_pom_material_rayportal_closestHit), nullptr, nullptr);
               } else {
-                shaders.addHitGroup(GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_nrc_neeCache_pom_material_opaque_translucent_closestHit), nullptr, nullptr);
+                shaders.addHitGroup(GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_nrc_neeCache_pom_material_opaque_translucent_closestHit), nullptr, nullptr);
               }
             } else {
               if (includePortals) {
-                shaders.addHitGroup(GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_nrc_neeCache_material_rayportal_closestHit), nullptr, nullptr);
+                shaders.addHitGroup(GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_nrc_neeCache_material_rayportal_closestHit), nullptr, nullptr);
               } else {
-                shaders.addHitGroup(GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_nrc_neeCache_material_opaque_translucent_closestHit), nullptr, nullptr);
+                shaders.addHitGroup(GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_nrc_neeCache_material_opaque_translucent_closestHit), nullptr, nullptr);
               }
             }
           } else {
             if (pomEnabled) {
               if (includePortals) {
-                shaders.addHitGroup(GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_nrc_pom_material_rayportal_closestHit), nullptr, nullptr);
+                shaders.addHitGroup(GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_nrc_pom_material_rayportal_closestHit), nullptr, nullptr);
               } else {
-                shaders.addHitGroup(GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_nrc_pom_material_opaque_translucent_closestHit), nullptr, nullptr);
+                shaders.addHitGroup(GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_nrc_pom_material_opaque_translucent_closestHit), nullptr, nullptr);
               }
             } else {
               if (includePortals) {
-                shaders.addHitGroup(GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_nrc_material_rayportal_closestHit), nullptr, nullptr);
+                shaders.addHitGroup(GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_nrc_material_rayportal_closestHit), nullptr, nullptr);
               } else {
-                shaders.addHitGroup(GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_nrc_material_opaque_translucent_closestHit), nullptr, nullptr);
+                shaders.addHitGroup(GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_nrc_material_opaque_translucent_closestHit), nullptr, nullptr);
               }
             }
           }
@@ -2023,29 +2208,29 @@ namespace dxvk {
           if (useNeeCache) {
             if (pomEnabled) {
               if (includePortals) {
-                shaders.addHitGroup(GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_neeCache_pom_material_rayportal_closestHit), nullptr, nullptr);
+                shaders.addHitGroup(GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_neeCache_pom_material_rayportal_closestHit), nullptr, nullptr);
               } else {
-                shaders.addHitGroup(GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_neeCache_pom_material_opaque_translucent_closestHit), nullptr, nullptr);
+                shaders.addHitGroup(GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_neeCache_pom_material_opaque_translucent_closestHit), nullptr, nullptr);
               }
             } else {
               if (includePortals) {
-                shaders.addHitGroup(GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_neeCache_material_rayportal_closestHit), nullptr, nullptr);
+                shaders.addHitGroup(GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_neeCache_material_rayportal_closestHit), nullptr, nullptr);
               } else {
-                shaders.addHitGroup(GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_neeCache_material_opaque_translucent_closestHit), nullptr, nullptr);
+                shaders.addHitGroup(GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_neeCache_material_opaque_translucent_closestHit), nullptr, nullptr);
               }
             }
           } else {
             if (pomEnabled) {
               if (includePortals) {
-                shaders.addHitGroup(GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_pom_material_rayportal_closestHit), nullptr, nullptr);
+                shaders.addHitGroup(GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_pom_material_rayportal_closestHit), nullptr, nullptr);
               } else {
-                shaders.addHitGroup(GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_pom_material_opaque_translucent_closestHit), nullptr, nullptr);
+                shaders.addHitGroup(GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_pom_material_opaque_translucent_closestHit), nullptr, nullptr);
               }
             } else {
               if (includePortals) {
-                shaders.addHitGroup(GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_material_rayportal_closestHit), nullptr, nullptr);
+                shaders.addHitGroup(GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_material_rayportal_closestHit), nullptr, nullptr);
               } else {
-                shaders.addHitGroup(GET_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_material_opaque_translucent_closestHit), nullptr, nullptr);
+                shaders.addHitGroup(GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, IntegrateIndirectClosestHitShader, integrate_indirect_material_opaque_translucent_closestHit), nullptr, nullptr);
               }
             }
           }
@@ -2062,32 +2247,34 @@ namespace dxvk {
   }
 
   Rc<DxvkShader> DxvkPathtracerIntegrateIndirect::getComputeShader(const bool useNeeCache, const bool nrcEnabled, const bool wboitEnabled) const {
+    const bool terrainEnabled = m_device->getCommon()->getSceneManager().getTerrainBlendArgs().enabled;
+
     if (wboitEnabled) {
       if (nrcEnabled) {
         if (useNeeCache) {
-          return GET_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateIndirectRayGenShader, integrate_indirect_rayquery_nrc_neeCache_wboit);
+          return GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateIndirectRayGenShader, integrate_indirect_rayquery_nrc_neeCache_wboit);
         } else {
-          return GET_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateIndirectRayGenShader, integrate_indirect_rayquery_nrc_wboit);
+          return GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateIndirectRayGenShader, integrate_indirect_rayquery_nrc_wboit);
         }
       } else {
         if (useNeeCache) {
-          return GET_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateIndirectRayGenShader, integrate_indirect_rayquery_neeCache_wboit);
+          return GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateIndirectRayGenShader, integrate_indirect_rayquery_neeCache_wboit);
         } else {
-          return GET_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateIndirectRayGenShader, integrate_indirect_rayquery_wboit);
+          return GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateIndirectRayGenShader, integrate_indirect_rayquery_wboit);
         }
       }
     } else {
       if (nrcEnabled) {
         if (useNeeCache) {
-          return GET_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateIndirectRayGenShader, integrate_indirect_rayquery_nrc_neeCache);
+          return GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateIndirectRayGenShader, integrate_indirect_rayquery_nrc_neeCache);
         } else {
-          return GET_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateIndirectRayGenShader, integrate_indirect_rayquery_nrc);
+          return GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateIndirectRayGenShader, integrate_indirect_rayquery_nrc);
         }
       } else {
         if (useNeeCache) {
-          return GET_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateIndirectRayGenShader, integrate_indirect_rayquery_neeCache);
+          return GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateIndirectRayGenShader, integrate_indirect_rayquery_neeCache);
         } else {
-          return GET_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateIndirectRayGenShader, integrate_indirect_rayquery);
+          return GET_TERRAIN_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateIndirectRayGenShader, integrate_indirect_rayquery);
         }
       }
     }
@@ -2106,3 +2293,7 @@ namespace dxvk {
     }
   }
 }
+
+#undef GET_TERRAIN_SHADER_VARIANT
+
+#undef GET_TERRAIN_SHADOW_SHADER_VARIANT

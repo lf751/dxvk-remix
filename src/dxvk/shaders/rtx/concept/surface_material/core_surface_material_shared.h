@@ -119,7 +119,10 @@
 #define CORE_MATERIAL_EXT_OFFSET_DISPLACE_IN          36 // f16 (scaled, 0 without POM, as in the full record)
 #define CORE_MATERIAL_EXT_OFFSET_DISPLACE_OUT         38 // f16
 #define CORE_MATERIAL_EXT_OFFSET_THIN_FILM_THICKNESS  40 // f16 (normalized, as in the full record)
-#define CORE_MATERIAL_EXT_USED_BYTES                  42 // 42-63 spare (zero)
+#define CORE_MATERIAL_EXT_USED_BYTES                  44 // 44-63 spare (zero)
 // Bytes 0-31 of an entry whose material has no extension hold SURFACE_MATERIAL_EXTENSION_FLAG_NO_SUBSURFACE flags and
 // the three subsurface texture indices invalid (0xFFFF). Everything else is zero.
 #define CORE_MATERIAL_EXT_NO_EXTENSION_TEXTURE        0xFFFFu
+
+#define CORE_MATERIAL_SURFACE_WORLD_OPACITY (1u << 29)
+#define CORE_MATERIAL_EXT_OFFSET_SECONDARY_TEXTURE 42

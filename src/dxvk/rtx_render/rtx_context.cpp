@@ -1772,6 +1772,7 @@ namespace dxvk {
       rtOutput.m_compositeOutputExtent.height / static_cast<float>(rtOutput.m_finalOutputExtent.height) };
 
     constants.terrainArgs = getSceneManager().getTerrainBaker().getTerrainArgs();
+    constants.terrainBlendArgs = getSceneManager().getTerrainBlendArgs();
 
     constants.sssArgs.enableThinOpaque = RtxOptions::SubsurfaceScattering::enableThinOpaque();
     constants.sssArgs.enableDiffusionProfile = RtxOptions::SubsurfaceScattering::enableDiffusionProfile();
@@ -3459,6 +3460,11 @@ namespace dxvk {
 
   void RtxContext::bakeTerrain(const frontend::RasterDrawInfo& info, const std::function<void(const frontend::RasterPass&)>& draw,
                                frontend::RasterResult& result) {
+    const auto& preset = getSceneManager().getActiveTerrainBlendPreset();
+    if (preset) {
+      result.material = preset->materials[0].get();
+      return;
+    }
     TerrainBaker& terrainBaker = getSceneManager().getTerrainBaker();
     if (!terrainBaker.enableBaking()) {
       return;

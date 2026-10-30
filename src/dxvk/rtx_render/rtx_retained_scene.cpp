@@ -1191,7 +1191,8 @@ namespace dxvk {
       const RasterGeometry& input = drawCall.getGeometryData();
       const RasterGeometry& built = blas.input.getGeometryData();
       if (input.getHashForRule<rules::FullGeometryHash>() == built.getHashForRule<rules::FullGeometryHash>() &&
-          drawCall.getSkinningState().boneHash == blas.input.getSkinningState().boneHash) {
+          drawCall.getSkinningState().boneHash == blas.input.getSkinningState().boneHash &&
+          m_scene.shouldSmoothNormals(drawCall) == blas.modifiedGeometryData.smoothNormalsApplied) {
         // Same geometry: another instance of it, possibly with another material.
         blas.cacheMaterial(drawCall.getMaterialData());
       } else if (input.hashes[HashComponents::Indices] == built.hashes[HashComponents::Indices] &&
@@ -1283,7 +1284,7 @@ namespace dxvk {
       return;
     }
     // As processDrawCallState does after a build or vertex update.
-    if (drawCall.getCategoryFlags().test(InstanceCategories::SmoothNormals)) {
+    if (m_scene.shouldSmoothNormals(drawCall)) {
       m_scene.device()->getCommon()->metaGeometryUtils().dispatchSmoothNormals(ctx, drawCall.getGeometryData(), blas.modifiedGeometryData);
       blas.modifiedGeometryData.smoothNormalsApplied = true;
       m_scene.syncLinkedInstances(&blas);

@@ -412,6 +412,9 @@ endif
 # different set of arguments.
 # Note: Append -binary to the runtime shader command arguments to output SPIR-V in binary form rather than as C headers.
 rtx_shaders_runtime_command_arguments = rtx_shaders_command_arguments + [ '-binary' ]
+if get_option('compress_embedded_shaders')
+  rtx_shaders_command_arguments += [ '-compress' ]
+endif
 
 # A release build runs spirv-opt over the embedded shaders. The runtime recompilation arguments above do not include it.
 if release_build

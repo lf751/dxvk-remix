@@ -487,6 +487,12 @@ Registers a texture hash into a named category — used by the asset
 replacer to match captured content against runtime classifications
 (sky, terrain, UI, etc.) without needing per-frame draw-time hints.
 
+The 32-bit D3D9 bridge forwards `AddTextureHash` synchronously and returns the runtime's result.
+It also fills `dxvk_GetTextureHash`: pass a live bridge-created `IDirect3DTexture9` to obtain the server texture's
+64-bit content hash. Null arguments and missing or non-2D server resources return `INVALID_ARGUMENTS`.
+The hash output is written only on success. `RemoveTextureHash` remains null in the bridge interface.
+The bridge client and server must come from the same build.
+
 ---
 
 ## Configuration — `SetConfigVariable`

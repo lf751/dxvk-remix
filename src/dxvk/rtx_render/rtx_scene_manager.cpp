@@ -19,6 +19,7 @@
 * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 * DEALINGS IN THE SOFTWARE.
 */
+#include <cmath>
 #include <limits>
 #include <mutex>
 #include <vector>
@@ -297,6 +298,7 @@ namespace dxvk {
 
   void SceneManager::clear(Rc<DxvkContext> ctx, bool needWfi) {
     ScopedCpuProfileZone();
+    m_terrainCoverageTexture = TextureRef {};
 
     ++m_clearEpoch;
     // The retained scene releases its geometry's buffer slots before the check below.
@@ -590,7 +592,7 @@ namespace dxvk {
 
     // When the SmoothNormals category is set and the input has no normals, force the interleaved
     // vertex layout to include space for normals. The smooth normals compute pass will fill them in later.
-    const bool needsSmoothNormals = drawCallState.getCategoryFlags().test(InstanceCategories::SmoothNormals);
+    const bool needsSmoothNormals = shouldSmoothNormals(drawCallState);
     const bool forceNormals = needsSmoothNormals && !input.normalBuffer.defined();
 
     // When smooth normals state changes (added or removed), promote to kUpdateBVH so the vertex
@@ -1075,6 +1077,16 @@ namespace dxvk {
     const bool legacyMaterialIdentityHashMatch =
         replacementInstance->legacyMaterialIdentityHash == legacyMaterialIdentityHash;
 
+    const bool smoothNormalsChanged = std::any_of(replacementInstance->prims.begin(), replacementInstance->prims.end(),
+      [this](const PrimInstance& prim) {
+        const auto* instance = prim.getInstance();
+        if (instance == nullptr || instance->getBlas() == nullptr) {
+          return false;
+        }
+        const auto* blas = instance->getBlas();
+        return shouldSmoothNormals(blas->input) != blas->modifiedGeometryData.smoothNormalsApplied;
+      });
+
     const bool usePreservePath =
         RtxOptions::enablePreservePath() &&
         !replacementInstance->prims.empty() &&
@@ -1088,6 +1100,7 @@ namespace dxvk {
         activeReplacementsMatch &&
         legacyMaterialIdentityHashMatch &&
         !terrainCascadesJustChanged &&
+        !smoothNormalsChanged &&
         cachedTexturesValidForPreserve;
 
     // The draw state to read from after the path ran (preserveReplacementInstance returns `input`).
@@ -1614,7 +1627,7 @@ namespace dxvk {
     }
     if (m_bufferCache.getActiveCount() != 0) {
       ONCE(Logger::err(str::format("RetainedBufferTable: ", m_bufferCache.getActiveCount(),
-                                   " buffer slot(s) still registered after scene clear — registration/release imbalance")));
+                                   " buffer slot(s) still registered after scene clear â€” registration/release imbalance")));
       ONCE(assert(false && "RetainedBufferTable: detected possible buffer leak."));
     }
   }
@@ -1866,6 +1879,10 @@ namespace dxvk {
       capturer->setInstanceUpdateFlag(instance, GameCapturer::InstFlag::NormalsUpdate);
     }
     
+    instance.surface.terrainBlend = drawCall.testCategoryFlags(InstanceCategories::Terrain) && getActiveTerrainBlendPreset() != nullptr;
+    instance.surface.worldSpaceSecondaryOpacity = lookupHash(LegacyMaterialDefaults::worldSpaceSecondaryOpacityTextures(),
+      drawCall.getMaterialData().getColorTexture().getImageHash());
+
     // Create and bind the RT material
     uint32_t newMatIdx = kInvalidMaterialCacheIndex;
     const RtSurfaceMaterial& surfaceMaterial = createSurfaceMaterial(*material, drawCall, &newMatIdx);
@@ -2013,10 +2030,105 @@ namespace dxvk {
     }
   }
 
-  // Helper to populate the texture cache with this resource (and patch sampler if required for texture)
-  // If 'inout_samplerFeedbackStamp' is non-null and still INVALID, it is seeded from the
-  // first present texture; that stamp is then reused so subsequent textures in the same
-  // material are grouped together for sampler-feedback streaming.
+  const std::shared_ptr<const TerrainBlendPreset>& SceneManager::getActiveTerrainBlendPreset() {
+    const uint32_t frame = m_device->getCurrentFrameId();
+    if (m_terrainBlendFrame != frame) {
+      m_activeTerrainBlendPreset = m_pReplacer->getTerrainBlendPreset();
+      m_terrainBlendFrame = frame;
+    }
+    return m_activeTerrainBlendPreset;
+  }
+
+  bool SceneManager::shouldSmoothNormals(const SceneDraw& drawCallState) {
+    if (drawCallState.testCategoryFlags(InstanceCategories::SmoothNormals)) {
+      return true;
+    }
+    if (!drawCallState.testCategoryFlags(InstanceCategories::Terrain)) {
+      return false;
+    }
+    const auto& preset = getActiveTerrainBlendPreset();
+    return preset != nullptr && preset->smoothNormals;
+  }
+
+  void SceneManager::prepareTerrainBlend() {
+    m_terrainBlendArgs = TerrainBlendArgs {};
+    m_terrainBlendArgs.zUp = RtxOptions::zUp();
+    const auto& worldOffset = m_cameraManager.getCamera(CameraType::Main).getArtificialWorldOffset();
+    m_terrainBlendArgs.worldOffset = vec4(-worldOffset.x, -worldOffset.y, -worldOffset.z, 0.f);
+    const float maskScale = LegacyMaterialDefaults::worldSpaceSecondaryOpacityScale();
+    m_terrainBlendArgs.coverageUvScaleOffset = vec4(maskScale, maskScale, 0.f, 0.f);
+    const auto& preset = getActiveTerrainBlendPreset();
+    if (!preset) {
+      return;
+    }
+
+    m_terrainBlendArgs.enabled = 1;
+    m_terrainBlendArgs.zUp = RtxOptions::zUp();
+    m_terrainBlendArgs.lowElevation = preset->lowElevation;
+    m_terrainBlendArgs.highElevation = preset->highElevation;
+    m_terrainBlendArgs.flipElevation = preset->flipElevation;
+    m_terrainBlendArgs.rockMode = static_cast<uint32_t>(preset->rockMode);
+    m_terrainBlendArgs.rockLowElevation = preset->rockLowElevation;
+    m_terrainBlendArgs.rockHighElevation = preset->rockHighElevation;
+    constexpr float radiansPerDegree = 0.017453292519943295f;
+    m_terrainBlendArgs.slopeCosStart = std::cos(preset->slopeStartDegrees * radiansPerDegree);
+    m_terrainBlendArgs.slopeCosEnd = std::cos(preset->slopeEndDegrees * radiansPerDegree);
+    m_terrainBlendArgs.heightBlendStrength = preset->heightBlendStrength;
+    m_terrainBlendArgs.heightBlendWidth = preset->heightBlendWidth;
+    m_terrainBlendArgs.displacementEnabled = preset->displacementEnabled &&
+      preset->displacementMode != TerrainDisplacementMode::Off;
+    m_terrainBlendArgs.displacementMode = static_cast<uint32_t>(preset->displacementMode);
+    m_terrainBlendArgs.displacementStrength = preset->displacementStrength;
+    m_terrainBlendArgs.displacementMaxIterations = static_cast<uint32_t>(preset->displacementMaxIterations);
+    m_terrainBlendArgs.displacementSelfShadowEnabled = preset->displacementSelfShadowEnabled;
+    m_terrainBlendArgs.displacementShadowStrength = preset->displacementShadowStrength;
+    m_terrainBlendArgs.displacementShadowMaxIterations = static_cast<uint32_t>(preset->displacementShadowMaxIterations);
+    m_terrainBlendArgs.displacementInward = vec4(preset->displacementInward[0], preset->displacementInward[1],
+      preset->displacementInward[2], preset->displacementInward[3]);
+    m_terrainBlendArgs.displacementOutward = vec4(preset->displacementOutward[0], preset->displacementOutward[1],
+      preset->displacementOutward[2], preset->displacementOutward[3]);
+    m_terrainBlendArgs.displacementHeightMin = vec4(preset->displacementHeightMin[0], preset->displacementHeightMin[1],
+      preset->displacementHeightMin[2], preset->displacementHeightMin[3]);
+    m_terrainBlendArgs.displacementHeightMax = vec4(preset->displacementHeightMax[0], preset->displacementHeightMax[1],
+      preset->displacementHeightMax[2], preset->displacementHeightMax[3]);
+    m_terrainBlendArgs.dirtStrength = preset->dirtStrength;
+    m_terrainBlendArgs.dirtWidth = preset->dirtWidth;
+    m_terrainBlendArgs.dirtMinElevation = preset->dirtMinElevation;
+    m_terrainBlendArgs.dirtElevationFadeWidth = preset->dirtElevationFadeWidth;
+    if (preset->dirtStrength > 0.f &&
+        m_terrainCoverageTexture.isValid() && !m_terrainCoverageTexture.isImageEmpty()) {
+      trackTexture(m_terrainCoverageTexture, m_terrainBlendArgs.coverageTextureIndex, true, false);
+      const auto coverageSampler = patchSampler(VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+        VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, {});
+      m_terrainBlendArgs.coverageSamplerIndex = trackSampler(coverageSampler);
+      ONCE(Logger::info("[RTX Terrain Blend] Live grass coverage texture bound for dirt blending."));
+    }
+    const auto sampler = patchSampler(VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_REPEAT,
+      VK_SAMPLER_ADDRESS_MODE_REPEAT, VK_SAMPLER_ADDRESS_MODE_REPEAT, {});
+    const uint32_t samplerIndex = trackSampler(sampler);
+
+    for (uint32_t i = 0; i < 4; ++i) {
+      if (!preset->materials[i]) {
+        continue;
+      }
+      const auto& material = preset->materials[i]->getOpaqueMaterialData();
+      auto& layer = m_terrainBlendArgs.layers[i];
+      layer.samplerIndex = samplerIndex;
+      layer.unitsPerRepeat = preset->unitsPerRepeat[i];
+      layer.roughnessConstant = material.getRoughnessConstant();
+      const auto& color = material.getAlbedoConstant();
+      layer.albedoConstant = vec4(color.x, color.y, color.z, 1.f);
+      trackTexture(material.getAlbedoOpacityTexture(), layer.albedoTextureIndex, true, false);
+      trackTexture(material.getNormalTexture(), layer.normalTextureIndex, true, false);
+      trackTexture(material.getRoughnessTexture(), layer.roughnessTextureIndex, true, false);
+      trackTexture(material.getHeightTexture(), layer.heightTextureIndex, true, false);
+      const auto* view = material.getAlbedoOpacityTexture().getImageView();
+      layer.albedoIsSrgb = view != nullptr && TextureUtils::isSRGB(view->info().format) ? 1 : 0;
+    }
+  }
+
+  // If no feedback stamp has been assigned, the first present texture seeds the
+  // stamp so subsequent textures in the material share the same streaming group.
   void SceneManager::trackTexture(const TextureRef& inputTexture,
                                   uint32_t& textureIndex,
                                   bool hasTexcoords,
@@ -2073,10 +2185,13 @@ namespace dxvk {
     // from the triangle mesh (area-weighted) and written into the normal buffer.
     // Only dispatch on BVH build/update - for static geometry, positions don't change so
     // the normals computed on the first pass remain valid for subsequent frames.
-    if (drawCallState.getCategoryFlags().test(InstanceCategories::SmoothNormals) &&
+    if (shouldSmoothNormals(drawCallState) &&
         (result == ObjectCacheState::KBuildBVH || result == ObjectCacheState::kUpdateBVH)) {
       m_device->getCommon()->metaGeometryUtils().dispatchSmoothNormals(ctx, drawCallState.getGeometryData(), pBlas->modifiedGeometryData);
       pBlas->modifiedGeometryData.smoothNormalsApplied = true;
+      if (drawCallState.testCategoryFlags(InstanceCategories::Terrain)) {
+        ONCE(Logger::info("[RTX Terrain Blend] Terrain normal smoothing active."));
+      }
       // dispatchSmoothNormals() changes the vertex buffers, which need to be re-synced.
       syncLinkedInstances(pBlas);
       pBlas->frameLastUpdated = pBlas->frameLastTouched;
@@ -2957,6 +3072,7 @@ namespace dxvk {
     m_graphManager.applySceneOverrides(ctx);
 
     m_terrainBaker->prepareSceneData(ctx);
+    prepareTerrainBlend();
 
     // Binds every instance's mesh to its cached SCCR shell buffer and builds the missing ones. This runs after garbage
     // collection and the anti-cull pass, so the instance table is final, and before the bindless buffer table is

@@ -40,18 +40,31 @@
 #include "rtx_ray_reconstruction.h"
 
 #include <rtx_shaders/rtxdi_initial_sampling.h>
+#include <rtx_shaders/rtxdi_initial_sampling_terrain_shadow.h>
+#include <rtx_shaders/rtxdi_initial_sampling_no_portals_terrain_shadow.h>
 #include <rtx_shaders/rtxdi_initial_sampling_no_portals.h>
 #include "rtx_fork_light_bvh.h"
 #include <rtx_shaders/rtxdi_spatial_reuse.h>
+#include <rtx_shaders/rtxdi_spatial_reuse_terrain_shadow.h>
 #include <rtx_shaders/rtxdi_spatial_reuse_no_bsdf_detail.h>
+#include <rtx_shaders/rtxdi_spatial_reuse_no_bsdf_detail_terrain_shadow.h>
 #include <rtx_shaders/rtxdi_spatial_reuse_no_portals.h>
+#include <rtx_shaders/rtxdi_spatial_reuse_no_portals_terrain_shadow.h>
 #include <rtx_shaders/rtxdi_spatial_reuse_no_portals_no_bsdf_detail.h>
+#include <rtx_shaders/rtxdi_spatial_reuse_no_portals_no_bsdf_detail_terrain_shadow.h>
 #include <rtx_shaders/rtxdi_temporal_reuse.h>
+#include <rtx_shaders/rtxdi_temporal_reuse_terrain_shadow.h>
 #include <rtx_shaders/rtxdi_temporal_reuse_no_portals.h>
+#include <rtx_shaders/rtxdi_temporal_reuse_no_portals_terrain_shadow.h>
 #include <rtx_shaders/rtxdi_compute_gradients.h>
 #include <rtx_shaders/rtxdi_filter_gradients.h>
 #include <rtx_shaders/rtxdi_compute_confidence.h>
 
+
+#define GET_TERRAIN_SHADOW_SHADER_VARIANT(stage, shaderClass, code) \
+  (terrainShadowsEnabled \
+    ? GET_SHADER_VARIANT(stage, shaderClass, code##_terrain_shadow) \
+    : GET_SHADER_VARIANT(stage, shaderClass, code))
 
 namespace dxvk {
 
@@ -85,6 +98,7 @@ namespace dxvk {
         TEXTURE2D(RTXDI_REUSE_BINDING_SS_MVEC_INPUT)
         TEXTURE2D(RTXDI_REUSE_BINDING_POSITION_ERROR_INPUT)
         TEXTURE2D(RTXDI_REUSE_BINDING_SHARED_SURFACE_INDEX_INPUT)
+        TEXTURE2D(RTXDI_REUSE_BINDING_SHARED_TEXTURE_COORD_INPUT)
         TEXTURE2D(RTXDI_REUSE_BINDING_SUBSURFACE_DATA_INPUT)
         TEXTURE2D(RTXDI_REUSE_BINDING_SUBSURFACE_DIFFUSION_PROFILE_DATA_INPUT)
         TEXTURE2D(RTXDI_REUSE_BINDING_SHARED_FLAGS_INPUT)
@@ -127,6 +141,7 @@ namespace dxvk {
         TEXTURE2D(RTXDI_REUSE_BINDING_SS_MVEC_INPUT)
         TEXTURE2D(RTXDI_REUSE_BINDING_POSITION_ERROR_INPUT)
         TEXTURE2D(RTXDI_REUSE_BINDING_SHARED_SURFACE_INDEX_INPUT)
+        TEXTURE2D(RTXDI_REUSE_BINDING_SHARED_TEXTURE_COORD_INPUT)
         TEXTURE2D(RTXDI_REUSE_BINDING_SUBSURFACE_DATA_INPUT)
         TEXTURE2D(RTXDI_REUSE_BINDING_SUBSURFACE_DIFFUSION_PROFILE_DATA_INPUT)
         TEXTURE2D(RTXDI_REUSE_BINDING_SHARED_TERMINATOR_FIX_INPUT)
@@ -171,6 +186,7 @@ namespace dxvk {
         TEXTURE2D(RTXDI_REUSE_BINDING_SS_MVEC_INPUT)
         TEXTURE2D(RTXDI_REUSE_BINDING_POSITION_ERROR_INPUT)
         TEXTURE2D(RTXDI_REUSE_BINDING_SHARED_SURFACE_INDEX_INPUT)
+        TEXTURE2D(RTXDI_REUSE_BINDING_SHARED_TEXTURE_COORD_INPUT)
         TEXTURE2D(RTXDI_REUSE_BINDING_SUBSURFACE_DATA_INPUT)
         TEXTURE2D(RTXDI_REUSE_BINDING_SUBSURFACE_DIFFUSION_PROFILE_DATA_INPUT)
         TEXTURE2D(RTXDI_REUSE_BINDING_SHARED_TERMINATOR_FIX_INPUT)
@@ -232,20 +248,20 @@ namespace dxvk {
 
     PREWARM_SHADER_PIPELINE(RTXDIComputeConfidenceShader);
 
-    Rc<DxvkShader> getRtxdiInitialSamplingShader(bool usePortalShaderVariants) {
+    Rc<DxvkShader> getRtxdiInitialSamplingShader(bool usePortalShaderVariants, bool terrainShadowsEnabled = false) {
       if (usePortalShaderVariants) {
-        return RTXDIInitialSamplingShader::getShader();
+        return GET_TERRAIN_SHADOW_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, RTXDIInitialSamplingShader, rtxdi_initial_sampling);
       }
 
-      return GET_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, RTXDIInitialSamplingShader, rtxdi_initial_sampling_no_portals);
+      return GET_TERRAIN_SHADOW_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, RTXDIInitialSamplingShader, rtxdi_initial_sampling_no_portals);
     }
 
-    Rc<DxvkShader> getRtxdiTemporalReuseShader(bool usePortalShaderVariants) {
+    Rc<DxvkShader> getRtxdiTemporalReuseShader(bool usePortalShaderVariants, bool terrainShadowsEnabled = false) {
       if (usePortalShaderVariants) {
-        return RTXDITemporalReuseShader::getShader();
+        return GET_TERRAIN_SHADOW_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, RTXDITemporalReuseShader, rtxdi_temporal_reuse);
       }
 
-      return GET_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, RTXDITemporalReuseShader, rtxdi_temporal_reuse_no_portals);
+      return GET_TERRAIN_SHADOW_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, RTXDITemporalReuseShader, rtxdi_temporal_reuse_no_portals);
     }
 
     bool useRtxdiSpatialBsdfDetailShaderVariant(const Resources::RaytracingOutput& rtOutput) {
@@ -253,16 +269,16 @@ namespace dxvk {
              rtOutput.m_raytraceArgs.enhanceBSDFDirectLightPower > 0.f;
     }
 
-    Rc<DxvkShader> getRtxdiSpatialReuseShader(bool usePortalShaderVariants, bool useBsdfDetailShaderVariant) {
+    Rc<DxvkShader> getRtxdiSpatialReuseShader(bool usePortalShaderVariants, bool useBsdfDetailShaderVariant, bool terrainShadowsEnabled = false) {
       if (usePortalShaderVariants) {
         return useBsdfDetailShaderVariant
-          ? RTXDISpatialReuseShader::getShader()
-          : GET_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, RTXDISpatialReuseShader, rtxdi_spatial_reuse_no_bsdf_detail);
+          ? GET_TERRAIN_SHADOW_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, RTXDISpatialReuseShader, rtxdi_spatial_reuse)
+          : GET_TERRAIN_SHADOW_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, RTXDISpatialReuseShader, rtxdi_spatial_reuse_no_bsdf_detail);
       }
 
       return useBsdfDetailShaderVariant
-        ? GET_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, RTXDISpatialReuseShader, rtxdi_spatial_reuse_no_portals)
-        : GET_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, RTXDISpatialReuseShader, rtxdi_spatial_reuse_no_portals_no_bsdf_detail);
+        ? GET_TERRAIN_SHADOW_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, RTXDISpatialReuseShader, rtxdi_spatial_reuse_no_portals)
+        : GET_TERRAIN_SHADOW_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, RTXDISpatialReuseShader, rtxdi_spatial_reuse_no_portals_no_bsdf_detail);
     }
 
     struct RTXDIReuseShaderVariantPrewarmer {
@@ -427,6 +443,10 @@ namespace dxvk {
     const auto& numRaysExtent = rtOutput.m_compositeOutputExtent;
     VkExtent3D workgroups = util::computeBlockCount(numRaysExtent, VkExtent3D{ 16, 8, 1 });
     const bool usePortalShaderVariants = useRtxdiPortalShaderVariants();
+    const auto& terrain = rtOutput.m_raytraceArgs.terrainBlendArgs;
+    const bool terrainShadowsEnabled = terrain.enabled != 0 && terrain.displacementEnabled != 0 &&
+      terrain.displacementStrength > 0.f && terrain.displacementSelfShadowEnabled != 0 &&
+      terrain.displacementShadowStrength > 0.f;
 
     // The passes launch over the active-pixel list when this frame's args say so.
     const SparseRendering& sparseRendering = ctx->getCommonObjects()->metaSparseRendering();
@@ -454,6 +474,7 @@ namespace dxvk {
       ctx->bindResourceView(RTXDI_REUSE_BINDING_CONE_RADIUS_INPUT, rtOutput.m_primaryConeRadius.view, nullptr);
       ctx->bindResourceView(RTXDI_REUSE_BINDING_POSITION_ERROR_INPUT, rtOutput.m_primaryPositionError.view, nullptr);
       ctx->bindResourceView(RTXDI_REUSE_BINDING_SHARED_SURFACE_INDEX_INPUT, rtOutput.m_sharedSurfaceIndex.view(Resources::AccessType::Read), nullptr);
+      ctx->bindResourceView(RTXDI_REUSE_BINDING_SHARED_TEXTURE_COORD_INPUT, rtOutput.m_sharedTextureCoord.view, nullptr);
       ctx->bindResourceView(RTXDI_REUSE_BINDING_SUBSURFACE_DATA_INPUT, rtOutput.m_sharedSubsurfaceData.view, nullptr);
       ctx->bindResourceView(RTXDI_REUSE_BINDING_SUBSURFACE_DIFFUSION_PROFILE_DATA_INPUT, rtOutput.m_sharedSubsurfaceDiffusionProfileData.view, nullptr);
       ctx->bindResourceView(RTXDI_REUSE_BINDING_SHARED_TERMINATOR_FIX_INPUT, rtOutput.getCurrentSharedTerminatorFix().view, nullptr);
@@ -480,14 +501,14 @@ namespace dxvk {
 
       {
         ScopedGpuProfileZone(ctx, "RTXDI Initial Sampling");
-        ctx->bindShader(VK_SHADER_STAGE_COMPUTE_BIT, getRtxdiInitialSamplingShader(usePortalShaderVariants));
+        ctx->bindShader(VK_SHADER_STAGE_COMPUTE_BIT, getRtxdiInitialSamplingShader(usePortalShaderVariants, terrainShadowsEnabled));
         sparseRendering.dispatchLaunch(*ctx, sparseArgs, COMPACT_ACTIVE_PIXELS_LAUNCH_RTXDI_INITIAL, workgroups);
         ctx->recordGpuStageTiming("RTXDIInitialSampling"); // Per-pass [PerfGpu] split
       }
 
       {
         ScopedGpuProfileZone(ctx, "RTXDI Temporal Reuse");
-        ctx->bindShader(VK_SHADER_STAGE_COMPUTE_BIT, getRtxdiTemporalReuseShader(usePortalShaderVariants));
+        ctx->bindShader(VK_SHADER_STAGE_COMPUTE_BIT, getRtxdiTemporalReuseShader(usePortalShaderVariants, terrainShadowsEnabled));
         sparseRendering.dispatchLaunch(*ctx, sparseArgs, COMPACT_ACTIVE_PIXELS_LAUNCH_RTXDI_REUSE, workgroups);
         ctx->recordGpuStageTiming("RTXDITemporalReuse"); // Per-pass [PerfGpu] split
       }
@@ -513,6 +534,7 @@ namespace dxvk {
       ctx->bindResourceView(RTXDI_REUSE_BINDING_CONE_RADIUS_INPUT, rtOutput.m_primaryConeRadius.view, nullptr);
       ctx->bindResourceView(RTXDI_REUSE_BINDING_POSITION_ERROR_INPUT, rtOutput.m_primaryPositionError.view, nullptr);
       ctx->bindResourceView(RTXDI_REUSE_BINDING_SHARED_SURFACE_INDEX_INPUT, rtOutput.m_sharedSurfaceIndex.view(Resources::AccessType::Read), nullptr);
+      ctx->bindResourceView(RTXDI_REUSE_BINDING_SHARED_TEXTURE_COORD_INPUT, rtOutput.m_sharedTextureCoord.view, nullptr);
       ctx->bindResourceView(RTXDI_REUSE_BINDING_SUBSURFACE_DATA_INPUT, rtOutput.m_sharedSubsurfaceData.view, nullptr);
       ctx->bindResourceView(RTXDI_REUSE_BINDING_SUBSURFACE_DIFFUSION_PROFILE_DATA_INPUT, rtOutput.m_sharedSubsurfaceDiffusionProfileData.view, nullptr);
       ctx->bindResourceView(RTXDI_REUSE_BINDING_SHARED_TERMINATOR_FIX_INPUT, rtOutput.getCurrentSharedTerminatorFix().view, nullptr);
@@ -538,7 +560,7 @@ namespace dxvk {
 
       ctx->bindShader(VK_SHADER_STAGE_COMPUTE_BIT, getRtxdiSpatialReuseShader(
         usePortalShaderVariants,
-        useRtxdiSpatialBsdfDetailShaderVariant(rtOutput)));
+        useRtxdiSpatialBsdfDetailShaderVariant(rtOutput), terrainShadowsEnabled));
       sparseRendering.dispatchLaunch(*ctx, sparseArgs, COMPACT_ACTIVE_PIXELS_LAUNCH_RTXDI_REUSE, workgroups);
       ctx->recordGpuStageTiming("RTXDISpatialReuse"); // Per-pass [PerfGpu] split
     }
@@ -686,3 +708,5 @@ namespace dxvk {
   }
 
 }
+
+#undef GET_TERRAIN_SHADOW_SHADER_VARIANT

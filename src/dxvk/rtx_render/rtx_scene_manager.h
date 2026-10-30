@@ -37,6 +37,7 @@
 #include "../util/util_hashtable.h"
 
 #include "rtx_globals.h"
+#include "../shaders/rtx/pass/terrain_blend_args.h"
 #include "rtx_retained_buffer_table.h"
 #include "rtx_types.h"
 #include "rtx_frontend_interface.h"
@@ -243,7 +244,12 @@ public:
   void discoverFog(const FogState& fog, const SurfaceMaterialInputs* draw);
   // The parts of submitDrawState a frontend needs for draws it describes to the scene instead of submitting: the render
   // material of a legacy material (material replacement, ray portal or legacy conversion) and the scene clears so far.
-  MaterialData resolveDrawMaterial(const LegacyMaterialData& material) { return determineMaterialData(nullptr, material); }
+  MaterialData resolveDrawMaterial(const LegacyMaterialData& material) {
+    if (lookupHash(LegacyMaterialDefaults::worldSpaceSecondaryOpacityTextures(), material.getColorTexture().getImageHash())) {
+      m_terrainCoverageTexture = material.getColorTexture2();
+    }
+    return determineMaterialData(nullptr, material);
+  }
   uint64_t clearEpoch() const { return m_clearEpoch; }
   // The USD mesh replacements for a frontend's asset keys, in the order submitDrawState looks them up, or null.
   // *matchedKey is the index of the key that matched (frontend::ReplacementQuery::matchedKey). Nothing is tracked.
@@ -371,6 +377,8 @@ public:
   GraphManager& getGraphManager() { return m_graphManager; }
   std::unique_ptr<AssetReplacer>& getAssetReplacer() { return m_pReplacer; }
   TerrainBaker& getTerrainBaker() { return *m_terrainBaker.get(); }
+  const TerrainBlendArgs& getTerrainBlendArgs() const { return m_terrainBlendArgs; }
+  const std::shared_ptr<const TerrainBlendPreset>& getActiveTerrainBlendPreset();
 
   // Scene utility functions
   static Vector3 getSceneUp();
@@ -513,6 +521,12 @@ public:
   bool isAntiCullingSupported() const { return m_isAntiCullingSupported; }
 
 private:
+  void prepareTerrainBlend();
+  TerrainBlendArgs m_terrainBlendArgs;
+  TextureRef m_terrainCoverageTexture;
+  std::shared_ptr<const TerrainBlendPreset> m_activeTerrainBlendPreset;
+  uint32_t m_terrainBlendFrame = UINT32_MAX;
+
   enum class ObjectCacheState
   {
     kUpdateInstance = 0,
@@ -523,6 +537,7 @@ private:
   // Handles conversion of geometry data coming from a draw call, to the data used by the raytracing backend
   template<bool isNew>
   ObjectCacheState processGeometryInfo(Rc<DxvkContext> ctx, const SceneDraw& drawCallState, BlasEntry* pBlas);
+  bool shouldSmoothNormals(const SceneDraw& drawCallState);
 
   // Consumes a draw call state and updates the scene state accordingly
   RtInstance* processDrawCallState(const Rc<DxvkContext>& ctx, 
