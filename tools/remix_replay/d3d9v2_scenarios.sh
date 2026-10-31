@@ -822,7 +822,7 @@ for sc in sys.argv[3:]:
                f"before {first_on}, after {s_on}")
     elif sc in ("fused-world", "fused-view"):
         expect(None if ne is None else "inputs=" not in ne, sc, "E3", "on: no notEligible inputs class (fused draws handed over)", ne or "")
-    elif sc == "reset":
+    elif sc in ("reset", "reset-rt-texture"):
         first_on = num(on.stat("surfaces", 0))
         expect(both(first_on, s_on, lambda a, b: a == b), sc, "M1", "on: surfaces after the Reset == before (no doubled objects left)",
                f"before {first_on}, after {s_on}")
