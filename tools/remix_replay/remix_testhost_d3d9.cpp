@@ -1589,10 +1589,23 @@ namespace {
     }
   }
 
-  int runReset(Host& h, const D3D9ScenarioArgs& a) {
+  int runReset(Host& h, const D3D9ScenarioArgs& a, bool bindRenderTargetTexture = false) {
     // Default-pool buffers, which a Reset requires the game to release and create again.
     Mesh ground = h.ground(D3DPOOL_DEFAULT);
     Mesh crate = h.crate(D3DPOOL_DEFAULT);
+    if (bindRenderTargetTexture) {
+      IDirect3DTexture9* texture = nullptr;
+      HRESULT hr = h.m_device->CreateTexture(4, 4, 1, D3DUSAGE_RENDERTARGET, D3DFMT_A8R8G8B8,
+                                            D3DPOOL_DEFAULT, &texture, nullptr);
+      if (FAILED(hr)) {
+        fail("CreateTexture before Reset", hr);
+      }
+      hr = h.m_device->SetTexture(1, texture);
+      release(texture);
+      if (FAILED(hr)) {
+        fail("SetTexture before Reset", hr);
+      }
+    }
     for (int frame = 0; frame < a.frames; ++frame) {
       if (frame == a.eventFrame) {
         h.m_device->SetStreamSource(0, nullptr, 0, 0);
@@ -1603,6 +1616,15 @@ namespace {
         const HRESULT hr = h.m_device->Reset(&pp);
         if (FAILED(hr)) {
           fail("Reset", hr);
+        }
+        if (bindRenderTargetTexture) {
+          IDirect3DBaseTexture9* texture = nullptr;
+          const HRESULT getTextureResult = h.m_device->GetTexture(1, &texture);
+          const bool unbound = texture == nullptr;
+          release(texture);
+          if (FAILED(getTextureResult) || !unbound) {
+            fail("Reset must unbind render-target texture", E_FAIL);
+          }
         }
         ground = h.ground(D3DPOOL_DEFAULT);
         crate = h.crate(D3DPOOL_DEFAULT);
@@ -2616,6 +2638,8 @@ int runD3D9Scenario(const std::wstring& name, const fs::path& runtime, HWND hwnd
     rc = runTexcoordIndex(host, args);
   } else if (name == L"reset") {
     rc = runReset(host, args);
+  } else if (name == L"reset-rt-texture") {
+    rc = runReset(host, args, true);
   } else if (name == L"no-present") {
     rc = runNoPresent(host, args);
   } else if (name == L"sky") {

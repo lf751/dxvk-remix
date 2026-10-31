@@ -43,7 +43,7 @@ STRESS_DELAY_US=${STRESS_DELAY_US:-3000}
 STRESS_CHANCE=${STRESS_CHANCE:-0.25}
 STRESS_SLOTS=${STRESS_SLOTS:-True}
 STRESS_CONF=()
-ALL_D3D9="repeat twice twice-overlay twice-overlay-first worldspace skinned skinned-view-root skinned-passenger ring-reorder ring-static ring-static-precombined topology-churn-omm texcoord-index identity-view fused-world fused-view reset no-present sky sky-numos skybox3d terrain terrain-pbr emitter portals rendertarget vtf instancer fog lights replacement-reject per-draw per-draw-declined per-draw-sentinel bad-values bad-values-clean lifecycle multi-output multi-output-single multi-output-extra gbuffer-nrc gbuffer-pom-sss gbuffer-pom-sss-nrc skinned-view-walk skinned-root-motion skinned-parked skinned-uninit skinned-swap skinned-shared-palette ring-props sky-fog sky-fog-numos"
+ALL_D3D9="repeat twice twice-overlay twice-overlay-first worldspace skinned skinned-view-root skinned-passenger ring-reorder ring-static ring-static-precombined topology-churn-omm texcoord-index identity-view fused-world fused-view reset reset-rt-texture no-present sky sky-numos skybox3d terrain terrain-pbr emitter portals rendertarget vtf instancer fog lights replacement-reject per-draw per-draw-declined per-draw-sentinel bad-values bad-values-clean lifecycle multi-output multi-output-single multi-output-extra gbuffer-nrc gbuffer-pom-sss gbuffer-pom-sss-nrc skinned-view-walk skinned-root-motion skinned-parked skinned-uninit skinned-swap skinned-shared-palette ring-props sky-fog sky-fog-numos"
 # The Remix API frontend's runs of the conformance cases.
 ALL_API="api-bad-values api-bad-values-clean api-lifecycle api-caller-threads api-caller-threads-single"
 ALL="$ALL_D3D9 $ALL_API"
@@ -176,6 +176,7 @@ scenario() {
     fused-world)   ARGS=(--d3d9 fused-world); CONF=("rtx.fusedWorldViewMode=2" "rtx.antiCulling.object.enable=True") ;;
     fused-view)    ARGS=(--d3d9 fused-view); CONF=("rtx.fusedWorldViewMode=1" "rtx.antiCulling.object.enable=True") ;;
     reset)         ARGS=(--d3d9 reset) ;;
+    reset-rt-texture) ARGS=(--d3d9 reset-rt-texture); CONF=("rtx.raytracedRenderTarget.enable=True") ;;
     no-present)    ARGS=(--d3d9 no-present) ;;
     # The game's sky draws are rasterized into the sky matte and probe. rtx.skyMode is set, since a runtime's rtx.conf
     # may turn NUMOS on, which drops the game's sky draws.

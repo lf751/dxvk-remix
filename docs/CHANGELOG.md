@@ -30,6 +30,12 @@ Entry format:
 
 ## 2026-10-31
 
+### D3D9 reset synchronizes active texture and hazard masks
+ResetState now refreshes the derived active texture masks while unbinding texture slots, then recomputes render-target and depth-stencil hazards. This prevents the next draw from dereferencing an unbound texture through a stale active-render-target bit after a fullscreen reset.
+- Options: none.
+- Regression: reset-rt-texture binds a default-pool render-target texture in sampler 1, releases the application reference, resets, checks the binding is cleared and resumes drawing without rebinding that sampler.
+- Evidence: full-dev runtime crash RVA 0x141d5b in D3D9Rtx::makeDrawCallType, read address 0x48 after minimize.
+
 ### JPOG integration: complete dev branch update
 Merge all RemixProjGroup dev changes through 90583a4c1c810d238ccdc2524887b4afa991b4af, including runtime, shader variants, sparse rendering, presets, TLAS refitting, bridge corrections and the pinned RTXDI/NUMOS dependencies. Preserve authored terrain blend, dirt/exclusion, selectable POM, shader compression and converted-buffer smooth normals. Terrain shader permutations now cover the new NRC plus stochastic-alpha combinations as well.
 - Options and defaults: all upstream dev changes are included; target-game configuration remains authored locally.

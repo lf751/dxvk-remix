@@ -7884,8 +7884,12 @@ namespace dxvk {
     for (uint32_t i = 0; i < caps::MaxStreams; i++)
       m_state.streamFreq[i] = 1;
 
-    for (uint32_t i = 0; i < m_state.textures.size(); i++)
+    for (uint32_t i = 0; i < m_state.textures.size(); i++) {
       TextureChangePrivate(m_state.textures[i], nullptr);
+      UpdateActiveTextures(i, 0);
+    }
+    UpdateActiveHazardsRT(UINT32_MAX);
+    UpdateActiveHazardsDS(UINT32_MAX);
 
     EmitCs([
       cSize = m_state.textures.size()
