@@ -223,11 +223,10 @@ float coreVisibilityCalcOpacity(CoreSurfaceMaterial core, LegacyTextureOps ops, 
     flagsOnly.secondaryTextureIndex = uint16_t(row.z >> 16);
   }
 
-  vec3 emissiveColor = vec3(0.0f);
   float emissiveBlendOverrideInfluence = float(1.0f);
   SurfaceInteraction opsSurfaceInteraction = surfaceInteraction;
   opaqueSurfaceMaterialApplyTextureOperations(flagsOnly, coreVisibilityMaterialSurface(core, ops), opsSurfaceInteraction,
-    albedo, emissiveColor, opacity, emissiveBlendOverrideInfluence);
+    albedo, opacity, emissiveBlendOverrideInfluence);
   return opacity;
 }
 

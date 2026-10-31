@@ -4759,7 +4759,7 @@ namespace dxvk {
       " | per-geometry BLAS: built ", bs.dynamicBuilt, ", refit ", bs.dynamicRefit, ", refit-limit rebuilds ", bs.refitLimitRebuilds,
       "; promoted to own BLAS: moved ", bs.promotedMoved, ", hidden/shown ", bs.promotedToggled, ", chronically dirty ", bs.promotedChronic,
       ", mover backoffs ", bs.moverBackoffs,
-      " | TLAS: built ", bs.tlasBuilt, ", skipped ", bs.tlasSkipped,
+      " | TLAS: built ", bs.tlasBuilt, " (refit ", bs.tlasRefit, "), skipped ", bs.tlasSkipped,
       " | compaction: queried ", bs.compactionQueries, ", compacted ", bs.compacted, " (", mib(bs.compactedBytesBefore),
       " -> ", mib(bs.compactedBytesAfter), "), not worth ", bs.compactionNotWorth, ", discarded ", bs.compactionDiscarded,
       " | surface upload ", mib(bs.surfaceBytesUploaded), " of ", mib(bs.surfaceBytesTotal),

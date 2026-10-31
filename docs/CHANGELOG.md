@@ -22,11 +22,19 @@ Entry format:
 ```
 ### <Title>
 <What changed and why, 1-2 sentences.>
-- Options: added `rtx.x.y` (default off) / removed `rtx.a.b` / default flipped `rtx.c` → true.
-- Measured: scene A −1.12 ms, scene B −0.46 ms (in-run A/B).   (only if measured)
+- Options: added `rtx.x.y` (default off) / removed `rtx.a.b` / default flipped `rtx.c` â†’ true.
+- Measured: scene A âˆ’1.12 ms, scene B âˆ’0.46 ms (in-run A/B).   (only if measured)
 - Commits: abc1234, def5678.
 - Docs: [RemixApi.md](RemixApi.md)   (only if a public doc covers it)
 ```
+
+## 2026-10-31
+
+### JPOG integration: complete dev branch update
+Merge all RemixProjGroup dev changes through 90583a4c1c810d238ccdc2524887b4afa991b4af, including runtime, shader variants, sparse rendering, presets, TLAS refitting, bridge corrections and the pinned RTXDI/NUMOS dependencies. Preserve authored terrain blend, dirt/exclusion, selectable POM, shader compression and converted-buffer smooth normals. Terrain shader permutations now cover the new NRC plus stochastic-alpha combinations as well.
+- Options and defaults: all upstream dev changes are included; target-game configuration remains authored locally.
+- Validation: runtime and both bridge architectures are rebuilt; the dedicated unit suite includes upstream GBuffer coverage and custom terrain/geometry regressions. Live visual and performance verification remains a gameplay step.
+- Upstream: https://github.com/RemixProjGroup/dxvk-remix/commit/90583a4c1c810d238ccdc2524887b4afa991b4af.
 
 ## 2026-10-30
 
@@ -77,6 +85,157 @@ without renumbering existing IDs; deploy the client and server from the same bui
 - Options: none; API version and interface layout unchanged.
 - Commits: bridge compatibility port from ab48b452c onto 268fb5b24.
 - Docs: [RemixApi-Migration.md](RemixApi-Migration.md), [RemixApiChangelog.md](../documentation/RemixApiChangelog.md).
+### Remix API: repeated materials, identical transforms and the texture lock
+`CreateMaterial` with a live hash and an identical description now returns before the conversion, so the material's retained users do not rebuild. With different data it now replaces the material, which was ignored before although its users rebuilt. An identical transform in `UpdateRetainedInstances` now changes nothing, where it paid for a matrix inverse and left the instance off the preserve path with no settle queued. `CreateTexture` holds the API mutex only to queue the upload, not while it creates the image and staging buffer and copies the data. The merged BLAS cell size is now derived from `rtx.sceneScale` by default, because without a cell size API hosts get overlapping merged BLASes. It also applies to D3D9 games, where the traced result is the same.
+- Options: default flipped `rtx.accel.autoCellSize` â†’ true.
+- Commits: the commit that adds this entry.
+- Docs: [RemixApi-Performance.md](RemixApi-Performance.md)
+### D3D9 performance guide
+A new guide for people who make or tune mods for D3D9 games without the Remix API: how to find what limits the frame, what the presets and costly features do, the bridge's frame latency settings, content authoring, and how to read the `[Perf]`, `[D3D9v2]`, `[VramBudget]` and `[AccelMem]` lines.
+- Options: none.
+- Commits: the commit that adds this entry.
+- Docs: [D3D9-Performance.md](D3D9-Performance.md)
+
+### Remix API performance guide
+A new guide for plugin and host developers: how to get the best CPU and GPU performance from an integration, with the measured costs, and how to read the performance logs.
+- Options: none.
+- Commits: the commit that adds this entry.
+- Docs: [RemixApi-Performance.md](RemixApi-Performance.md)
+
+### Sparse rendering: sampling rate scaled by render resolution
+From upstream `e14940d58`: the graphics presets set a sampling rate at a reference render resolution (4K with DLSS Auto) and an exponent, and the rate scales with the actual render resolution, so low render resolutions keep more of their pixels and high ones skip more. Sparse rendering turns off when the scaled rate exceeds `rtx.sparseRendering.maxSamplingRate` (0.75), and a quality slider tunes the rate around the scaled value. The presets use upstream's tuning one level down, since the High preset runs upstream's Ultra path settings: High 0.357 with exponent 0.69 (upstream Ultra), Medium 0.228 with 0.83 (upstream High), Low 0.125 with 0.83 (upstream Medium). The stochastic alpha blend neighbor search can be sparse-aware (more iterations at lower rates, no radius growth at inactive pixels), which High and Medium enable, and it can average up to 4 matching neighbors.
+- Options: added `rtx.sparseRendering.enableAdaptiveSamplingRate`, `samplingRateResolutionExponent` (0.69), `quality` (0.5), `maxSamplingRate` (0.75), `enableSparseAwareAlphaBlendSearch`, and `rtx.stochasticAlphaBlendAverageSearchMatches` (default off). `rtx.sparseRendering.samplingRate` default 1.0 â†’ 0.357. The High, Medium and Low presets set enableAdaptiveSamplingRate, samplingRate, samplingRateResolutionExponent and enableSparseAwareAlphaBlendSearch.
+- Commits: see the merge of feat/20261029-upstream-sparse-autorate.
+
+### Sparse rendering: dense volumetrics on primary hits by default
+From upstream `3af4a39b7`: the volumetric integration at primary hits runs at every pixel again instead of only the active ones, which avoided over-sharpened, mosaic-like fog in foggy scenes. Sky pixels already ran dense.
+- Options: default flipped `rtx.sparseRendering.enableSparseVolumetricsPrimaryHit` â†’ false.
+- Commits: see the merge of feat/20261029-upstream-sparse-autorate.
+
+### Sparse rendering: history and cache resets, sky fog at inactive pixels
+The bug fixes from upstream's sparse rendering commit `e14940d58`, without its sampling rate changes. A change of the sparse rendering sampling rate, or sparse rendering turning on or off, resets the denoiser history, so the image settles at the new rate at once. The RTXDI reservoir buffer is cleared when it is created, and a cleared record reads as an empty reservoir, so RTXDI reuse no longer picks up garbage from pixels that have not been active since a resolution change. The NEE cache is reset when the render resolution resources are recreated. With sparse volumetrics on sky pixels and dense sky composition, inactive sky pixels now get the fog's transmittance on a dome light sky and the aerial perspective.
+- Options: none.
+- Commits: see the merge of fix/20261029-upstream-sparse-fixes.
+
+### Sparse rendering: alpha-blended particles no longer too bright
+From upstream `c4165bc3b`: under sparse rendering, alpha-blended surfaces lit by the stochastic alpha blend neighbor search took the neighbor's lighting after demodulate had scaled it by the inverse sampling rate, so particles and smoke were 1/rate too bright (1.7x at the High preset's rate of 0.6, 2x at Medium's 0.5). The neighbor's lighting is now scaled back by its sampling rate.
+- Options: none.
+- Commits: see the merge of fix/20261029-upstream-sparse-fixes.
+
+### RTXDI: best light sampling fixes
+From upstream `c57f4644c`: Sample Best Lights no longer leaves block-shaped artifacts or biases direct lighting. The RTXDI submodule moves from 7835387 to NVIDIA's 639c99f (the same pin as upstream, still unmodified), where a rejected random light counts as a null sample and the best light of each block is the one with the highest target function instead of the brightest pixel; the passes jitter the previous frame's best light lookup by up to one pixel, so pixels at block edges sometimes use the neighboring block's light. Upstream's `rtx.di.enableBestLightJitter` option is not taken: the jitter is always on.
+- Options: none.
+- Commits: see the merge of fix/20261029-upstream-rtxdi-best-light.
+
+### RTXDI: per-pixel spatial reuse neighbors
+From upstream `0618cab63`: RTXDI spatial reuse picks random neighbor offsets per pixel instead of one set per wave, which removes the horizontal streaks and shimmer on hard shadow edges and along the screen border that the denoiser could not resolve.
+- Options: none.
+- Commits: see the merge of fix/20261029-upstream-rtxdi-best-light.
+
+### Crash fixes: malformed shaders in the bridge, OMM candidates
+From upstream `0384d427d`: the bridge client rejects a vertex or pixel shader whose bytecode it cannot walk to its end token (pixel shader 1.4's three-dword texcrd and texld instructions are now sized correctly) instead of reading past the buffer, and the opacity micromap manager no longer keeps raw pointers to renderer-created instances or keeps its candidate set across a reset, both of which left dangling pointers that crashed the next scan. Skinning also skips a draw whose blend weight stream is unbound. Upstream's change to stage all 256 bone matrices is not taken: the D3D9 path already reads bones above the highest one the game set as identity.
+- Options: none.
+- Commits: see the merge of fix/20261029-upstream-crash-fixes.
+
+### Secret replacements survive the asset load
+From upstream `c8a654180`: the mod loader builds secret replacement variants (a mod's secret replacements) in its scratch table, and the merge into the live table dropped them, so they never appeared. The merge now moves them across on a full load and keeps the live list on a filtered hot reload, which does not walk secrets.
+- Options: none.
+- Commits: see the merge of fix/20261029-upstream-small-fixes.
+
+### Eyes keep their shading under the free camera
+From upstream `ca69e0453`: the D3D9 frontend no longer applies the free camera's correction to an eye draw's texture transform, which holds the eye parameters, so eyes no longer disappear or distort while the free camera is on.
+- Options: none.
+- Commits: see the merge of fix/20261029-upstream-small-fixes.
+
+### Remix API: SetConfigVariable takes the option update lock
+From upstream `da9aeaa35`: `remixapi_SetConfigVariable` writes the option's value under the option update mutex, which the render thread holds while it applies pending option values, so a host setting options from its own thread no longer races that pass.
+- Options: none.
+- Commits: see the merge of fix/20261029-upstream-small-fixes.
+
+### Particles: spawn direction independent of triangle shape and instance scale
+From upstream `b205e8799`: the particle spawn pass normalizes the triangle normal after the object-to-world transform, so the triangle's corner angle and the instance's scale no longer change the initial speed of particles emitted along the normal, and degenerate triangles or zero-scale transforms fall back to a fixed normal instead of producing NaN.
+- Options: none.
+- Commits: see the merge of fix/20261029-upstream-small-fixes.
+
+### Developer menu: drag speed after Alt+Tab
+From upstream `e675d2ef5`: the overlay reads the modifier keys from raw input instead of the window's key state, which raw keyboard input does not update, so a Shift or Alt released while the game was out of focus no longer stays held and keeps value drags slow or fast after Alt+Tab.
+- Options: none.
+- Commits: see the merge of fix/20261029-upstream-small-fixes.
+### Depth-based fog no longer covers an authored sky
+With volumetrics off, the depth-based fog was laid over every sky pixel at its full extent, so a game's rasterized sky or the NUMOS sky showed only the fog color, black under dark fog. Sky pixels are now fogged only when nothing authored the sky this frame: no game sky draw, no sky provider and no dome light.
+- Options: `rtx.fogApplyToSky` (default on) now applies only to sky pixels without an authored sky.
+- Tests: D3D9 suite scenarios `sky-fog` and `sky-fog-numos` check the sky's brightness in a screenshot under dark fog.
+
+## 2026-10-29
+
+### Bridge: query completion, upload ownership and present teardown (upstream `3f75d648b`)
+Ported by hand from upstream `3f75d648b`, which corrects the bridge transport work. Event queries now report the GPU's real completion through the shared result slots instead of "the server has run the Issue", a D3DGETDATA_FLUSH sent while a request is in flight reaches the next request, and Issue and GetData are serialized under the device lock. Source games wait for create results again, so a failed create is reported to the game instead of answered with D3D_OK. Queue reads return values instead of references into the rings, and the client reads the device create result before it releases the response. With the shared heap, each buffer and surface upload sends its own copy of only the uploaded range or packed rows, so the game can write the next lock before the server has read the previous one. A discarded buffer is freed on every unlock path, a failed copy allocation returns `E_OUTOFMEMORY` from Unlock, and the allocator searches every segment, frees retired uploads before it grows the heap and waits for space at the 32-bit limit. The Present semaphore keeps a credit when the server finishes a present before the client waits for it (the maximum count is one above `presentSemaphoreMaxFrames`). Presents are serialized with window teardown: `WM_DESTROY` marks the window closing and waits for queued presents, a present to a closing window returns `D3DERR_DEVICELOST`, and device release waits for the server's acknowledgement.
+- Options: the built-in default for one Source game `sendCreateFunctionServerResponses = False` is removed, so Source games use the global default (True). The setting still works in bridge.conf.
+- Not taken: the module bridge's per-command read position (that bridge leaves its data ring unprotected here), the `consumeResponse` split (the client releases response data only at `pop_front()` here), the UP-draw invalidation (already present), and the tests that run a 32-bit app against a built bridge and runtime. New unit tests: `test_query_results`, `test_present_semaphore`, `test_shared_heap_allocator`.
+- Also fixed: with `sendAllServerResponses`, ShowCursor left its response's value unread.
+- Bridge protocol: the query block and the shared heap upload layout changed, and the server acknowledges device destruction. Deploy the client `d3d9.dll` and `NvRemixBridge.exe` together.
+- Commits: see the merge of fix/20261029-upstream-bridge-correctness.
+### RTXDI is the default light sampler
+Light sampling defaults to RTXDI again. Across games, light BVH sampling gave clearly worse direct lighting than RTXDI in many scenes, so it stays available as a plain option for scenes with many lights.
+- Options: default flipped `rtx.lightSampling.mode` 1 (LightBVH) â†’ 0 (RTXDI). LightBVH (1) and Auto (3) are unchanged.
+- Presets: not preset-driven. The mode is a plain option that a game's `rtx.conf` sets, and no preset or app profile sets it.
+- Startup: the RTXDI passes are always prewarmed and their resources follow `rtx.useRTXDI`, so the default mode needs no extra warm-up. The light BVH select variants and the dedicated-sun direct variants are prewarmed only when the mode can use them, and a later switch to LightBVH or Auto queues them through the changed-settings prewarm.
+- Commits: see the merge of feat/20261029-rtxdi-default.
+### G-buffer: slim variant coverage check and Full fallback reporting
+The RayQuery G-buffer's slim variant table now lives in `rtx_pathtracer_gbuffer_variants.h` with a list of the feature combinations that run the Full kernels on purpose, each with a one-line reason (RayGen modes, validate, WBOIT off, debug views and object picking, PSR off, raytraced render targets, the thin-film override, intersection billboards on primary rays, thin-film materials, portals, dynamic-mask billboards). A `static_assert` and the new unit test `test_gbuffer_variant_coverage` walk every combination of the indirect mode, PSR, raytraced render targets, stochastic alpha, debug view, object picking, validate, WBOIT, SSS options, thin-film override, primary billboards and scene content, and fail when one selects Full without a listed reason, so a feature that forgets its slim variant no longer falls back silently. At runtime the `[Perf]` summary names each bound slim level's share of the frames and the last Full frame's cause, a frame whose table entry is Full logs a one-time warning with its feature variant, mode key and blocking entry, and the `[GBuffer] slim level Full` line names its expected case (`expected=<name>`) or `noSlimEntry`. The D3D9 suite gains `gbuffer-nrc`, `gbuffer-pom-sss` and `gbuffer-pom-sss-nrc` (a POM ground and a thin-opaque diffusion-profile crate from a testhost mod), which fail on any `slim level Full` line outside validate runs, and every scenario fails on a Full line without an expected case. A tester's report (`featureVariant=10 nrc=1 noEntryForModeKey modeKey=0x7b`) is the debug feature set, bound while the developer menu picks or highlights objects, so it stays Full; its `blockedBy=Lean(sssProfile):pom` lines bind LeanPom, the leanest level that keeps POM. Kernels and image are unchanged.
+- Options: none. Preset-independent: diagnostics and checks only.
+- Measured: MEASURED_PLACEHOLDER
+- Commits: see the merge of perf/20261029-gbuffer-slim-coverage.
+- Docs: [ShaderVariants.md](ShaderVariants.md#slim-variant-tables)
+### D3D9 frontend: fixed-function skinning and refits across topology changes
+Fixes skinned meshes that stayed behind (stuck in midair, an elevator body that did not ride with its door, view-model hands that came apart from the gun while firing), skinned objects built again every frame, and stretched triangles between batched props.
+- A skinned draw whose view moved relative to the camera its skinning is decomposed with is updated instead of skipped as a repeat, and a change of its world matrix alone is an update, never a move (the bones place it). The decomposition camera is one set this frame (the draw class's, else Main's) before one of the last frame, so the draws of one frame share it.
+- A skinned draw's place for matching is the median of its bones, so a bone a game parks far away (some games park bones at 1e29) no longer makes a new object every frame. A draw with bones that are not finite is dropped and its object keeps its last pose.
+- Geometry is refit only when its draw keeps the vertex and index counts, topology and index data it was built with. Draws without indices all share an empty index hash, so a batched prop whose vertex count changed was refit over the old topology.
+- Such a draw that does not jump is rebuilt in place and keeps its history: same instance, its new positions as its previous ones, so its motion is its transform's only. A new object that takes over a stale one's history also takes its last surface index, so temporal reuse continues. The direct line counts `topologyRebuilds=`, which are not `historyResets`.
+- Options: `rtx.d3d9v2.earlyChangeTestSelfCheckFrames` also prepares repeats of scene-owned objects in full and compares them with the scene's copy (`[D3D9v2] repeatMismatch`, `verified=` / `verifyMismatches=` in the direct line). The inputs line counts `skinNonFinite=`.
+- Tests: D3D9 scenarios skinned-view-walk, skinned-root-motion, skinned-parked, skinned-uninit, skinned-swap, skinned-shared-palette and ring-props.
+- Commits: see the merge of fix/20261029-d3d9-skinning.
+
+### TLAS refit while the instance list is unchanged
+Each TLAS is updated (refit) instead of rebuilt while its instance list keeps the same length, order, BLASes and point-instancer layout, so only transforms and masks change. A full build follows every 16 refits, on any list change, and when more than a quarter of the instances moved since the last full build. The opaque TLAS refits from the previous-frame buffer into the current one, so the previous-frame TLAS stays intact.
+- Options: added `rtx.accel.tlasRefit` (default on: a same-image performance fix, preset-independent), `rtx.accel.tlasRefitRebuildFrames` (16) and `rtx.accel.tlasRefitMovedFraction` (0.25). The `[AccelMem]` build line counts the refits.
+- Measured: scene B (about 600 CPU instances plus 21k point-instancer slots in two TLASes), interleaved separate runs: TlasBuild stage 0.43 â†’ 0.05 ms in held frames, 0.26 â†’ 0.15 ms while moving; whole frame equal or faster (moving median âˆ’0.08 / âˆ’0.13 ms, held âˆ’0.57 / +0.11 ms, noise). The trace passes did not slow down. Image 49.3 dB against trunk with trunk against itself at 49.2 dB. D3D9 suite with refit on: only the 6 known ring-static fails, and instance counts equal to trunk's.
+- Commits: see the merge of perf/20261029-ptlas.
+
+### Tried and removed: TLAS changes
+- `PREFER_FAST_BUILD` for the TLAS: TlasBuild 0.43 â†’ 0.41 ms, whole frame unchanged within noise. Removed.
+- Partitioned TLAS (`VK_NV_partitioned_acceleration_structure`): not built. The TLAS costs about 0.4 ms, 97% of its instances are point-instancer slots that GPU culling rewrites every frame, and a PTLAS needs its own descriptor type through every ray tracing pipeline layout.
+
+### NUMOS: quality level in the graphics presets
+NUMOS gets a quality level that the graphics presets set, so mid-range GPUs no longer pay the full cost of the clouds and the haze: at Balanced and coarser upscaling the clouds marched every pixel, which cost about 7-10 ms per frame on an RTX 4060 Laptop. Level High is the full quality. Level Medium takes the quarter cloud march at every resolution and a coarser near-field haze grid, and level Low also uses the faster cloud sun shadows and half the cloud sample cap. The Ultra preset sets level High, the High preset sets level Medium, and the Medium and Low presets set level Low; Auto follows the preset it picks, and a user-set level overrides the preset's. The High preset therefore runs the quarter cloud march at any upscale, which cuts NUMOS from about 4.7 to 1.9 ms per moving frame at 1114x626 to 1080p with DLSS Balanced on an RTX 5080 Laptop. Seeds no longer carry the level. The far-field haze table also updates only every 8th frame while no pixel uses it, as in interiors.
+- Options: added `rtx.atmosphere.qualityLevel` (0 High, the default; 1 Medium; 2 Low), set by `rtx.graphicsPreset`. Its control is "Sky Quality Level" in the developer menu's sky Clouds and Haze quality sections.
+- Measured: moving frames, 1114x626 render to 1080p with DLSS-RR Balanced, RTX 5080 Laptop, CloudScreen + AtmosphereFinish. By level, Scene A: before 4.22 + 0.54 ms, High 4.34 + 0.42, Medium 1.54 + 0.43, Low 1.11 + 0.41. Scene B: before 4.19 + 0.54, High 4.26 + 0.41, Medium 1.48 + 0.41, Low 1.10 + 0.41. NUMOS viewer at the same resolution: cloud pass 2.29 ms at High, 0.85 ms at Medium, 0.72 ms at Low; in a cloud 3.16, 0.96 and 0.95 ms. High's image matches the previous build: bit-identical in the viewer, 56.8 dB (the replay noise floor) in scene A.
+- Commits: 81b1d3ed6, c7a9921ab, and the submodule bump to NUMOS 6ba250d (NUMOS 7e6d70f, 424cf08, 6ba250d).
+
+### DLSS Ray Reconstruction: CNN presets with a user-supplied older DLL
+`rtx.rayreconstruction.preset` accepts the CNN presets A, B and C again (values 1-3), which cost much less than the transformer models on Turing and mobile GPUs (testers saw a flat 4.5-5.6 ms for transformer RR). The 310.9 SDK and DLL no longer have them, so they work only when the user puts an `nvngx_dlssd.dll` older than 310.4 in the runtime folder (`.trex`) in place of the shipped one. The runtime reads that DLL's file version, logs it (`[DLSS-RR] nvngx_dlssd.dll: ... CNN presets A to C are available/unavailable`), shows the CNN entries in the user menu only when the DLL accepts them (the developer menu always shows them), and falls back to the Default preset with one warning and a menu note when it does not. No DLL is shipped for this.
+- Options: `rtx.rayreconstruction.preset` gains A = 1, B = 2, C = 3 (default stays Default). Not wired into the graphics presets, because it depends on a DLL the user supplies.
+- Tested: a 310.2.1 `nvngx_dlssd.dll` loads with the 310.9 SDK and creates the feature with preset A (an open-world replay, no errors). D3D9 suite 370 pass, 6 fail (the 6 known ring-static fails).
+- Commits: see the merge of feat/20261029-cnn-rr.
+
+### G-buffer: slim variants for NRC with stochastic alpha
+With NRC and `rtx.enableStochasticAlphaBlend` (the default), the G-buffer runs the inline PSR stochastic alpha feature set, which had no slim variants, so every such frame ran the Full primary and PSR kernels (`[GBuffer] slim level Full (full: featureSet featureVariant=6 nrc=1)`). That feature set now has Slim, Lean, SlimPom and LeanPom variants with the same predicates as the other sets, and a `rtx.frameFeatures.validate` kernel. The image is unchanged.
+- Options: none. Preset-independent: the same image, chosen per frame from the frame features.
+- Measured: an open-world replay with NRC, 2 interleaved runs per build: GBufferPrimaryRays p50 5.86 -> 4.48 ms (median; before 5.67, 6.05; after 4.25, 4.72), G-buffer stages 6.17 -> 4.71 ms; frame time within run-to-run noise (held frame median 27.35 -> 27.20 ms). Slim level `Full (featureVariant=6 nrc=1)` -> `Lean`. Image PSNR against the release build 54.4 / 53.1 dB, at the release self-level of 51.8 dB.
+- Commits: e9afd411b, merge 56115ec95.
+
+### G-buffer: unused material and alpha blend work skipped
+The bit-identical parts of upstream's register-count commit `8e2dd3931`: a material with zero emissive intensity no longer reads its emissive texture or runs its emissive texture stage, thin-film Fresnel runs only for thin-film materials, and the primary pass keeps the initial stochastic alpha surface in registers instead of storing and reloading it for every pixel. The decal pass, PSR Prepare and the G-buffer readers load the stored view direction only when the cone radius marks one, and PSR Prepare skips its radiance read and write for pixels without a diffuse layer. The image is unchanged.
+- Options: none. Preset-independent: pure performance.
+- Commits: 1457b4b87, 8e2208f44, merge 56115ec95.
+
+### Composite pass: sky provider code in its own shader variant
+The composite shader now has two variants. The base one leaves out the sky provider's clouds, aerial perspective, sky disks, cloud motion vectors and bias-mask writes, and it skips the atmosphere foreground read. The sky provider variant runs only while a sky provider renders a frame. The sky code raised the whole pass to 128 registers on NVIDIA (upstream: 80), which cut occupancy even in games that never use it. The image does not change. The alpha-blend pass also takes upstream's changes: it writes its radiance only where the surface is valid, skips the geometry-hash read for the first search tap, and honors `rtx.stochasticAlphaBlendShareNeighbors`.
+- Options: none. The change is preset-independent, because it only changes which code is compiled into the pass.
+- Registers (RTX 5080 Laptop, driver 617.14): composite 128 -> 80 (sky provider variant 128), binary 476 KB -> 79 KB; alpha blend 55 -> 47. RDNA3 (amdllpc): 144 -> 96 VGPRs.
+- Measured: scene B, sky provider off, volumetrics on, 4 interleaved runs per build: Composition p50 0.99 -> 0.67 ms (median; before 0.98, 0.99, 0.99, 0.77; after 0.65, 0.78, 0.67, 0.66). With the sky provider on, the pass is unchanged (1.23 vs 1.21 ms). Image: A vs B PSNR at the A vs A noise floor, 59.2-59.7 dB with the sky provider off and 51.6-52.0 dB with it on (A vs A 51.1-52.7 dB).
+- Commits: see the merge of perf/20261029-composition.
 
 ## 2026-10-28
 
@@ -108,7 +267,7 @@ With sparse rendering on, the compaction pass now also appends every active pixe
 
 ### SCCR shell tracing is off by default
 `rtx.displacement.shell.enable` now defaults to off in every preset. Shell tracing keeps deep relief attached across triangle edges, but in D3D9 tests it roughly doubled the G-buffer pass. Displacement still uses SCCR; turn shell tracing on in the Displacement settings where the relief needs it.
-- Options: default flipped `rtx.displacement.shell.enable` → false.
+- Options: default flipped `rtx.displacement.shell.enable` â†’ false.
 - Commits: 3fc6c709a.
 
 ### High, Medium and Low graphics presets turn on sparse rendering
@@ -177,7 +336,7 @@ Draws from dynamic or rewritten buffers are identified by shaders, layout, mater
 - Commits: 8aca7c109.
 
 ### Cloud motion vectors and depth for upscaling and frame generation
-NUMOS clouds are laid over the image in the composite, but the primary depth and screen-space motion vectors still belonged to the geometry under them, so frame generation (DLSS-G, FSR) and the temporal upscalers (DLSS, ray reconstruction, XeSS, FSR, TAA-U) moved the clouds with the ground and smeared them when the camera moved above a cloud deck. The composite now writes, where a cloud's opacity passes a threshold, the cloud's depth and motion vector into those buffers, reprojecting the cloud render's transmittance-weighted mean distance as a world-fixed point with the previous view-projection. The motion vector blends from the surface's to the cloud's over ±0.15 around the threshold and the depth switches at the threshold, because frame generation and the upscalers take one layer per pixel. Linear view Z, virtual motion vectors and everything the path tracer, denoisers, SHaRC, fog and volumetrics read are unchanged, and the upscaler bias mask is as before. Wind drift is not in the motion vectors yet.
+NUMOS clouds are laid over the image in the composite, but the primary depth and screen-space motion vectors still belonged to the geometry under them, so frame generation (DLSS-G, FSR) and the temporal upscalers (DLSS, ray reconstruction, XeSS, FSR, TAA-U) moved the clouds with the ground and smeared them when the camera moved above a cloud deck. The composite now writes, where a cloud's opacity passes a threshold, the cloud's depth and motion vector into those buffers, reprojecting the cloud render's transmittance-weighted mean distance as a world-fixed point with the previous view-projection. The motion vector blends from the surface's to the cloud's over Â±0.15 around the threshold and the depth switches at the threshold, because frame generation and the upscalers take one layer per pixel. Linear view Z, virtual motion vectors and everything the path tracer, denoisers, SHaRC, fog and volumetrics read are unchanged, and the upscaler bias mask is as before. Wind drift is not in the motion vectors yet.
 - Options: added `rtx.numos.cloudMotionVectors` (default on) and `rtx.numos.cloudMotionVectorCoverage` (default 0.5). UI: Clouds > Motion vectors.
 - Debug view: added "Cloud Motion Vector Mask" (914).
 - Commits: a5be9671a.
@@ -399,7 +558,7 @@ The API's D3D9 device wrote API commands into the command stream without a lock,
 
 ### Fix: the VRAM pressure level follows demand, not free space inside chunks
 The pressure level followed the driver's usage, which counts the free space inside the allocator's chunks. That space cannot go back to the driver while one live resource sits in its chunk, so on 8-12 GB cards it alone (0.9-1.9 GB in one game's logs) held the level at Elevated or above and halved the micromap cache and shrank the replacement-texture budget without a real shortage. The level, and the level and usage the host sees, now follow demand: driver usage minus that free space, which new allocations fill first. While driver usage alone is above the Elevated threshold, idle pooled BLASes, oversized scratch and spare empty chunks are freed at level 0 too, which costs no quality. The separate host level is gone, since it is now the same level.
-- Options: default changed `rtx.vramBudget.elevatedPercent` 80 → 90 (its value when the level last followed demand). `freeIdleAccelMemory` and `releaseEmptyChunks` also act while driver usage is above `elevatedPercent`; `highPercent` also decides when allocations skip draining chunks.
+- Options: default changed `rtx.vramBudget.elevatedPercent` 80 â†’ 90 (its value when the level last followed demand). `freeIdleAccelMemory` and `releaseEmptyChunks` also act while driver usage is above `elevatedPercent`; `highPercent` also decides when allocations skip draining chunks.
 - API: `remixapi_GetMemoryPressure` reports the runtime's own level; `usageBytes` is demand as before.
 - Test: testhost `--vram-budget 8192` (fills 4 MiB textures to 93% demand, frees three of four, refills to 96%). Trunk: FAIL, runtime level 3 at 31.6% demand with driver usage at 97.4%. Fix: PASS, level 0 at 31.6% demand (driver usage 97.4%, reclaiming), and the refill went into the free space (driver usage flat) until demand reached 90.9% (level 1) and 96.4% (level 2). The new `--light-resend` and `--light-recreate K` options join `--light-updates`.
 - Commits: b740aac77.
@@ -412,19 +571,19 @@ Every call into the scene interface and the Remix API entry is now checked: non-
 - Docs: [frontend-conformance.md](frontend-conformance.md).
 
 ### Fix: micromaps age only on frames that trace the scene
-Opacity micromap use and eviction ages (the LRU's `rtx.opacityMicromap.cache.minUsageFrameAgeBeforeEviction` and the VRAM budget's trims, `requestTrim`) counted device frames. A host that rasterizes frames without ray tracing (a menu drawn by the game, New Vegas's lockpick screen) aged every micromap during them, so the first trim after about 600 such frames evicted the whole cache, including micromaps the scene's merged BLASes were built with, and the next ray-traced frame rebuilt and rebaked everything at once: a 4 s GPU stall and device loss on a laptop RTX 5080. The manager now counts traced frames (`onFrameStart`, once per device frame that builds the acceleration structures) and stamps and ages micromaps by that count, so raster-only frames age nothing and the micromaps the scene holds (refreshed each traced frame by `keepMergedBlasMicromapsInUse`) are still young when tracing resumes. Evictions forced by a lower VRAM budget are unchanged.
+Opacity micromap use and eviction ages (the LRU's `rtx.opacityMicromap.cache.minUsageFrameAgeBeforeEviction` and the VRAM budget's trims, `requestTrim`) counted device frames. A host that rasterizes frames without ray tracing (a menu drawn by the game, a game's lockpick screen) aged every micromap during them, so the first trim after about 600 such frames evicted the whole cache, including micromaps the scene's merged BLASes were built with, and the next ray-traced frame rebuilt and rebaked everything at once: a 4 s GPU stall and device loss on a laptop RTX 5080. The manager now counts traced frames (`onFrameStart`, once per device frame that builds the acceleration structures) and stamps and ages micromaps by that count, so raster-only frames age nothing and the micromaps the scene holds (refreshed each traced frame by `keepMergedBlasMicromapsInUse`) are still young when tracing resumes. Evictions forced by a lower VRAM budget are unchanged.
 - Options: none; the eviction and trim ages are now in traced frames.
 - Commits: eddae1bbe.
 
 ### Retained commands apply in command-stream order
-Retained instance commands go to the scene's queue straight from the API thread, while everything else a host sends (`CreateMesh` and the batched mesh flush, `SetupCamera`, `DrawInstance`, D3D9 draws, `DestroyMesh`) is ordered on the command stream. Every drain applied all queued batches, so a drain that ran late on the render thread also applied batches pushed after it was emitted, up to the next frame's frame marker and origin: an instance could be built before its mesh was registered, moves, hides and destroys landed a frame early against the draws around them, a device frame could run the retained frame twice and the next none, and two moves in one drain rebuilt an instance instead of relocating it. New Vegas showed distant terrain blocks and other objects flickering or missing for a frame while the player moved.
+Retained instance commands go to the scene's queue straight from the API thread, while everything else a host sends (`CreateMesh` and the batched mesh flush, `SetupCamera`, `DrawInstance`, D3D9 draws, `DestroyMesh`) is ordered on the command stream. Every drain applied all queued batches, so a drain that ran late on the render thread also applied batches pushed after it was emitted, up to the next frame's frame marker and origin: an instance could be built before its mesh was registered, moves, hides and destroys landed a frame early against the draws around them, a device frame could run the retained frame twice and the next none, and two moves in one drain rebuilt an instance instead of relocating it. a game showed distant terrain blocks and other objects flickering or missing for a frame while the player moved.
 
 Each batch now carries a sequence number taken when it is pushed. Every drain carries the sequence number pushed so far when it was emitted (`SceneCommandQueue::issued`): `DrawRetainedInstances`, `DestroyMesh` and `DestroyMaterial` capture it in their command-stream lambdas, and the D3D9 and D3D11 injections capture it where they emit `injectRTX`. A drain applies batches up to its bound and no further, so retained commands take effect where the host made them relative to its other calls. At most one retained frame marker applies per device frame; a later one waits, with the batches behind it, for the next frame (which may then apply two, so a backlog shrinks). The batches no longer record their meshes: a mesh created before an instance is registered before any drain bounded after the instance. A retained instance that still finds no mesh is rebuilt when the mesh registers (below).
 - Options: none.
 - Commits: be5a4cfd4, 015a99702; it replaces a330ac004 and 821bd2ff2 (holds on mesh registration).
 
 ### Fix: retained instances built before their API mesh is registered are rebuilt
-Retained instance commands reach the scene through their own queue, while `remixapi_CreateMesh` registers the mesh through the command stream. A drain that ran before the registration built the instance with no mesh, and a first registration of a mesh handle noted no change, so the instance stayed empty. A host that rebuilds a mesh by creating the new mesh and its instance and then destroying the old ones lost objects for good (New Vegas's distant terrain blocks, rebuilt as the player walks). `AssetReplacer::registerExternalMesh` now notes a new handle as a changed asset, as material registration already does, so the waiting entry is rebuilt; the asset epoch is left alone.
+Retained instance commands reach the scene through their own queue, while `remixapi_CreateMesh` registers the mesh through the command stream. A drain that ran before the registration built the instance with no mesh, and a first registration of a mesh handle noted no change, so the instance stayed empty. A host that rebuilds a mesh by creating the new mesh and its instance and then destroying the old ones lost objects for good (a game's distant terrain blocks, rebuilt as the player walks). `AssetReplacer::registerExternalMesh` now notes a new handle as a changed asset, as material registration already does, so the waiting entry is rebuilt; the asset epoch is left alone.
 - Options: none.
 - Test: `remix_testhost --clusters N --stream K --create-first` rebuilds K cubes a frame in that order; every cube must stay visible.
 - Commits: 933bb1001.
@@ -705,7 +864,7 @@ The slim shader variants of the G-buffer, direct and indirect passes, compact PS
 ### Removed: the acceleration-structure switches measured as wins
 Static merged-BLAS clusters, their shared opacity micromap buckets, fast-trace settled clusters, the fast-trace TLAS, compact opacity micromaps and the mover back-off are code defaults since the P5 flip and are now unconditional. The non-cluster merged-bucket fill that only ran with clusters off is deleted.
 - Options: removed `rtx.accel.staticClusters`, `rtx.accel.clusterMergeOmm`, `rtx.accel.staticClusterQuality`, `rtx.accel.tlasFastTrace`, `rtx.accel.moverBackoff`, `rtx.alphaBake.compactMicromaps` (all default on before). Preset-independent: pure performance paths with the same image.
-- Measured: P5 replay gate R5 (code defaults against the explicit group R set) scene A 63.0 dB, scene B 58.5 dB; static clusters were −3 to −4 ms in scene A in game.
+- Measured: P5 replay gate R5 (code defaults against the explicit group R set) scene A 63.0 dB, scene B 58.5 dB; static clusters were âˆ’3 to âˆ’4 ms in scene A in game.
 - Commits: in the commit that adds this entry.
 
 ### Removed: the API-host scene policy switches
@@ -779,7 +938,7 @@ A sixth heavy-mod test stuttered near the limit: `[VramBudget]` showed 312-352 v
 
 ### BLASes move out of draining chunks, draining per pool, Elevated from 80%
 A fifth heavy-mod test never reached the 25% global slack that started draining, while the acceleration-structure pool held 2.9 GB in 56 chunks with up to 1.95 GB free inside. Each chunk class now drains on its own free-space share (`rtx.vramBudget.slackPercent`) at any level. In-use BLASes whose memory lies in a draining chunk are cloned (`vkCmdCopyAccelerationStructureKHR`, CLONE) into new memory, at most 16 or 32 MiB per frame, and the TLAS instances and batches that held the old address are patched, the same way BLAS compaction swaps a BLAS. The per-mesh ray-tracing copies of vertex and index data (about 1 GB) get their own memory category, scene geometry, and live in the scene content class instead of the acceleration-structure class. Level 1 (Elevated) now starts at 80% of the budget. The `[VramBudget]` line counts relocated BLASes and the vkAllocateMemory calls and time per interval.
-- Options: default changed `rtx.vramBudget.elevatedPercent` 90 → 80; `rtx.vramBudget.drainSparseChunks` and `slackPercent` now apply per chunk class at any level.
+- Options: default changed `rtx.vramBudget.elevatedPercent` 90 â†’ 80; `rtx.vramBudget.drainSparseChunks` and `slackPercent` now apply per chunk class at any level.
 - OMM pool larger than the OMM budget: the budget counts the micromap bytes in use (1383 of 1536 MiB in that log), and the pool's chunks also hold 560 MiB of free space; draining now covers that pool too.
 - API: `usedAccelerationStructureBytes` in the VRAM stats still includes the scene geometry copies.
 - Commits: in the commit that adds this entry.
@@ -799,14 +958,14 @@ A third heavy-mod test ran most of the map, then sat at 12.9 of 14.1 GB driver u
 
 ### Replaced host textures are released, memory pools by lifetime, host asked at High
 A second heavy-mod test still grew allocated memory from 4.2 to 12.45 GB. App textures grew from 1.35 to 5.1 GB: the host replaced 7462 imported textures in place, and each host material kept its own reference to the replaced game image, so the game's released textures stayed alive until the material was destroyed, which the host rarely does. Host materials are now re-pointed at the new texture at the end of the frame, for in-place import replaces, copy-on-write copies and `CreateTexture` replaces. The game's textures and buffers and the micromap cache get their own memory chunks, and device-local chunks are 128 MiB instead of 320 MiB, so chunks empty and return to the driver. The level reported to the host now follows the driver's usage like the runtime's own level (the free space inside chunks is no longer subtracted), and the host is asked to release far content from level 2 (High).
-- Options: added `rtx.separateMemoryByLifetime` (default on, against the default-off rule because it is the fix); default changed `rtx.vramBudget.hostSignalLevel` 3 → 2; default changed `dxvk.deviceLocalMemoryChunkSizeMB` 320 → 128.
+- Options: added `rtx.separateMemoryByLifetime` (default on, against the default-off rule because it is the fix); default changed `rtx.vramBudget.hostSignalLevel` 3 â†’ 2; default changed `dxvk.deviceLocalMemoryChunkSizeMB` 320 â†’ 128.
 - API: `remixapi_GetMemoryPressure` `level`, `usageBytes` and `bytesToRelease` follow the driver's usage.
 - Log: `[VramBudget]` counts "material texture refs re-pointed".
 - Commits: in the commit that adds this entry.
 
 ### GPU memory is returned after scene changes and no longer piles up
 In a heavily modded game world, DXVK's allocated device memory climbed from 3.5 to 12.2 GB while used memory stayed near 6.3 GB: 5.5 GB sat free inside 96 partly used chunks, none ever emptied, and the VRAM budget subtracted that free space from the driver's usage, so it stayed at level 0 while the driver usage reached 12.5 of 13.7 GB and a save load then failed to recreate the swap chain. Four changes. The allocator now places each allocation best-fit in the fullest chunk that fits and uses free space in chunks of a higher priority class before making a new chunk, so sparse chunks drain and are freed (it was worst-fit in the first chunk, per priority class). Acceleration-structure memory gets its own chunks by default, so BLASes freed at a load empty whole chunks. The budget level now follows the driver's usage; the level reported to the host (and its release request) still follows usage minus the free space inside chunks and never exceeds the runtime's level. A scene change (a `rtx.skyProvider.worldChangeCount` bump, or the instance count falling to 5% of a peak of at least 1000) frees idle pooled BLASes and oversized scratch, evicts micromaps unused for 30 frames, and returns empty chunks for 60 frames. The `[VramBudget]` and `[AccelMem] heap` lines now print app (game and staging) buffers and textures, which were the uncategorized ~4 GB, and a failed swap-chain recreation logs its VkResult and retries once after releasing empty chunks.
-- Options: removed `rtx.vramBudget.discountChunkSlack`; default flipped `rtx.separateAccelStructureMemory` → true.
+- Options: removed `rtx.vramBudget.discountChunkSlack`; default flipped `rtx.separateAccelStructureMemory` â†’ true.
 - API: `remixapi_GetMemoryPressure` level is now at most the runtime's own level; `usageBytes` is documented as usage minus free space inside runtime chunks (unchanged figure).
 - Not ported: upstream DXVK 2.5's relocating allocator (defragmentation moves live resources). It needs relocatable buffers and images across all of DXVK; game textures can still pin chunks.
 - Commits: in the commit that adds this entry.
@@ -827,21 +986,21 @@ With the haze on World Scale, a World Scale below 1 hazed the game's terrain as 
 
 ### D3D9 v2 is the default D3D9 frontend path
 D3D9 games now hand their draws to the scene through D3D9 v2 by default, since the D3D9 synthetic scenario suite passes (102/0) and an A/B in a D3D9 test game favors it. The old D3D9 path stays in the code, and `rtx.d3d9v2.direct = False` in a game's `rtx.conf` returns to it. The D3D9 v2 menu tree keeps only the master switch, and the steps are set in `rtx.conf`.
-- Options: default flipped `rtx.d3d9v2.direct`, `materialTranslator`, `directReplacements`, `explicitCamera`, `earlyChangeTest`, `firstDrawHandover`, `dynamicGeometry`, `capturedGeometry`, `unordered`, `frameEvents`, `lights`, `skyService`, `terrain`, `skybox3d`, `renderTargets`, `unknownCamera`, `specialCategories` → true, and `rtx.scene.d3d9CutAsEvent` → true. `rtx.scene.directRetained`, `rtx.scene.directUnordered` and `rtx.scene.directServices` → true in D3D9 games only: a D3D9 device whose draws are ray traced sets them in the default layer. They stay off by default for Remix API hosts. An explicit True or False in `rtx.conf` or the menu wins for both kinds of game. `rtx.d3d9v2.log`, `handoverFrames` (8) and `earlyChangeTestSelfCheckFrames` (0) are unchanged.
+- Options: default flipped `rtx.d3d9v2.direct`, `materialTranslator`, `directReplacements`, `explicitCamera`, `earlyChangeTest`, `firstDrawHandover`, `dynamicGeometry`, `capturedGeometry`, `unordered`, `frameEvents`, `lights`, `skyService`, `terrain`, `skybox3d`, `renderTargets`, `unknownCamera`, `specialCategories` â†’ true, and `rtx.scene.d3d9CutAsEvent` â†’ true. `rtx.scene.directRetained`, `rtx.scene.directUnordered` and `rtx.scene.directServices` â†’ true in D3D9 games only: a D3D9 device whose draws are ray traced sets them in the default layer. They stay off by default for Remix API hosts. An explicit True or False in `rtx.conf` or the menu wins for both kinds of game. `rtx.d3d9v2.log`, `handoverFrames` (8) and `earlyChangeTestSelfCheckFrames` (0) are unchanged.
 - Measured: a D3D9 test game, unpaused A/B, D3D9 v2 116.6 fps against the old path's 107.5.
 - Graphics presets: unchanged. These options are a frontend path, not a quality setting.
 - Commits: the commit that adds this entry.
 
 ### Measured performance wins are the defaults, and the Remix menu is cleaned up
 The measured renderer, acceleration and material options (P5 group R) are now code defaults, and their rollout controls left the menu. Diagnostics, self-checks and the not-yet-default paths (D3D9 v2, the scene interface lanes, retained v2, software OMM) moved into collapsed headers under Dev Settings > Developer Options, and game names left the runtime menu. No option was removed: rtx.conf can still set every one.
-- Options: default flipped → true: `rtx.accel.staticClusters`, `rtx.accel.clusterMergeOmm`, `rtx.accel.staticClusterQuality`, `rtx.accel.tlasFastTrace`, `rtx.accel.moverBackoff`, `rtx.alphaBake.compactMicromaps`, `rtx.integrateDirect.slimVariants`, `rtx.integrateDirect.coreMaterial`, `rtx.integrateIndirect.slimVariants`, `rtx.integrateIndirect.slimAssembly`, `rtx.integrateIndirect.slimNonSharc`, `rtx.gbuffer.slimVariants`, `rtx.gbuffer.compactPsr`, `rtx.sharc.deferredFlush`, `rtx.coreMaterial.build`, `rtx.coreMaterial.legacyRecord`, `rtx.shader.variantTables`. Preset-independent: none trades quality (same image, frame-feature gated).
-- Measured (API-host replays, earlier entries): static clusters −3-4 ms in game; clusterMergeOmm −1.49, direct slim −1.0, LeanCore −0.32 / −0.40, indirect slim −0.32, compactPsr −0.46 / −0.11, staticClusterQuality −0.34, compactMicromaps −0.31, tlasFastTrace −0.29, slimNonSharc −0.29, slimAssembly −0.20, gbuffer slim −0.19, deferredFlush −0.12 ms.
+- Options: default flipped â†’ true: `rtx.accel.staticClusters`, `rtx.accel.clusterMergeOmm`, `rtx.accel.staticClusterQuality`, `rtx.accel.tlasFastTrace`, `rtx.accel.moverBackoff`, `rtx.alphaBake.compactMicromaps`, `rtx.integrateDirect.slimVariants`, `rtx.integrateDirect.coreMaterial`, `rtx.integrateIndirect.slimVariants`, `rtx.integrateIndirect.slimAssembly`, `rtx.integrateIndirect.slimNonSharc`, `rtx.gbuffer.slimVariants`, `rtx.gbuffer.compactPsr`, `rtx.sharc.deferredFlush`, `rtx.coreMaterial.build`, `rtx.coreMaterial.legacyRecord`, `rtx.shader.variantTables`. Preset-independent: none trades quality (same image, frame-feature gated).
+- Measured (API-host replays, earlier entries): static clusters âˆ’3-4 ms in game; clusterMergeOmm âˆ’1.49, direct slim âˆ’1.0, LeanCore âˆ’0.32 / âˆ’0.40, indirect slim âˆ’0.32, compactPsr âˆ’0.46 / âˆ’0.11, staticClusterQuality âˆ’0.34, compactMicromaps âˆ’0.31, tlasFastTrace âˆ’0.29, slimNonSharc âˆ’0.29, slimAssembly âˆ’0.20, gbuffer slim âˆ’0.19, deferredFlush âˆ’0.12 ms.
 - Not measured on D3D9 games, which get group R for the first time. `rtx.sharc.deferredFlush` still owes its re-measure after the SHaRC port.
 - Removed from the menu: a game-named auto-exposure defaults preset button; game names in auto-exposure and tonemapper labels; "[Fork]" and "(Phase 4)" headers.
 - Commits: merged in 49aafdd4e.
 
 ### Sky lights keep their physical brightness
-The sun, moons and lightning from the sky provider lost their sky-light flag whenever the light manager copied them, so the host light calibration (`rtx.hostCalibration.lightsEv`, −9 in one game's config) scaled them as well, and direct sunlight arrived 512× too dark. Since 2026-10-11 (0ce60ca64) the sun only lit the sky and indirect light. `RtLight::copyFrom` now copies the flag.
+The sun, moons and lightning from the sky provider lost their sky-light flag whenever the light manager copied them, so the host light calibration (`rtx.hostCalibration.lightsEv`, âˆ’9 in one game's config) scaled them as well, and direct sunlight arrived 512Ã— too dark. Since 2026-10-11 (0ce60ca64) the sun only lit the sky and indirect light. `RtLight::copyFrom` now copies the flag.
 - Options: none.
 - Commits: da5eaef2c.
 
@@ -881,11 +1040,11 @@ The 481 option descriptions the fork added or changed now say what each option d
 
 ### SHaRC and the light BVH are the defaults, and the graphics presets select SHaRC
 SHaRC (indirect light) and light BVH sampling are now the code defaults, next to SCCR displacement, which already was; they are the fork's measured choices. Every graphics preset other than Custom selects SHaRC instead of NRC, since SHaRC needs ray queries and 64-bit buffer atomics rather than NVIDIA hardware. NRC stays selectable with the Custom preset.
-- Options: default flipped `rtx.integrateIndirectMode` 2 (NRC) → 3 (SHaRC) and `rtx.lightSampling.mode` 0 (RTXDI) → 1 (LightBVH).
+- Options: default flipped `rtx.integrateIndirectMode` 2 (NRC) â†’ 3 (SHaRC) and `rtx.lightSampling.mode` 0 (RTXDI) â†’ 1 (LightBVH).
 - Fallback: at startup, a device without SHaRC's features (64-bit buffer atomics, 16-bit storage, ray queries) switches the indirect mode to ReSTIR GI before the first frame, as an unsupported NRC already did; SHaRC's activation keeps its own fallback.
 - Presets: `rtx.integrateIndirectMode` = 3 where SHaRC is supported, otherwise 1 (ReSTIR GI), in Ultra, High, Medium and Low; before, 2 on NVIDIA and 1 elsewhere, unless the mode was already SHaRC. SHaRC tier Ultra / High / Medium / Medium and the NRC tier (where NRC is supported) are unchanged. The light sampling and displacement modes are not preset-driven: they are plain options, so a game's `rtx.conf` sets them.
 - Layers unchanged (upstream's rule): preset writes go to the Quality layer for user settings and to the Derived layer otherwise, both above `rtx.conf`, so a preset overrides config values of the settings it drives unless the preset is Custom.
-- Measured: light BVH against RTXDI about −3 ms at about 220 lights (scene A), a tie at 90-100 lights (scene B). SHaRC against NRC not measured on this trunk.
+- Measured: light BVH against RTXDI about âˆ’3 ms at about 220 lights (scene A), a tie at 90-100 lights (scene B). SHaRC against NRC not measured on this trunk.
 - Not in the presets: the measured same-image wins (static clusters, slim variants, compacted PSR and the rest of P5 group R) are preset-independent and become code defaults when the old D3D9 path is removed.
 - Commits: a85ec2966, 796f600be, and the commit that adds this entry text.
 
@@ -1131,7 +1290,7 @@ New `rtx_frontend_interface.h` is the API-neutral door to the scene: `SceneInsta
 ### Direct lighting: the shadow / shade split is unconditional for the Lean levels
 The Lean, LeanCore and LeanLegacy levels of the direct pass now always run as a shade kernel and a trace kernel over a per-pixel record, slimmed from 92 B to 48 B (three uint4 planes with fp16 radiance), which turned the scene A loss into a gain. The six single-kernel Lean variants are deleted; Full, NoSss, deferred NRC setup and validate keep the single kernel. The record buffer (about 83 MiB at 1707x1067) is allocated while a Lean level is in use. A pure performance change, so it is preset-independent.
 - Options: removed `rtx.integrateDirect.splitShadow` (now always on for the Lean levels).
-- Measured: direct pass, on − off, in-run A/B at a 1500 MHz lock: scene A −0.61 / −0.30 ms, scene B −1.71 / −2.13 ms (the 92 B record: scene A +0.32, scene B −0.78). Image 56.9 dB (scene A) / 52.9 dB (scene B); scene B's own run-to-run floor is 53.7 dB, the mean luminance change is 0.004 %, and the difference is unstructured speckle.
+- Measured: direct pass, on âˆ’ off, in-run A/B at a 1500 MHz lock: scene A âˆ’0.61 / âˆ’0.30 ms, scene B âˆ’1.71 / âˆ’2.13 ms (the 92 B record: scene A +0.32, scene B âˆ’0.78). Image 56.9 dB (scene A) / 52.9 dB (scene B); scene B's own run-to-run floor is 53.7 dB, the mean luminance change is 0.004 %, and the difference is unstructured speckle.
 - Commits: 3c9d4f6f6 and the commit that adds this entry.
 
 ### Tried and removed
@@ -1156,7 +1315,7 @@ The retained scene self-check (`rtx.scene.selfCheckFrames`) reported particle em
 ### Deferred unordered particle resolve always on (G6a)
 Primary Rays now always skip their per-segment unordered particle walk where the deferred decal kernel can resolve the particles once per pixel instead. It won the G6 gate and is a pure performance win, so it is preset-independent.
 - Options: removed `rtx.gbuffer.deferUnorderedParticles` (its path is unconditional). It still acts only at a slim G-buffer level (`rtx.gbuffer.slimVariants`), with RayQuery, WBOIT and PSR Prepare.
-- Measured: scene A −1.12 ms, scene B −0.46 ms. Image 54.5 / 52.3 dB.
+- Measured: scene A âˆ’1.12 ms, scene B âˆ’0.46 ms. Image 54.5 / 52.3 dB.
 - Commits: the commit that adds this entry.
 
 ### OMM touch for per-geometry BLASes deleted
@@ -1229,19 +1388,19 @@ New branches are named `<type>/<YYYYMMDD>-<topic>`; the type states the lifetime
 ### SHaRC: upstream fixes and cache resampling kept, options removed
 From the comparison with upstream's SHaRC integration: the launch roughness is now set at path start (upstream's fix), every continuation lobe sets the diffuse-arrival flag (our own bug), and update paths stop at a cell with data and take its radiance (SDK cache resampling). All three are unconditional. This changes the image of every SHaRC game, D3D9 games included.
 - Options: added and then removed `rtx.sharc.launchRoughnessFix`, `rtx.sharc.arrivalLobeFix`, `rtx.sharc.cacheResampling` (now always on).
-- Measured: launch roughness fix scene A −1.15 ms, scene B −0.48 ms, image 55.4 / 50.5 dB (visually identical). Cache resampling scene A −0.50 ms, scene B −0.15 ms. Arrival-lobe fix perf-neutral (kept as a correctness fix).
+- Measured: launch roughness fix scene A âˆ’1.15 ms, scene B âˆ’0.48 ms, image 55.4 / 50.5 dB (visually identical). Cache resampling scene A âˆ’0.50 ms, scene B âˆ’0.15 ms. Arrival-lobe fix perf-neutral (kept as a correctness fix).
 - Commits: bd59552f1, 1dcd70c78.
 
 ### SHaRC: upstream query eligibility
 SHaRC queries use upstream's eligibility rules: looser material eligibility, roughness floor and minimum sample count, and path-accumulated roughness for the footprint test. Changes the image of every SHaRC game.
 - Options: added and then removed `rtx.sharc.relaxMaterialEligibility`, `relaxRoughnessFloor`, `relaxMinSampleCount`, `pathRoughnessFootprint` (now always on); removed `rtx.sharc.minRoughness` (dead; its `rtx.conf` line is ignored).
-- Measured: all four together, scene A −2.46 ms (indirect −1.64 ms); the scene B combined run was disturbed by outside GPU load (indirect −0.92 ms) and its re-check is not extracted yet. Images 54.4 / 51.6 dB.
+- Measured: all four together, scene A âˆ’2.46 ms (indirect âˆ’1.64 ms); the scene B combined run was disturbed by outside GPU load (indirect âˆ’0.92 ms) and its re-check is not extracted yet. Images 54.4 / 51.6 dB.
 - Commits: bd59552f1, 9edf8fcf1.
 
 ### SHaRC update via TraceRay + SER by default
 Where its preconditions hold (SER available, `rtx.sharc.deferredFlush` on, no portals, no OMM 2-state), the SHaRC cache update traces with TraceRay and shader execution reordering instead of inline ray queries; the update rays are the least coherent in the frame. The ray-query update stays as the fallback.
 - Options: added and then removed `rtx.sharc.updateSer` (now the default where it applies).
-- Measured: scene A −0.45 ms, scene B −0.17 ms.
+- Measured: scene A âˆ’0.45 ms, scene B âˆ’0.17 ms.
 - Commits: d7291ce41, 1dcd70c78.
 
 ### Fix: SHaRC primary-vertex deposit built the cache up too bright
@@ -1251,19 +1410,19 @@ With `rtx.sharc.updatePrimaryVertex` (default on), the primary vertex deposited 
 ### Light BVH select: root reuse and slim select variants
 The select pass skips the distant-light loop when the dedicated sun sample excludes distant lights and evaluates the root's two children once per pixel (bit-identical). Slim select variants compile out light types the frame doesn't use and the subsurface receiver, chosen from the frame features.
 - Options: added and then removed `rtx.lightSampling.bvhSelectReuse` (now always on) and `rtx.lightSampling.bvhSelectSlim` (now the default).
-- Measured: reuse scene A −0.17 ms, scene B −0.05 ms, bit-identical. Slim select: LightBVHSelect −0.14 ms scene A / −0.21 ms scene B, image 53.7 / 52.3 dB (floating-point level).
+- Measured: reuse scene A âˆ’0.17 ms, scene B âˆ’0.05 ms, bit-identical. Slim select: LightBVHSelect âˆ’0.14 ms scene A / âˆ’0.21 ms scene B, image 53.7 / 52.3 dB (floating-point level).
 - Commits: 3e0780fb1, 06b65fdbd.
 
 ### Direct lighting shadow/shade split (default off, awaiting decision)
 On Lean-level frames the direct pass can run as two compute kernels: shade writes a per-pixel record (92 B/pixel, allocated only while on), trace casts the visibility rays and accumulates in the original order.
 - Options: added `rtx.integrateDirect.splitShadow` (default off, awaiting a decision: scene-dependent).
-- Measured: scene B −0.77 ms; scene A about +0.25-0.3 ms (clean rerun). Image 56.5 / 53.0 dB.
+- Measured: scene B âˆ’0.77 ms; scene A about +0.25-0.3 ms (clean rerun). Image 56.5 / 53.0 dB.
 - Commits: a2e426ebb.
 
 ### G-buffer: deferred unordered particles (measured win, not yet the default)
 The primary kernel skips its per-segment particle walk; the deferred decal kernel walks the particles once per pixel and patches radiance, attenuation, bias mask and atmosphere foreground before decal blending. Acts only on non-Full slim levels (`rtx.gbuffer.slimVariants`).
 - Options: added `rtx.gbuffer.deferUnorderedParticles` (default off). It passed the G6 gate and is to become the default with the option removed; not done yet.
-- Measured: scene A −1.12 ms (GBufferPrimaryRays −1.04, GBufferDecals +0.45), scene B −0.46 ms. Image 54.5 / 52.3 dB.
+- Measured: scene A âˆ’1.12 ms (GBufferPrimaryRays âˆ’1.04, GBufferDecals +0.45), scene B âˆ’0.46 ms. Image 54.5 / 52.3 dB.
 - Commits: 928f64351.
 
 ### OMM touch for per-geometry BLASes (lost, to be deleted)
@@ -1297,20 +1456,20 @@ Services that let the classes the old path still owns go to the direct lane: the
 
 ### Remix Bridge: counters, Present semaphore fix, spin-then-block, async creates
 The Present semaphore was created with count 0, so the game and the bridge server ran in lock-step whatever `presentSemaphoreMaxFrames` said; both sides now create it with the configured count. Bridge queues spin briefly, then block on an event instead of busy-waiting. Source games create resources without waiting for the server's answer. Protocol change: deploy the client `d3d9.dll` and `NvRemixBridge.exe` together.
-- Options (bridge.conf): added `perfLogIntervalFrames` (default 0, `[PerfBridge]` counters), `ipcSpinMicroseconds` (100); `presentSemaphoreMaxFrames` default 3 → 1 (0 = lock-step); removed `commandBatchingEnabled`, `useShadowMemoryForDynamicBuffers` and the blocking queue.
-- Measured (a D3D9 test game through the bridge, same map): server spin 3.7-4.3 → 1.6-1.9 ms/frame; frame time unchanged (lock-step moved to the query `GetData`, fixed by A4).
+- Options (bridge.conf): added `perfLogIntervalFrames` (default 0, `[PerfBridge]` counters), `ipcSpinMicroseconds` (100); `presentSemaphoreMaxFrames` default 3 â†’ 1 (0 = lock-step); removed `commandBatchingEnabled`, `useShadowMemoryForDynamicBuffers` and the blocking queue.
+- Measured (a D3D9 test game through the bridge, same map): server spin 3.7-4.3 â†’ 1.6-1.9 ms/frame; frame time unchanged (lock-step moved to the query `GetData`, fixed by A4).
 - Commits: 996e196b0.
 
 ### Remix Bridge A4: queries answered without blocking round trips
 Event queries are answered on the client from a counter the server publishes; other small queries become non-blocking requests with the result in a shared slot. Also fixes a server crash on a query whose create failed. Protocol change.
 - Options (bridge.conf): added `client.asyncQueries` (default on).
-- Measured (a D3D9 test game through the bridge): 13.9-15.2 → 9.9-10.4 ms per frame; the game thread is now the limit.
+- Measured (a D3D9 test game through the bridge): 13.9-15.2 â†’ 9.9-10.4 ms per frame; the game thread is now the limit.
 - Commits: eb88c80c1.
 
 ### Remix Bridge A3: redundant state setters dropped, setters batched
 The client no longer sends a state setter whose value the server's device already holds, and consecutive setters travel as one state packet. Protocol change.
 - Options (bridge.conf): added `client.dropRedundantState` (default on, replaces `eliminateRedundantSetterCalls`, removed) and `client.batchState` (default on).
-- Measured (a D3D9 test game through the bridge): ~10 → 7.9-8.6 ms per frame; commands per frame ~28,000 → ~4,000-4,400; server work ~4.5 ms.
+- Measured (a D3D9 test game through the bridge): ~10 â†’ 7.9-8.6 ms per frame; commands per frame ~28,000 â†’ ~4,000-4,400; server work ~4.5 ms.
 - Commits: 18068931a, c90848607.
 
 ### Fix: bridge RemixApi_CreateTexture and data desync
@@ -1333,10 +1492,10 @@ Built, measured and deleted (strip rule: git history keeps them).
 - Indirect S8 deferred first-bounce NEE shadow rays, `rtx.sharc.deferredNeeShadows`: scene A +0.48 ms, scene B +0.27 ms (f34cc3382).
 - Indirect S7 SHaRC query probe-first, `rtx.sharc.queryProbeFirst`: indirect scene A +0.33 ms, scene B +0.54 ms (2d4d5d8b4, deleted in 1dcd70c78).
 - SHaRC update as a compute dispatch, `rtx.sharc.updateCompute`: IndirectSharcUpdate +0.65 ms, then +0.08 ms with the deferred flush (2ce3960e3, deleted in d7291ce41).
-- SHaRC `rtx.sharc.relaxEmissiveCutoff`: −0.08 / +0.04 ms, neutral; `rtx.sharc.updateRecordTarget` / `updateRecordTargetCount`: net scene A −0.17 ms with an unstable controller (0645f0113).
+- SHaRC `rtx.sharc.relaxEmissiveCutoff`: âˆ’0.08 / +0.04 ms, neutral; `rtx.sharc.updateRecordTarget` / `updateRecordTargetCount`: net scene A âˆ’0.17 ms with an unstable controller (0645f0113).
 - Light sampling mode 2 (RTXDI with BVH candidates): +0.45 ms. A config that still sets `rtx.lightSampling.mode = 2` runs as RTXDI (3e0780fb1).
 - Dominant-light fast path, `rtx.lightSampling.dominantLightFastPath` / `dominantLightThreshold` / `dominantLightProbe`: no gain, and its compiled-in cost was +5 % direct integrator, +14 % light BVH select (c26070df2).
-- Direct S4/S5 trim and fixed-sampler slim variants, `rtx.integrateDirect.slimTrim` / `slimSampler`: no consistent gain (scene A −0.52 / 0.00 ms, scene B +0.36 ms in a noisy batch) (091251702, 3f372df52, 2dd0e83f1; deleted in e6dfcf95f).
+- Direct S4/S5 trim and fixed-sampler slim variants, `rtx.integrateDirect.slimTrim` / `slimSampler`: no consistent gain (scene A âˆ’0.52 / 0.00 ms, scene B +0.36 ms in a noisy batch) (091251702, 3f372df52, 2dd0e83f1; deleted in e6dfcf95f).
 - P3.7 per-triangle alpha opacity classes, `rtx.alphaBake.opacityClasses` and its budget options, `classAllMips`, `classPointInstancers`: +0.03 ms with OMM, +0.06 ms without (noise); the exact all-mips form +1.08 ms in scene B (281871663, 28df4250e; deleted in f34cc3382).
 - `rtx.alphaBake.debugForceOpaque`, the alpha-test ceiling probe: measured the most alpha testing can cost, 5.6 ms with OMM / 8.1 ms without (f6b302f83; deleted in e6dfcf95f).
 - D3D9 S5 camera-invariant VS hash, `rtx.d3d9Identity.vsStableHash` and its tuning options, with D3D9 v2 V3 built on it: recognized 0 shaders in a D3D9 test game; R6 supersedes it (42bc89d9a, 0d6bf22df; deleted in f34cc3382).
@@ -1359,12 +1518,12 @@ One preset system for every game: each preset is a `rtx-remix/weather/<name>.con
 
 ### Renderer-wide pre-exposure, on by default
 Radiance is pre-exposed by a power-of-two factor that follows Remix's own exposure, so fp16 targets keep precision at night. Every radiance source is multiplied by it; meters, tonemappers and upscalers divide it out (DLSS-SR/RR through `InPreExposure`), and temporal histories are rescaled or reset on a step. RemixFX frame data gains `preExposure` and `preExposureHistoryRatio` in former padding.
-- Options: added `rtx.preExposure.enable` (default on), `hysteresisStops` (1), `minLog2` (−16), `maxLog2` (20), `forceUnity` (debug).
+- Options: added `rtx.preExposure.enable` (default on), `hysteresisStops` (1), `minLog2` (âˆ’16), `maxLog2` (20), `forceUnity` (debug).
 - Commits: a18b4ef52, 77db1eba3, bce1d5aa7, fbd82037d, 75474dba7, 5dc5eae5b (merged in 6c3ee0314).
 
 ### Auto exposure: non-finite pixels, compensation curve, new defaults
 One Inf pixel could pin the exposure at its floor for good; the meter now leaves non-finite pixels out, and the composite clamps its output to fp16 and drops NaN. An EV-dependent compensation curve lets a night sit a few stops under mid gray while the day is unchanged. A game's preset now sets the values validated in game.
-- Options: added `rtx.autoExposure.halo.compensationNightStops` (0), `compensationNightEv`, `compensationDayEv`; defaults flipped `rtx.autoExposure.halo.meanFloorEv` −6 → −24, `compensationNightEv` / `compensationDayEv` −2 / 6 → 0 / 12 (inert while the curve's stops are 0).
+- Options: added `rtx.autoExposure.halo.compensationNightStops` (0), `compensationNightEv`, `compensationDayEv`; defaults flipped `rtx.autoExposure.halo.meanFloorEv` âˆ’6 â†’ âˆ’24, `compensationNightEv` / `compensationDayEv` âˆ’2 / 6 â†’ 0 / 12 (inert while the curve's stops are 0).
 - Commits: 69309fe5c, db148049b, e8d4c9544 (merged in 6c3ee0314).
 
 ### Host light calibration and photometer
@@ -1397,7 +1556,7 @@ An 80 B legacy surface record holds the fixed-function state (texture transforms
 ### Direct lighting Lean reads the core material record
 New direct-integrator variants read only the core record (or the legacy record) for NEE cutout candidates instead of the full surface material. The D6 decision (inverted blend in core) is still open.
 - Options: added `rtx.integrateDirect.coreMaterial` (default off; on in a game's `rtx.conf`).
-- Measured: DirectIntegrationLightBVH scene A −0.32 ms, scene B −0.40 ms; images 55.4 / 52.5 dB.
+- Measured: DirectIntegrationLightBVH scene A âˆ’0.32 ms, scene B âˆ’0.40 ms; images 55.4 / 52.5 dB.
 - Commits: d8f0d730b.
 
 ### Frame feature mask (Phase 5 F0)
@@ -1453,19 +1612,19 @@ With the option, a D3D9 camera cut resets temporal history but no longer clears 
 ### SHaRC update deferred flush
 The SHaRC update keeps only its open vertex in registers and writes each vertex to a per-tile buffer; a small flush kernel then runs the old deposit logic. Same arithmetic in the same order.
 - Options: added `rtx.sharc.deferredFlush` (default off; on in a game's `rtx.conf`). It is a precondition of the SER update; a re-measure after the SHaRC upstream port is owed.
-- Measured: scene A −0.12 ms; image 53.9 dB.
+- Measured: scene A âˆ’0.12 ms; image 53.9 dB.
 - Commits: aafbcfe5b.
 
 ### G-buffer slim variants
 RayQuery G-buffer kernels without the POM, thin-film, portal and subsurface code the frame can't use, including the stochastic-alpha PSR prepare set an API host runs. The `[GBuffer]` log line names why a frame stays Full.
 - Options: added `rtx.gbuffer.slimVariants` (default off; on in a game's `rtx.conf`).
-- Measured: GBufferPrimaryRays −0.19 ms (scene A, stochastic-alpha slim); Lean engaged, image 55.0 dB.
+- Measured: GBufferPrimaryRays âˆ’0.19 ms (scene A, stochastic-alpha slim); Lean engaged, image 55.0 dB.
 - Commits: 6bf64034d, 4b702e7d4, 80d10ade0.
 
 ### Compacted PSR dispatch
 PSR Prepare appends the pixels that need reflection or transmission to two lists, and the PSR passes dispatch indirectly over them instead of one thread per pixel. Same image per pixel.
 - Options: added `rtx.gbuffer.compactPsr` (default off; on in a game's `rtx.conf`).
-- Measured: scene A −0.46 ms (ReflectionPSR 0.67 → 0.40, TransmissionPSR 0.35 → 0.16), scene B −0.11 ms; images 53.9 / 52.2 dB.
+- Measured: scene A âˆ’0.46 ms (ReflectionPSR 0.67 â†’ 0.40, TransmissionPSR 0.35 â†’ 0.16), scene B âˆ’0.11 ms; images 53.9 / 52.2 dB.
 - Commits: 09bf2d4ce, ddfe16e6a.
 
 ### G-buffer write diet (no gain, stays off)
@@ -1483,31 +1642,31 @@ Three 2026-09-27 atmosphere fixes missing from the overhaul line were cherry-pic
 ### Deterministic static BLAS clusters
 Partial merged-BLAS rebuilds fragmented the merged scene over a session (API-host replay: 968 merged BLASes against 158 after a full rebuild). With static clusters, a world cell's merged buckets are always rebuilt together, so their membership depends only on the cell's members; young and volatile instances get their own buckets and fold in later. `autoCellSize` derives the cell size from `rtx.sceneScale` (58.5 m) when none is set.
 - Options: added `rtx.accel.staticClusters` (default off; on in a game's `rtx.conf`, the code default flips at P5), `rtx.accel.clusterYoungFrames` (30), `rtx.accel.clusterFoldsPerFrame` (2), `rtx.accel.autoCellSize` (default off).
-- Measured: in game, scene A 3-4 ms faster (22.4 ms frame). Replay −1.4 to −1.77 ms against adjacent off runs.
+- Measured: in game, scene A 3-4 ms faster (22.4 ms frame). Replay âˆ’1.4 to âˆ’1.77 ms against adjacent off runs.
 - Commits: 4a1065ddf, 450ef8cae.
 
 ### Static clusters: OMM users merged into their cell
 Drops the per-cell split between OMM and non-OMM buckets while keeping OMM rebinds partial. Buckets whose members stay volatile no longer fold.
 - Options: added `rtx.accel.clusterMergeOmm` (default off; on in a game's `rtx.conf`).
-- Measured: −1.49 ms (IndirectIntegration −0.38, GBuffer −0.35, FogVisibility −0.32, DirectIntegration −0.24); merged BLASes 158 vs 204.
+- Measured: âˆ’1.49 ms (IndirectIntegration âˆ’0.38, GBuffer âˆ’0.35, FogVisibility âˆ’0.32, DirectIntegration âˆ’0.24); merged BLASes 158 vs 204.
 - Commits: 2c36b19ef, 2fc2a2967.
 
 ### Static clusters: fast-trace builds for settled buckets
 A cluster bucket that is neither young nor volatile is built with PREFER_FAST_TRACE and without ALLOW_UPDATE.
 - Options: added `rtx.accel.staticClusterQuality` (default off; on in a game's `rtx.conf`).
-- Measured: −0.34 ms.
+- Measured: âˆ’0.34 ms.
 - Commits: 6bf7ff656.
 
 ### TLAS fast trace, partial instance upload, mover back-off
 TLAS builds can prefer fast trace; the TLAS instance buffer can upload only changed records; a geometry that keeps moving after rejoining its merged bucket stays on its own BLAS for longer each time.
 - Options: added `rtx.accel.tlasFastTrace`, `rtx.accel.partialInstanceUpload`, `rtx.accel.moverBackoff` (all default off; fast trace and back-off on in a game's `rtx.conf`), `rtx.alphaBake.census` (diagnostic).
-- Measured: fast trace −0.29 ms; partial upload +0.06 ms (neutral, not recommended); back-off (testhost) merged rebuilds while moving ~78 → 0 per 30 frames.
+- Measured: fast trace âˆ’0.29 ms; partial upload +0.06 ms (neutral, not recommended); back-off (testhost) merged rebuilds while moving ~78 â†’ 0 per 30 frames.
 - Commits: f2fbd3602.
 
 ### Compact micromaps
 Uniformly opaque or transparent triangles of a baked OMM array get special indices, the micromap is built from the mixed triangles only, and the unused OMM budget is released (66 % of OMM triangles in an API-host replay are uniform).
 - Options: added `rtx.alphaBake.compactMicromaps` (default off; on in a game's `rtx.conf`).
-- Measured: −0.31 ms (two full-run pairs); OMMs bound +40 %.
+- Measured: âˆ’0.31 ms (two full-run pairs); OMMs bound +40 %.
 - Commits: d1018211e, 2fc2a2967.
 
 ### Origin shifts translate merged BLASes (default off, open)
@@ -1519,25 +1678,25 @@ With `rtx.scene.originShiftEvent`, an origin shift moves clean merged buckets th
 ### Merged BLAS compaction ratio (superseded)
 Rebuilds every merged bucket when partial rebuilds have grown the bucket count past a ratio. Superseded by static clusters; Phase 6 deletes it.
 - Options: added `rtx.mergedBucketCompactionRatio` (default 0 = off).
-- Measured (replay, separate runs): ratio 1.5 −1.24 ms; ratio 1.1 with `directRetained` −2.23 ms, with compaction frames up to 5-6 ms of CPU.
+- Measured (replay, separate runs): ratio 1.5 âˆ’1.24 ms; ratio 1.1 with `directRetained` âˆ’2.23 ms, with compaction frames up to 5-6 ms of CPU.
 - Commits: da23cc564.
 
 ### SHaRC indirect slim variants and pipeline prewarm
 SHaRC update and query variants without the POM, RIS and translucent-visibility code the frame can't use. The SHaRC pipelines are now prewarmed, which removes the hitch the first time SHaRC runs.
 - Options: added `rtx.integrateIndirect.slimVariants` (default off; on in a game's `rtx.conf`).
-- Measured: −0.32 ms (IndirectIntegration −0.29, SharcUpdate −0.09); image 55.5 dB.
+- Measured: âˆ’0.32 ms (IndirectIntegration âˆ’0.29, SharcUpdate âˆ’0.09); image 55.5 dB.
 - Commits: 5067cbd5f.
 
 ### Indirect assembly and non-SHaRC slim variants
 Slim variants for the indirect assembly pass (all modes) and for the TraceRay integrator in plain, NRC and ReSTIR GI modes, plus a POM-kept slim level for games that use POM.
 - Options: added `rtx.integrateIndirect.slimAssembly`, `rtx.integrateIndirect.slimNonSharc`, `rtx.integrateIndirect.slimKeepPom` (all default off; `slimAssembly` on in a game's `rtx.conf`).
-- Measured: slimAssembly −0.20 ms, image 55.3 dB; slimNonSharc in NRC mode −0.29 ms (at least −0.14 after drift), image 54.6 dB.
+- Measured: slimAssembly âˆ’0.20 ms, image 55.3 dB; slimNonSharc in NRC mode âˆ’0.29 ms (at least âˆ’0.14 after drift), image 54.6 dB.
 - Commits: 89274a507, 3189b2462.
 
 ### Present-wait pre-gate split
 With present-wait pacing on, the frame-start ray tracing work (scene prep and TLAS, optionally up to the G-buffer) is submitted ahead and runs in the present-wait idle gap. A guard skips the split on frames with many BLAS builds.
 - Options: added `rtx.present.presentWaitPreGateFlush` (0 off, 1-4 stages), `presentWaitPreGateMaxBlasBuilds` (16), `presentWaitPreGateMaxOmmKTris` (0).
-- Measured (in game, scene A): pacing on 21.4 ms → gap fill 2 20.6 ms, no judder.
+- Measured (in game, scene A): pacing on 21.4 ms â†’ gap fill 2 20.6 ms, no judder.
 - Commits: 86919fa58, 067c0d1c4.
 
 ### Scene interface: skinned retained instances direct
@@ -1552,7 +1711,7 @@ Decal, emissive-blend and blended-particle retained instances stay on the direct
 ### Scene interface: DrawInstance transient lane
 Per-frame `DrawInstance` draws become scene-owned instances matched frame to frame; unchanged ones are kept, moves relocate, new poses update in place. View-model draws move in place instead of rebuilding.
 - Options: added `rtx.scene.directTransient` (default off; not yet run in game).
-- Measured (replay): CPU −0.7 ms in moving frames; image 55.6 dB; view-model rebuilds 20-34 → 2-3 per frame.
+- Measured (replay): CPU âˆ’0.7 ms in moving frames; image 55.6 dB; view-model rebuilds 20-34 â†’ 2-3 per frame.
 - Commits: ca766cfec, bfe99f825.
 
 ### Scene interface: per-frame services and USD replacements on the direct lane
@@ -1563,7 +1722,7 @@ Retained instances that needed the legacy lane only for per-frame work (light co
 ### Scene interface: explicit lights, changed-only light upload
 An update of an API light always takes effect in place (no static-light sleep), and once the light layout is stable only changed light slots are uploaded. Game-agnostic: this also acts on D3D9 games.
 - Options: added `rtx.scene.explicitLights` (default off).
-- Measured (replay): image 52 dB; light slots uploaded per held frame 225 → 0. Testhost, 10 light updates: 217 vs 1003 slots per frame.
+- Measured (replay): image 52 dB; light slots uploaded per held frame 225 â†’ 0. Testhost, 10 light updates: 217 vs 1003 slots per frame.
 - Commits: 21793b383, 38213581d, 1ed83e334.
 
 ### Scene interface: selective mod changes and asset keys (Remix API)
@@ -1578,7 +1737,7 @@ For API hosts, a mod reload no longer clears the scene: only entries whose mesh 
 ### Scene interface and the direct lane for API retained instances (Phase 1)
 A scene interface (`rtx_scene_interface.h`) and `RetainedScene`: host retained instances that need no per-frame work are built once and kept, with no replacement instance, draw-call cache or per-frame replay; everything else stays on the first implementation as the legacy lane under the same handles. Retained commands can travel through a lock-free queue, and categories of direct instances can re-resolve on option changes (live texture tagging). Replay-verified, not yet run in game.
 - Options: added `rtx.scene.directRetained`, `rtx.scene.commandQueue`, `rtx.scene.resolveCategoriesOnOptionChange` (all default off), `rtx.scene.selfCheckFrames` (0).
-- Measured (P5 gate R3, 2026-10-14): `directRetained` scene A −1.51 ms; scene B GPU within noise, CS thread CPU 10.1 → 7.7 ms/frame. Images vs off (separate runs): scene A 53.9 dB, scene B 47.0 dB; the scene B gap is mostly which cutouts hold an OMM at the screenshot frame.
+- Measured (P5 gate R3, 2026-10-14): `directRetained` scene A âˆ’1.51 ms; scene B GPU within noise, CS thread CPU 10.1 â†’ 7.7 ms/frame. Images vs off (separate runs): scene A 53.9 dB, scene B 47.0 dB; the scene B gap is mostly which cutouts hold an OMM at the screenshot frame.
 - Commits: 3a0e952ae, 2a845e6e3, 1797e127f, f85bcc229, 5a9bfd9be, 5f9a76910.
 
 ### Camera frame events, no implicit clears, origin-shift event (Remix API)
@@ -1596,7 +1755,7 @@ Every `remixapi_*` call of an API host can be recorded with its payloads and rep
 ### Direct lighting slim variants
 Direct-integrator variants compile out diffusion-profile SSS (about 80 % of the kernel's machine code) and, at the Lean level, translucent and thin-opaque handling of the NEE visibility ray; the host picks the level per frame.
 - Options: added `rtx.integrateDirect.slimVariants` (default off; on in a game's `rtx.conf`).
-- Measured: about −1 ms, 255 → 128 registers, identical image.
+- Measured: about âˆ’1 ms, 255 â†’ 128 registers, identical image.
 - Commits: bc64b8aa1.
 
 ### Fast-trace static merged BLAS (awaiting A/B)
@@ -1613,6 +1772,6 @@ A live TLAS / trace-stage readout in the dev menu (Phase 0: settled per-mesh vs 
 ### Upstream fixes taken
 Cherry-picked from upstream dxvk-remix: reduced VRAM for unused RTXDI, frame-generation and PSR resources; eyes in virtual instances; the camera no longer turns when swapping Remix menus; a volumetric scale for the fallback light. The light BVH select pass now binds the RTXDI reservoir through `AliasedBuffer` and skips the temporal position binding when it is unallocated, which crashed an API host on the first ray-traced frame.
 - Options: added `rtx.fallbackLightVolumetricRadianceScale` (default 1.0).
-- Measured (upstream, 4K DLSS Auto): frame generation off −22 MB; SR 0.2 −38 MB textures, −85 MB buffers.
+- Measured (upstream, 4K DLSS Auto): frame generation off âˆ’22 MB; SR 0.2 âˆ’38 MB textures, âˆ’85 MB buffers.
 - Commits: 0b2886492, 697b56c25, 78a832ca1, 8526d7618, ccace60d0, 4dacdccbf.
 - Docs: [upstream-sync.md](upstream-sync.md)
