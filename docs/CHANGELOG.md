@@ -30,6 +30,14 @@ Entry format:
 
 ## 2026-11-03
 
+### Direct DLL compatibility for neural rendering
+An opt-in backend permits an authorised compatible DLSS-NR DLL to run without NGX feature discovery. All passes share one DLL session while retaining independent temporal-history handles, and the normal rendering controls remain available.
+- Options: added `rtx.neuralUplift.useDirectLibrary`, default off and independent of graphics presets.
+- Validation: standalone Vulkan initialization, feature creation, release and shutdown succeed with the user's compatible DLL; the NGX path reports FeatureNotFound for that same DLL.
+- Tests: 31 dedicated unit tests passed. The isolated game logged successful direct initialization, feature creation and evaluation, and the user confirmed the visible effect works.
+- Commits: the commit that adds this entry.
+- Docs: [NeuralRenderingCompatibility.md](../documentation/NeuralRenderingCompatibility.md).
+
 ### Static mesh replacements share geometry independently of the original pose
 Static USD mesh replacements no longer inherit a game draw's bone palette, vertex shader or per-frame geometry lifetime. Retained submeshes derive deformation from the replacement geometry, so static replacements share buffers and BLASes while skinned replacements and retained original parts preserve their pose ownership.
 - Options: none.

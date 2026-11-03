@@ -347,6 +347,8 @@ dxvk_src = files([
   'rtx_render/rtx_neural_radiance_cache.h',
   'rtx_render/rtx_neural_uplift.cpp',
   'rtx_render/rtx_neural_uplift.h',
+  'rtx_render/rtx_ngx_neural_library.cpp',
+  'rtx_render/rtx_ngx_neural_library.h',
   'rtx_render/rtx_ngx_wrapper.cpp',
   'rtx_render/rtx_ngx_wrapper.h',
   'rtx_render/rtx_nis.cpp',

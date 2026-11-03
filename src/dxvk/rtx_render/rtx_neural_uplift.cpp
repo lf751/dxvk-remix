@@ -118,6 +118,7 @@ namespace dxvk {
     // so a failed attempt must not look like a pending settings change, or it would retry (and waitForIdle)
     // every frame.
     m_createdPreset = preset();
+    m_createdDirectLibrary = useDirectLibrary();
     m_createdPassCount = passes;
     m_createdDisplaySize[0] = m_displaySize[0];
     m_createdDisplaySize[1] = m_displaySize[1];
@@ -179,6 +180,7 @@ namespace dxvk {
     const int passes = std::clamp(passCount(), 1, kNeuralUpliftMaxPassCount);
 
     m_recreate |= (m_createdPreset != preset())
+      || (m_createdDirectLibrary != useDirectLibrary())
       || (m_createdPassCount != passes)
       || (m_createdDisplaySize[0] != m_displaySize[0])
       || (m_createdDisplaySize[1] != m_displaySize[1]);
@@ -460,6 +462,7 @@ namespace dxvk {
       } });
 
     RemixGui::Checkbox("Enable DLSS-NR", &enableObject());
+    RemixGui::Checkbox("Direct DLL Compatibility", &useDirectLibraryObject());
 
     showImguiStatusLine();
 

@@ -79,6 +79,7 @@ namespace dxvk {
   class NGXRayReconstructionContext;
   class NGXDLFGContext;
   class NGXNeuralRenderingContext;
+  class NGXNeuralLibrary;
 
   class NGXContext final {
   public:
@@ -111,9 +112,7 @@ namespace dxvk {
       return m_supportsRayReconstruction;
     }
 
-    bool supportsDlssNeuralRendering() const {
-      return m_supportsDlssNeuralRendering;
-    }
+    bool supportsDlssNeuralRendering() const;
 
     bool isDlssNeuralRenderingSupportChecked() const {
       return m_dlssNeuralRenderingSupportChecked;
@@ -174,6 +173,8 @@ namespace dxvk {
 
     // Set up by initialize() and passed to NGX as NVSDK_NGX_FeatureCommonInfo::PathListInfo.
     std::vector<std::wstring> m_featureSearchPaths;
+    std::weak_ptr<NGXNeuralLibrary> m_neuralLibrary;
+    std::wstring m_directNeuralLibraryPath;
   };
 
   class NGXFeatureContext {
@@ -449,7 +450,7 @@ namespace dxvk {
 
   public:
     // note: ctor is public due to make_unique/unique_ptr, but not intended as public --- use NGXWrapper::createDlssNeuralRenderingContext instead
-    explicit NGXNeuralRenderingContext(DxvkDevice* device);
+    explicit NGXNeuralRenderingContext(DxvkDevice* device, std::shared_ptr<NGXNeuralLibrary> library = nullptr);
     ~NGXNeuralRenderingContext() override;
 
     NGXNeuralRenderingContext(const NGXNeuralRenderingContext&) = delete;
@@ -460,6 +461,8 @@ namespace dxvk {
   private:
     bool m_initialized = false;
     NVSDK_NGX_Handle* m_neuralRenderingFeature = nullptr;
+    std::shared_ptr<NGXNeuralLibrary> m_library;
+    mutable bool m_loggedEvaluation = false;
   };
 #endif // NVSDK_NGX_DEFS_H
 }

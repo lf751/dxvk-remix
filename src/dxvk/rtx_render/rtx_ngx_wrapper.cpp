@@ -33,6 +33,8 @@
 #pragma comment(lib, "version.lib")
 
 #include "rtx_ngx_wrapper.h"
+#include "rtx_ngx_neural_library.h"
+#include "rtx_neural_uplift.h"
 #include "rtx_matrix_helpers.h"
 
 #include <nvsdk_ngx.h>
@@ -317,6 +319,7 @@ namespace dxvk
     }
 
     m_supportsDlssNeuralRendering = checkDlssNeuralRenderingSupport(tempParams);
+    m_directNeuralLibraryPath = findFeatureLibrary(L"nvngx_dlssnr.dll", m_featureSearchPaths).path;
     m_dlssNeuralRenderingSupportChecked = true;
     logDlssNeuralRenderingLibrary();
     updateRayReconstructionLibrary();
@@ -467,7 +470,30 @@ namespace dxvk
       return nullptr;
     }
 
+    if (DxvkNeuralUplift::useDirectLibrary()) {
+      auto library = m_neuralLibrary.lock();
+      if (!library) {
+        library = std::make_shared<NGXNeuralLibrary>(m_device);
+        if (!NGX_CALL(library->initialize(m_directNeuralLibraryPath))) {
+          return nullptr;
+        }
+        m_neuralLibrary = library;
+      }
+      return std::make_unique<NGXNeuralRenderingContext>(m_device, std::move(library));
+    }
     return std::make_unique<NGXNeuralRenderingContext>(m_device);
+  }
+
+  bool NGXContext::supportsDlssNeuralRendering() const {
+#ifdef _M_X64
+    if (DxvkNeuralUplift::useDirectLibrary()) {
+      const bool available = !m_directNeuralLibraryPath.empty();
+      s_dlssNeuralRenderingStatus.store(available ? 1 : 0, std::memory_order_release);
+      return available;
+    }
+#endif
+    s_dlssNeuralRenderingStatus.store(m_dlssNeuralRenderingSupportChecked ? (m_supportsDlssNeuralRendering ? 1 : 0) : -1, std::memory_order_release);
+    return m_supportsDlssNeuralRendering;
   }
 
   std::string NGXContext::getFeatureSearchPathText() const {
@@ -1236,11 +1262,12 @@ namespace dxvk
 
 
   // Neural Rendering
-  NGXNeuralRenderingContext::NGXNeuralRenderingContext(DxvkDevice* device)
-    : NGXFeatureContext(device) { }
+  NGXNeuralRenderingContext::NGXNeuralRenderingContext(DxvkDevice* device, std::shared_ptr<NGXNeuralLibrary> library)
+    : NGXFeatureContext(device), m_library(std::move(library)) { }
 
   NGXNeuralRenderingContext::~NGXNeuralRenderingContext() {
     releaseNGXFeature();
+    NGX_CALL(m_library.reset());
   }
 
   void NGXNeuralRenderingContext::initialize(Rc<DxvkContext> renderContext, const uint32_t displaySize[2], uint32_t preset) {
@@ -1266,8 +1293,13 @@ namespace dxvk
     createParams.Height = displaySize[1];
 
     const VkCommandBuffer vkCommandBuffer = renderContext->getCommandList()->getCmdBuffer(dxvk::DxvkCmdBuffer::ExecBuffer);
-    const NVSDK_NGX_Result result =
-      NGX_CALL(NGX_VULKAN_CREATE_DLSSNR_EXT1(m_device->handle(), vkCommandBuffer, 1, 1, &m_neuralRenderingFeature, m_parameters, &createParams));
+    m_parameters->Set(NVSDK_NGX_Parameter_DLSSNR_Width, displaySize[0]);
+    m_parameters->Set(NVSDK_NGX_Parameter_DLSSNR_Height, displaySize[1]);
+    m_parameters->Set(NVSDK_NGX_Parameter_CreationNodeMask, 1u);
+    m_parameters->Set(NVSDK_NGX_Parameter_VisibilityNodeMask, 1u);
+    const NVSDK_NGX_Result result = m_library
+      ? static_cast<NVSDK_NGX_Result>(NGX_CALL(m_library->create(vkCommandBuffer, m_parameters, &m_neuralRenderingFeature)))
+      : NGX_CALL(NGX_VULKAN_CREATE_DLSSNR_EXT1(m_device->handle(), vkCommandBuffer, 1, 1, &m_neuralRenderingFeature, m_parameters, &createParams));
 
     if (NVSDK_NGX_FAILED(result)) {
       Logger::err(str::format("Failed to create DLSS-NR feature: ", resultToString(result)));
@@ -1276,6 +1308,7 @@ namespace dxvk
     }
 
     m_initialized = true;
+    Logger::info(str::format("[DLSS-NR] Created ", m_library ? "direct DLL" : "NGX", " feature at ", displaySize[0], "x", displaySize[1]));
 #endif
   }
 
@@ -1342,10 +1375,48 @@ namespace dxvk
     NVSDK_NGX_Parameter_SetF(m_parameters, NVSDK_NGX_Parameter_Jitter_Offset_X, settings.jitterOffset[0]);
     NVSDK_NGX_Parameter_SetF(m_parameters, NVSDK_NGX_Parameter_Jitter_Offset_Y, settings.jitterOffset[1]);
 
-    const NVSDK_NGX_Result result = NGX_CALL(NGX_VULKAN_EVALUATE_DLSSNR_EXT(vkCommandbuffer, m_neuralRenderingFeature, m_parameters, &neuralRenderingEvalParams));
+    NVSDK_NGX_Result result;
+    if (m_library) {
+      // Direct snippets consume signed subrect dimensions; NGX's helper uses unsigned values.
+      const auto bind = [this](const char* name, NVSDK_NGX_Resource_VK* resource, uint32_t width, uint32_t height) {
+        const std::string prefix = std::string("DLSSNR.") + name;
+        m_parameters->Set(prefix.c_str(), resource);
+        m_parameters->Set((prefix + "SubrectBaseX").c_str(), 0);
+        m_parameters->Set((prefix + "SubrectBaseY").c_str(), 0);
+        m_parameters->Set((prefix + "SubrectWidth").c_str(), static_cast<int>(width));
+        m_parameters->Set((prefix + "SubrectHeight").c_str(), static_cast<int>(height));
+      };
+      bind("Color", &inColorResource, width, height);
+      bind("Output", &outColorResource, outputWidth, outputHeight);
+      bind("MVec", &motionVectorsResource, mvWidth, mvHeight);
+      bind("Depth", &depthResource, depthWidth, depthHeight);
+      bind("ControlMask", &controlMaskResource, controlMaskWidth, controlMaskHeight);
+      m_parameters->Set(NVSDK_NGX_Parameter_DLSSNR_Reset, static_cast<int>(settings.resetAccumulation));
+      m_parameters->Set(NVSDK_NGX_Parameter_DLSSNR_DepthInverted, 0);
+      m_parameters->Set(NVSDK_NGX_Parameter_DLSSNR_Enabled, 1);
+      m_parameters->Set(NVSDK_NGX_Parameter_DLSSNR_UICorrection, 0);
+      m_parameters->Set(NVSDK_NGX_Parameter_DLSSNR_Intensity, settings.intensity);
+      m_parameters->Set(NVSDK_NGX_Parameter_DLSSNR_LocalToneStrength, settings.toneStrength);
+      m_parameters->Set(NVSDK_NGX_Parameter_DLSSNR_LocalStructureStrength, settings.structuralStrength);
+      m_parameters->Set("DLSSNR.GlobalToneStrength", 1.0f);
+      m_parameters->Set(NVSDK_NGX_Parameter_DLSSNR_Style, settings.model);
+      m_parameters->Set(NVSDK_NGX_Parameter_DLSSNR_UseAutoMask, static_cast<int>(settings.useAutoMask));
+      m_parameters->Set(NVSDK_NGX_Parameter_DLSSNR_MaskBlendMode, static_cast<int>(settings.maskBlendMode));
+      m_parameters->Set(NVSDK_NGX_Parameter_DLSSNR_SkinStructureStrength, settings.skinStructureStrength);
+      m_parameters->Set(NVSDK_NGX_Parameter_DLSSNR_MVecScaleX, settings.motionVectorScale[0]);
+      m_parameters->Set(NVSDK_NGX_Parameter_DLSSNR_MVecScaleY, settings.motionVectorScale[1]);
+      result = static_cast<NVSDK_NGX_Result>(NGX_CALL(m_library->evaluate(vkCommandbuffer, m_neuralRenderingFeature, m_parameters)));
+    } else {
+      result = NGX_CALL(NGX_VULKAN_EVALUATE_DLSSNR_EXT(vkCommandbuffer, m_neuralRenderingFeature, m_parameters, &neuralRenderingEvalParams));
+    }
     if (NVSDK_NGX_FAILED(result)) {
       Logger::err(str::format("DLSS-NR evaluation failed: ", resultToString(result)));
       return false;
+    }
+
+    if (!m_loggedEvaluation) {
+      Logger::info(str::format("[DLSS-NR] First ", m_library ? "direct DLL" : "NGX", " evaluation succeeded."));
+      m_loggedEvaluation = true;
     }
 
     return true;
@@ -1354,9 +1425,14 @@ namespace dxvk
 
   void NGXNeuralRenderingContext::releaseNGXFeature() {
     m_initialized = false;
+    m_loggedEvaluation = false;
 
     if (m_neuralRenderingFeature) {
-      NGX_CALL(NVSDK_NGX_VULKAN_ReleaseFeature(m_neuralRenderingFeature));
+      if (m_library) {
+        NGX_CALL(m_library->release(m_neuralRenderingFeature));
+      } else {
+        NGX_CALL(NVSDK_NGX_VULKAN_ReleaseFeature(m_neuralRenderingFeature));
+      }
       m_neuralRenderingFeature = nullptr;
     }
   }

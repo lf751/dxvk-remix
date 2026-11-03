@@ -127,11 +127,16 @@ namespace dxvk {
     // Releases the NGX feature while the device is still alive.
     void onDestroy();
 
+    RTX_OPTION_ARGS("rtx.neuralUplift", bool, useDirectLibrary, false,
+               "Loads nvngx_dlssnr.dll directly with caller compatibility handling instead of NGX feature discovery. "
+               "Use only with an authorised compatible DLL. Changing this recreates the feature and its temporal history.",
+               args.flags = RtxOptionFlags::UserSetting);
+
     RTX_OPTION_ARGS("rtx.neuralUplift", bool, enable, false,
                     "Enables DLSS-NR (DLSS 3D-Guided Neural Generation), a neural image enhancement applied to the "
                     "finished frame at display resolution, using the depth and motion vectors the upscaler used. It is "
                     "driven by the per-material DLSS control mask, combined with the automatic character mask when "
-                    "rtx.neuralUplift.useAutoMask is on. NGX decides whether the GPU and driver support it.",
+                    "rtx.neuralUplift.useAutoMask is on. The selected backend must support the GPU and driver.",
                     args.environment = "RTX_NEURAL_UPLIFT_ENABLE",
                     args.flags = RtxOptionFlags::UserSetting);
 
@@ -250,6 +255,7 @@ namespace dxvk {
 
     // Creation-time state the feature was built around; a change to any of it rebuilds.
     int m_createdPreset = -1;
+    bool m_createdDirectLibrary = false;
     int m_createdPassCount = 0;
     uint32_t m_createdDisplaySize[2] = {};
 
