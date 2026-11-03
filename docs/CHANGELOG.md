@@ -34,7 +34,7 @@ Entry format:
 Static USD mesh replacements no longer inherit a game draw's bone palette, vertex shader or per-frame geometry lifetime. Retained submeshes derive deformation from the replacement geometry, so static replacements share buffers and BLASes while skinned replacements and retained original parts preserve their pose ownership.
 - Options: none.
 - Tests: static replacement of a posed draw, mixed original/replacement parts, skinned replacements, and the explicit API deformation contract.
-- Performance: same-scene gameplay comparison pending.
+- Validation: 31 dedicated unit tests passed. In the isolated JPOG gameplay test, peak driver usage was 2987 MiB versus 15590 MiB in the earlier failing installed run, with 0 versus 3 GPU-stall warnings. The user confirmed the severe lag improved. These were user-controlled runs with matching content/settings, not a frame-synchronized benchmark; separate flickering remains unresolved.
 
 ### JPOG integration: current dev runtime and SDK updates
 Merge Remix Plus dev through 5c44db98a, including D3D9 object re-entry matching, texture and micromap residency, in-flight micromap lifetime, NRD 4.18 and FSR SDK 2.4. Preserve terrain blending, authored displacement modes, smooth normals and the D3D9 reset-mask repair.
