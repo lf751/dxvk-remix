@@ -14,6 +14,9 @@ code is under two licenses, and each file's header says which applies:
 - **This fork's own files** (no header, added by Kim2091: `rtx_fork_*`, `rtx_host_settings.*`,
   `rtx_perf_log.*`, `rtx_weather*`, `rtx_remix_api_device.h` and others): our own work. Where
   such a file holds code moved out of an NVIDIA file, that code stays MIT.
+- NVIDIA Real-Time Denoisers (NRD): used unmodified from the `submodules/nrd` submodule at tag
+  `v4.18.0` and shipped as `NRD.dll` inside the application under the NVIDIA RTX SDKs license
+  (`submodules/nrd/LICENSE.txt`, reproduced in `ThirdPartyLicenses.txt`). The About tab's credits name it.
 - Bundled libraries: `ThirdPartyLicenses.txt`. That includes the NVIDIA SHARC SDK, used
   unmodified from the `submodules/sharc` submodule and compiled into the runtime under the NVIDIA
   RTX SDKs license (`submodules/sharc/License.md`, reproduced in `ThirdPartyLicenses.txt`), which
@@ -86,7 +89,37 @@ What that means for releases:
   in place of the game's per-frame camera depth, and depth/caustic scale in meters from the
   game's units per metre. Nothing else from that commit is used.
 
+### NightSightProductions/RTX-Remix-Artemis-Edition (KingVulpes)
+
+- **The move to AMD FSR SDK 2.4.0.** The submodule move, linking the loader and installing it
+  with the effect DLLs, the nested Vulkan device context, the version structs on context
+  creation, the V2 frame generation prepare descriptor, logging the provider version,
+  destroying the proxy swapchain after its context and releasing the frame generation
+  presenter with the swapchain were ported from commit `d8146a274` ("Upgrade FSR to AMD FSR
+  SDK 2.4.0") by KingVulpes. That repository ships the same `LICENSE` (zlib) and `LICENSE-MIT`
+  as this one, and the code is used under those terms. Ours on top: the device features for
+  the ML versions, configuring frame generation before the prepare dispatch, the status in
+  the menus, `rtx.fsr.forceNonMl`, the fallback when a version cannot start, and rendering at
+  the output resolution when FSR cannot run.
+
+## Ideas from other projects
+
+### Denoising
+
+No code from these projects is copied. The ideas are reimplemented here.
+
+- NVIDIA NRD (https://github.com/NVIDIA-RTX/NRD): history length set from a low pass filtered frame rate, and a distant hit distance for sky misses.
+- Based on ideas from OpenRemix (https://github.com/OpenRenderCollective/OpenRemix) by sambow23 (CattaRappa): limiting a hitch to twice the average frame time when smoothing the frame time for history length.
+
 ## Code from other projects
+
+### AMD FSR SDK
+
+- **AMD FSR Upscaling and Frame Generation.** `amd_fidelityfx_loader_vk.dll`,
+  `amd_fidelityfx_upscaler_vk.dll` and `amd_fidelityfx_framegeneration_vk.dll` come unmodified
+  from the `submodules/FidelityFX-SDK` submodule, AMD FSR SDK 2.4.0 by Advanced Micro Devices,
+  Inc. Its license is in `ThirdPartyLicenses.txt`. This project does not reverse engineer,
+  decompile or disassemble them.
 
 ### NUMOS
 
@@ -108,6 +141,11 @@ What that means for releases:
   `auto_exposure_halo_resolve.comp.slang`): by TheGreatHmmmmm, ported from their halocedlaart
   Halo CE path-tracer addon's `composite.hlsl`. MIT: Copyright (c) 2026 TheGreatHmmmmm. The addon
   builds on Prism, so Prism's notice is included too.
+
+### HDR output
+
+- **HDR10 output**: by TheGreatHmmmmm. MIT: Copyright (c) 2026 TheGreatHmmmmm (the notice is in
+  `ThirdPartyLicenses.txt`).
 
 ### PQ ICC profile of HDR screenshots
 

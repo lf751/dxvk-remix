@@ -43,7 +43,7 @@ STRESS_DELAY_US=${STRESS_DELAY_US:-3000}
 STRESS_CHANCE=${STRESS_CHANCE:-0.25}
 STRESS_SLOTS=${STRESS_SLOTS:-True}
 STRESS_CONF=()
-ALL_D3D9="repeat twice twice-overlay twice-overlay-first worldspace skinned skinned-view-root skinned-passenger ring-reorder ring-static ring-static-precombined topology-churn-omm texcoord-index identity-view fused-world fused-view reset reset-rt-texture no-present sky sky-numos skybox3d terrain terrain-pbr emitter portals rendertarget vtf instancer fog lights replacement-reject per-draw per-draw-declined per-draw-sentinel bad-values bad-values-clean lifecycle multi-output multi-output-single multi-output-extra gbuffer-nrc gbuffer-pom-sss gbuffer-pom-sss-nrc skinned-view-walk skinned-root-motion skinned-parked skinned-uninit skinned-swap skinned-shared-palette ring-props sky-fog sky-fog-numos"
+ALL_D3D9="repeat twice twice-overlay twice-overlay-first worldspace skinned skinned-view-root skinned-passenger ring-reorder ring-static ring-static-precombined topology-churn-omm texcoord-index identity-view fused-world fused-view reset reset-rt-texture no-present sky sky-numos skybox3d terrain terrain-pbr emitter portals rendertarget vtf instancer fog lights replacement-reject per-draw per-draw-declined per-draw-sentinel bad-values bad-values-clean lifecycle multi-output multi-output-single multi-output-extra gbuffer-nrc gbuffer-pom-sss gbuffer-pom-sss-nrc skinned-view-walk skinned-root-motion skinned-parked skinned-uninit skinned-swap skinned-shared-palette skinned-view-model-effect ring-props sky-fog sky-fog-numos sky-fog-switch"
 # The Remix API frontend's runs of the conformance cases.
 ALL_API="api-bad-values api-bad-values-clean api-lifecycle api-caller-threads api-caller-threads-single"
 ALL="$ALL_D3D9 $ALL_API"
@@ -125,7 +125,7 @@ done < <("$TH" --d3d9-hashes | tr -d '\r')
 
 # scenario NAME: sets ARGS (testhost) and CONF (user.conf keys for both modes).
 scenario() {
-  ARGS=(); CONF=(); SHOT=0
+  ARGS=(); CONF=(); SHOT=0; EXTRA_FRAMES=0
   case $1 in
     repeat)        ARGS=(--d3d9 repeat); CONF=("rtx.antiCulling.object.enable=True") ;;
     twice)         ARGS=(--d3d9 twice) ;;
@@ -154,6 +154,9 @@ scenario() {
     # A view model of two skinned draws from one palette with its own field of view: the gun recoils and the main
     # camera kicks while it fires, with a plain muzzle-flash draw after the gun.
     skinned-shared-palette) ARGS=(--d3d9 skinned-shared-palette); CONF=("rtx.viewModel.enable=True") ;;
+    # A view model of skinned draws only that fires, holds its pose, and has a plain view-model draw for part of the cycle.
+    # The screenshot is of a frame after the plain draw ended, while the pose has not changed for 30 frames.
+    skinned-view-model-effect) ARGS=(--d3d9 skinned-view-model-effect); CONF=("rtx.viewModel.enable=True" "rtx.viewModel.scale=0.4"); SHOT=1 ;;
     # 16 alpha-tested bushes appended to one dynamic vertex buffer (DISCARD, then NOOVERWRITE), strips from their start
     # vertex and lists with a base vertex, each switching between two and three quads every 30 frames.
     ring-props) ARGS=(--d3d9 ring-props); CONF=("rtx.opacityMicromap.enable=True") ;;
@@ -163,10 +166,11 @@ scenario() {
     # 72 static alpha-tested objects (48 identical quads, 24 meshes, 24 second passes) streamed through 8 dynamic vertex
     # and index buffer pairs, each draw discarding the next pair at an offset that changes every frame, drawn in a
     # rotated order under an orbiting camera, which skips the objects outside its view (anti-culled). Opacity
-    # micromaps are on.
-    ring-static)   ARGS=(--d3d9 ring-static); CONF=("rtx.antiCulling.object.enable=True" "rtx.opacityMicromap.enable=True") ;;
+    # micromaps are on. The orbit shows the last of the outer meshes for the first time near frame 356, so 300 more frames
+    # put the last interval (frames 600-899) after every object's first draw.
+    ring-static)   ARGS=(--d3d9 ring-static); EXTRA_FRAMES=300; CONF=("rtx.antiCulling.object.enable=True" "rtx.opacityMicromap.enable=True") ;;
     # The same with world * view in WORLD and an identity VIEW.
-    ring-static-precombined) ARGS=(--d3d9 ring-static --precombined); CONF=("rtx.fusedWorldViewMode=2" "rtx.antiCulling.object.enable=True" "rtx.opacityMicromap.enable=True") ;;
+    ring-static-precombined) ARGS=(--d3d9 ring-static --precombined); EXTRA_FRAMES=300; CONF=("rtx.fusedWorldViewMode=2" "rtx.antiCulling.object.enable=True" "rtx.opacityMicromap.enable=True") ;;
     # An alpha-tested fence of cutout quads in one dynamic buffer, drawn with 14 triangles on even frames and 20 on odd
     # ones, with opacity micromaps on.
     topology-churn-omm) ARGS=(--d3d9 topology-churn-omm); CONF=("rtx.opacityMicromap.enable=True") ;;
@@ -191,6 +195,10 @@ scenario() {
                    CONF=("rtx.skyBoxTextures=$H_sky" "rtx.skyMode=0" "rtx.volumetrics.enable=False" "rtx.fogIgnoreSky=True" "rtx.skyReprojectToMainCameraSpace=True") ;;
     # The same while the sky provider (NUMOS) renders the sky.
     sky-fog-numos) ARGS=(--d3d9 sky-fog); SHOT=1
+                   CONF=("rtx.skyBoxTextures=$H_sky" "rtx.skyMode=1" "rtx.volumetrics.enable=False" "rtx.fogIgnoreSky=True" "rtx.skyReprojectToMainCameraSpace=True") ;;
+    # The sky provider renders the sky until frame 500, and then the sky mode goes to the game's sky. Frame 500 falls
+    # inside the sky quad's longest back-off so far (its reject near frame 450 waits 512 frames, past the screenshot).
+    sky-fog-switch) ARGS=(--d3d9 sky-fog-switch --event-frame 500); SHOT=1
                    CONF=("rtx.skyBoxTextures=$H_sky" "rtx.skyMode=1" "rtx.volumetrics.enable=False" "rtx.fogIgnoreSky=True" "rtx.skyReprojectToMainCameraSpace=True") ;;
     terrain)       ARGS=(--d3d9 terrain); CONF=("rtx.terrainTextures=$H_terrain" "rtx.terrainBaker.enableBaking=True") ;;
     # Ground and crate are both terrain, and the testhost writes a mod that gives the ground's material an albedo, a
@@ -277,7 +285,7 @@ for sc in $SCENARIOS; do
     mkdir -p "$OUT/shots-$name"
     export DXVK_DUMP_SCREENSHOT_FRAME=$SHOT_FRAME DXVK_SCREENSHOT_PATH="$(cygpath -m "$OUT/shots-$name")/"
   fi
-  timeout $TIMEOUT "$TH" --runtime "$RT" --frames $FRAMES "${ARGS[@]}" > "$OUT/out-$name.txt" 2>&1
+  timeout $TIMEOUT "$TH" --runtime "$RT" --frames $((FRAMES + EXTRA_FRAMES)) "${ARGS[@]}" > "$OUT/out-$name.txt" 2>&1
   rc=$?
   unset DXVK_DUMP_SCREENSHOT_FRAME DXVK_SCREENSHOT_PATH
   if [ -f "$LOG" ]; then cp "$LOG" "$OUT/log-$name.txt"; else : > "$OUT/log-$name.txt"; fi
@@ -481,8 +489,8 @@ def dds_rgb(path):
         return None
     return [[pixel(y * width + x) for x in range(0, width, 4)] for y in range(0, height, 4)]
 
-def screenshot_luminance(sc, top, bottom):
-    """The mean Rec. 709 luminance of the rows between the fractions top and bottom of the scenario's screenshot."""
+def screenshot_luminance(sc, top, bottom, left=0.0, right=1.0):
+    """The mean Rec. 709 luminance of the region between the given fractions of the scenario's screenshot."""
     folder = os.path.join(out, f"shots-{sc}-on")
     shots = sorted(f for f in os.listdir(folder) if f.startswith("rtxImagePostTonemapping")) if os.path.isdir(folder) else []
     if not shots:
@@ -491,7 +499,7 @@ def screenshot_luminance(sc, top, bottom):
     if rows is None:
         return None, f"{shots[-1]}: format not read"
     band = rows[int(len(rows) * top):int(len(rows) * bottom)]
-    lum = [0.2126 * r + 0.7152 * g + 0.0722 * b for row in band for (r, g, b) in row]
+    lum = [0.2126 * r + 0.7152 * g + 0.0722 * b for row in band for (r, g, b) in row[int(len(row) * left):int(len(row) * right)]]
     return sum(lum) / len(lum), shots[-1]
 
 def report(status, sc, cid, text, values=""):
@@ -627,8 +635,8 @@ for sc in sys.argv[3:]:
     expect(not any("Input and mofified geometry have different" in l for l in on.lines), sc, "R3",
            "no refit across a topology change ([RTX Opacity Micromap] different primitive counts)")
     ne = on.lastNotEligible()
-    if sc in ("replacement-reject", "sky-numos", "bad-values"):
-        # The rejected crate waits out its back-off, so only that class may show.
+    if sc in ("replacement-reject", "sky-numos", "sky-fog-numos", "sky-fog-switch", "bad-values"):
+        # The rejected draw waits out its back-off, so only that class may show.
         expect(None if ne is None else all(c.startswith("backoff=") for c in ne.split()), sc, "cov",
                "on: [D3D9v2] notEligible shows no class but backoff (last interval)", ne or "")
     else:
@@ -638,8 +646,8 @@ for sc in sys.argv[3:]:
         # The asset resolver cannot expand a replacement without a mesh, so the crate is rejected under its reason.
         expect(None if rej is None else "replacement: no meshes=" in rej, sc, "rej",
                "on: rejected: replacement: no meshes (last interval)", rej or "")
-    elif sc == "sky-numos":
-        # The backend renders its own sky, so the crate's sky draws are dropped under the preparation's reason.
+    elif sc in ("sky-numos", "sky-fog-numos", "sky-fog-switch"):
+        # The backend renders its own sky, so the game's sky draws are dropped under the preparation's reason.
         expect(None if rej is None else "not submitted=" in rej, sc, "rej",
                "on: rejected: not submitted (last interval; the game's sky draws are dropped)", rej or "")
     elif sc == "bad-values":
@@ -731,6 +739,21 @@ for sc in sys.argv[3:]:
         late = num(on.lastDirect("skinDeferredLate"))
         expect(None if late is None else late == 0, sc, "SV1",
                "on: skinDeferredLate=0 in the last interval (no view-model draw is decomposed with the last frame's camera)", f"skinDeferredLate={late}")
+        frames, cameras = on.lastInputsTotal("viewModelFrames"), on.lastInputsTotal("viewModelCameraFrames")
+        expect(both(frames, cameras, lambda f, c: f > 0 and f == c), sc, "SV2",
+               "on: every frame with a view-model draw sets up the view-model camera", f"viewModelFrames={frames} viewModelCameraFrames={cameras}")
+    elif sc == "skinned-view-model-effect":
+        frames, cameras = on.lastInputsTotal("viewModelFrames"), on.lastInputsTotal("viewModelCameraFrames")
+        expect(both(frames, cameras, lambda f, c: f == 300 and c == 300), sc, "VE1",
+               "on: all 300 frames of the last interval have a view-model draw and set up the view-model camera, with or without the plain draw",
+               f"viewModelFrames={frames} viewModelCameraFrames={cameras}")
+        # The view model covers the right of the screen, so that region differs from the empty sky on the left. The sky is
+        # brighter than the view model under a sky provider and black without one.
+        covered, shot = screenshot_luminance(sc, 0.05, 0.4, 0.62, 0.9)
+        empty, _ = screenshot_luminance(sc, 0.05, 0.4, 0.1, 0.38)
+        expect(both(covered, empty, lambda c, e: abs(c - e) > 0.5 * max(c, e)), sc, "VE2",
+               "on: the view model is on screen 30 frames after its last pose change and 10 frames after the plain draw ended",
+               f"right={covered} left={empty} ({shot})")
     elif sc == "ring-props":
         acc = num(on.lastDirect("accepted"))
         expect(None if acc is None else acc == 0, sc, "RP1", "on: accepted=0 in the last interval (each bush keeps its object)", f"accepted={acc}")
@@ -771,15 +794,19 @@ for sc in sys.argv[3:]:
         # Static objects that arrive with the same bytes in another discarded buffer at another offset every frame keep
         # their objects: no new or released object, no slot taken over by a look-alike (a jump resets the history and
         # the opacity micromaps), every draw handed over, and with separate matrices every draw a repeat.
+        # With an identity VIEW the scene's world is view space, so every object moves. An object that leaves the view is
+        # not anti-culled (LifetimePolicy, wasMovingWhenLastSeen), and it comes back at another place as a new object. The
+        # orbit brings an outer mesh into view every 30 frames and takes one out, 10 of each per interval.
+        reentries = 10 if sc == "ring-static-precombined" else 0
         acc, rel = num(on.lastDirect("accepted")), num(on.lastDirect("released"))
-        expect(both(acc, rel, lambda a, b: a == 0 and b == 0), sc, "RS1",
-               "on: accepted=0 released=0 in the last interval (every object keeps its object)", f"accepted={acc} released={rel}")
+        expect(both(acc, rel, lambda a, b: a <= reentries and b <= reentries), sc, "RS1",
+               f"on: accepted<={reentries} released<={reentries} in the last interval (every object in view keeps its object)", f"accepted={acc} released={rel}")
         resets, jumps = num(on.lastDirect("historyResets")), on.historyJumps()
         expect(both(resets, jumps, lambda r, j: r == 0 and j == 0), sc, "RS2",
                "on: historyResets=0 (jumps 0) in the last interval (no draw takes a look-alike's slot)",
                f"historyResets={resets} jumps={jumps} (all intervals: {[on.historyJumps(i) for i in range(len(on.direct))]})")
         hand = on.lastInputsTotal("handovers")
-        expect(None if hand is None else hand == 0, sc, "RS3", "on: handovers=0 in the last [D3D9v2] inputs interval (no object handed over again)",
+        expect(None if hand is None else hand <= reentries, sc, "RS3", f"on: handovers<={reentries} in the last [D3D9v2] inputs interval (no object in view handed over again)",
                f"handovers={hand}")
         dropped = num(on.lastInputs("dropped"))
         expect(None if dropped is None else dropped == 0, sc, "RS4", "on: dropped=0 in the last interval (every draw is handed over)",
@@ -855,7 +882,14 @@ for sc in sys.argv[3:]:
         misses = num(on.lastDirect("rasterMisses"))
         expect(None if misses is None else misses == 0, sc, "B1s", "on: rasterMisses=0 (its per-frame draws update the skybox transforms)",
                f"rasterMisses={misses}")
-    elif sc in ("sky-fog", "sky-fog-numos"):
+    elif sc in ("sky-fog", "sky-fog-numos", "sky-fog-switch"):
+        if sc == "sky-fog-numos":
+            # Only the sky quad may be dropped: the ground and the crate stay in the scene.
+            expect(None if s_on is None else s_on == 2, sc, "SF2", "on: surfaces=2 (only the game's sky draw is dropped)",
+                   f"surfaces={s_on}")
+        if sc == "sky-fog-switch":
+            switched = any("[Session] setting changed: rtx.skyMode 1 -> 0" in l for l in on.lines)
+            expect(switched, sc, "SF3", "on: the runtime took the sky mode change")
         # The upper quarter of the view shows only the sky. Nearly black fog laid over it reads below 0.02.
         sky, shot = screenshot_luminance(sc, 0.0, 0.25)
         expect(None if sky is None else sky > 0.1, sc, "SF1",

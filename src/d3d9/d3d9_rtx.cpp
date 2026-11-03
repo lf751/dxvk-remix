@@ -26,7 +26,9 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cmath>
 #include <cstring>
+#include <limits>
 
 namespace dxvk {
   static const bool s_isDxvkResolutionEnvVarSet = (env::getEnvVar("DXVK_RESOLUTION_WIDTH") != "") || (env::getEnvVar("DXVK_RESOLUTION_HEIGHT") != "");
@@ -51,6 +53,28 @@ namespace dxvk {
       camera.objectToView = transforms.objectToView;
       camera.preCombined = RtxOptions::resolvePreCombinedMatrices() && isIdentityExact(camera.worldToView);
       return camera;
+    }
+
+    // Returns the diagonal of the box of the vertices at pFirst, in world units.
+    // Returns 0 when the vertices do not fit the buffer or the size is not finite.
+    float drawnExtent(const RasterBuffer& positions, const float* pFirst, uint32_t vertexCount, const Matrix4& objectToWorld) {
+      const VkDeviceSize end = positions.offsetFromSlice() + VkDeviceSize(positions.stride()) * (VkDeviceSize(vertexCount) - 1) + 3 * sizeof(float);
+      if (vertexCount == 0 || end > positions.length()) {
+        return 0.f;
+      }
+      Vector3 low(std::numeric_limits<float>::infinity());
+      Vector3 high(-std::numeric_limits<float>::infinity());
+      const uint8_t* pVertex = reinterpret_cast<const uint8_t*>(pFirst);
+      for (uint32_t i = 0; i < vertexCount; ++i, pVertex += positions.stride()) {
+        const float* pPosition = reinterpret_cast<const float*>(pVertex);
+        for (uint32_t axis = 0; axis < 3; ++axis) {
+          low[axis] = std::min(low[axis], pPosition[axis]);
+          high[axis] = std::max(high[axis], pPosition[axis]);
+        }
+      }
+      const float scale = std::max({ length(objectToWorld[0].xyz()), length(objectToWorld[1].xyz()), length(objectToWorld[2].xyz()) });
+      const float extent = scale * length(high - low);
+      return std::isfinite(extent) ? extent : 0.f;
     }
   }
 #endif
@@ -2006,6 +2030,30 @@ namespace dxvk {
     return true;
   }
 
+  namespace {
+    translator::MaterialIdentityParts materialIdentityParts(const LegacyMaterialData& material) {
+      translator::MaterialIdentityParts parts;
+      const XXH64_hash_t textures[2] = { material.getColorTexture().getImageHash(), material.getColorTexture2().getImageHash() };
+      parts.textures = XXH3_64bits(textures, sizeof(textures));
+      const XXH64_hash_t samplers[2] = {
+        material.getSampler().ptr() != nullptr ? material.getSampler()->info().calculateHash() : kEmptyHash,
+        material.getSampler2().ptr() != nullptr ? material.getSampler2()->info().calculateHash() : kEmptyHash
+      };
+      parts.samplers = XXH3_64bits(samplers, sizeof(samplers));
+      const DxvkBlendMode& b = material.blendMode;
+      const uint32_t blend[8] = { uint32_t(b.enableBlending), uint32_t(b.colorSrcFactor), uint32_t(b.colorDstFactor), uint32_t(b.colorBlendOp),
+                                  uint32_t(b.alphaSrcFactor), uint32_t(b.alphaDstFactor), uint32_t(b.alphaBlendOp), uint32_t(b.writeMask) };
+      parts.blend = XXH3_64bits(blend, sizeof(blend));
+      parts.tFactor = material.tFactor;
+      parts.alphaTest = (uint32_t(material.alphaTestCompareOp) << 8) | material.alphaTestReferenceValue;
+      parts.textureOps = uint32_t(material.textureColorArg1Source) | (uint32_t(material.textureColorArg2Source) << 5) |
+                         (uint32_t(material.textureColorOperation) << 10) | (uint32_t(material.textureAlphaArg1Source) << 15) |
+                         (uint32_t(material.textureAlphaArg2Source) << 20) | (uint32_t(material.textureAlphaOperation) << 25);
+      parts.lighting = (material.isTextureFactorBlend ? 1u : 0u) | (material.isVertexColorBakedLighting ? 2u : 0u);
+      return parts;
+    }
+  }
+
   void D3D9Rtx::observeFrontendInputs(const IndexContext& indexContext, const VertexContext vertexContext[caps::MaxStreams],
                                       const DrawContext& drawContext, bool userPointer, PrepareDrawFlags flags) {
     using translator::DrawInputs;
@@ -2033,6 +2081,9 @@ namespace dxvk {
       if (first != nullptr && std::isfinite(first[0]) && std::isfinite(first[1]) && std::isfinite(first[2])) {
         in.anchor = (camera.objectToWorld * Vector4(first[0], first[1], first[2], 1.f)).xyz();
       }
+      if (first != nullptr && (in.flags & DrawInputs::kContent)) {
+        in.extent = drawnExtent(positions, first, m_activeDrawCallState.getGeometryData().vertexCount, camera.objectToWorld);
+      }
     }
     in.textureTransform = transforms.textureTransform;
     in.texgenMode = uint32_t(transforms.texgenMode);
@@ -2057,6 +2108,9 @@ namespace dxvk {
                                      m_activeDrawCallState.isUsingRaytracedRenderTarget;
     prepared.skyAutoDetected = m_activeDrawCallState.skyAutoDetected;
     prepared.fog = frontendFog();
+    if (m_frontendApp.statsActive()) {
+      prepared.materialParts = materialIdentityParts(m_activeDrawCallState.getMaterialData());
+    }
     m_frontendDecision = m_frontendApp.decide(in, camera, &prepared);
     // The first draw of a camera type in this frame sends the camera, ahead of the
     // draw's own commit. The queued state carries the frontend's camera type for the CS thread's parity check

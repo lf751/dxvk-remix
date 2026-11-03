@@ -85,9 +85,8 @@ namespace dxvk {
         break;
     }
     reblurSettings.hitDistanceParameters.A *= RtxOptions::getMeterToWorldUnitScale();
-    if (type != dxvk::DenoiserType::DirectLight) {
-      reblurSettings.hitDistanceReconstructionMode = nrd::HitDistanceReconstructionMode::AREA_3X3;
-    }
+    // Direct specular takes the indirect specular hit distance, which is 0 on pixels that sampled the diffuse lobe.
+    reblurSettings.hitDistanceReconstructionMode = nrd::HitDistanceReconstructionMode::AREA_3X3;
   }
 
   void setRelaxPresetSettings(nrd::RelaxSettings& relaxSettings, NrdSettings::RelaxSettingsPreset preset, dxvk::DenoiserType type) {
@@ -170,7 +169,7 @@ namespace dxvk {
           relaxSettings.diffusePhiLuminance = 1.0f;
           relaxSettings.specularPhiLuminance = 1.0f;
           relaxSettings.specularLobeAngleSlack = 0.15f;
-          relaxSettings.historyClampingColorBoxSigmaScale = 3.f;
+          relaxSettings.fastHistoryClampingSigmaScale = 3.f;
           relaxSettings.lobeAngleFraction = .5f;  // Reduced to 0.5 to make specular highlights more defined
           relaxSettings.roughnessFraction = .15f;
           relaxSettings.luminanceEdgeStoppingRelaxation = .65f;
@@ -183,9 +182,8 @@ namespace dxvk {
       default:
         break;
     }
-    if (type != dxvk::DenoiserType::DirectLight) {
-      relaxSettings.hitDistanceReconstructionMode = nrd::HitDistanceReconstructionMode::AREA_3X3;
-    }
+    // Direct specular takes the indirect specular hit distance, which is 0 on pixels that sampled the diffuse lobe.
+    relaxSettings.hitDistanceReconstructionMode = nrd::HitDistanceReconstructionMode::AREA_3X3;
   }
 
   void setCommonPresetSettings(nrd::CommonSettings& common, dxvk::DenoiserType type) {
@@ -371,14 +369,11 @@ namespace dxvk {
           }
           RemixGui::Checkbox("Anti-firefly", &m_reblurSettings.enableAntiFirefly);
           ImGui::SameLine();
-          RemixGui::Checkbox("Performance mode", &m_reblurSettings.enablePerformanceMode);
-          ImGui::SameLine();
           reblurHitTReconstructionModeCombo.getKey(&m_reblurSettings.hitDistanceReconstructionMode);
 
           ADVANCED ImGui::SliderFloat("Hit distance parameters A", &m_reblurSettings.hitDistanceParameters.A, 0.0f, 10000.0f, "%.2f");
           ADVANCED ImGui::SliderFloat("Hit distance parameters B", &m_reblurSettings.hitDistanceParameters.B, 0.0f, 10.0f, "%.2f");
           ADVANCED ImGui::SliderFloat("Hit distance parameters C", &m_reblurSettings.hitDistanceParameters.C, 1.0f, 100.0f, "%.2f");
-          ADVANCED ImGui::SliderFloat("Hit distance parameters D", &m_reblurSettings.hitDistanceParameters.D, -100.0f, 0.0f, "%.2f");
 
           ImGui::Text("PRE-PASS:");
           const float maxBlurRadius = RtxOptions::adaptiveResolutionDenoising() ? 200.0f : 100.0f;
@@ -393,9 +388,10 @@ namespace dxvk {
           RemixGui::SliderFloat("Max blur radius [pixels]", &m_reblurSettings.maxBlurRadius, 0.0f, maxBlurRadius, "%.1f");
           RemixGui::SliderFloat("Lobe angle fraction [normalized %]", &m_reblurSettings.lobeAngleFraction, 0.0f, 1.0f, "%.2f");
           RemixGui::SliderFloat("Roughness fraction [normalized %]", &m_reblurSettings.roughnessFraction, 0.0f, 1.0f, "%.2f");
-          RemixGui::SliderFloat("Responsive accumulation roughness threshold", &m_reblurSettings.responsiveAccumulationRoughnessThreshold, 0.0f, 1.0f, "%.2f");
+          RemixGui::SliderFloat("Responsive accumulation roughness threshold", &m_reblurSettings.responsiveAccumulationSettings.roughnessThreshold, 0.0f, 1.0f, "%.2f");
+          RemixGui::SliderInt("Responsive accumulation min frames", &m_reblurSettings.responsiveAccumulationSettings.minAccumulatedFrameNum, 0, nrd::REBLUR_MAX_HISTORY_FRAME_NUM);
+          RemixGui::SliderFloat("Fast history clamping sigma scale", &m_reblurSettings.fastHistoryClampingSigmaScale, 1.0f, 3.0f, "%.2f");
           ADVANCED RemixGui::SliderFloat("Plane distance sensitivity [normalized %]", &m_reblurSettings.planeDistanceSensitivity, 0.0f, 1.0f, "%.2f");
-          ADVANCED RemixGui::SliderFloat2("Specular probability threshold for mvec modification", m_reblurSettings.specularProbabilityThresholdsForMvModification, 0.0f, 1.0f, "%.2f");
           RemixGui::SliderFloat("Firefly suppressor min relative scale", &m_reblurSettings.fireflySuppressorMinRelativeScale, 1.0f, 3.0f, "%.2f");
           ADVANCED RemixGui::Checkbox("Enable Prepass Only For Specular Motion Estimation", &m_reblurSettings.usePrepassOnlyForSpecularMotionEstimation);
           
@@ -405,8 +401,6 @@ namespace dxvk {
           ADVANCED RemixGui::SliderFloat("Luminance sigma scale", &m_reblurSettings.antilagSettings.luminanceSigmaScale, 0.0f, 10.0f, "%.2f");
           ADVANCED RemixGui::SliderFloat("Luminance sensitivity to darkness", &m_reblurSettings.antilagSettings.luminanceSensitivity, 0.0f, 100.0f, "%.2f");
 
-          ADVANCED RemixGui::SliderFloat("Hit distance sigma scale", &m_reblurSettings.antilagSettings.hitDistanceSigmaScale, 0.0f, 10.0f, "%.2f");
-          ADVANCED RemixGui::SliderFloat("Hit distance sensitivity to darkness", &m_reblurSettings.antilagSettings.hitDistanceSensitivity, 0.0f, 100.0f, "%.2f");
         }
 
         if (resetHistoryOnSettingsChange && memcmp(&m_reblurSettings, &prevReblurSettingsState, sizeof(m_reblurSettings)) != 0)
@@ -450,7 +444,7 @@ namespace dxvk {
 
           ImGui::Text("REPROJECTION:");
           RemixGui::SliderFloat("Specular variance boost", &m_relaxSettings.specularVarianceBoost, 0.0f, 8.0f, "%.2f");
-          RemixGui::SliderFloat("Clamping color sigma scale", &m_relaxSettings.historyClampingColorBoxSigmaScale, 0.0f, 10.0f, "%.1f");
+          RemixGui::SliderFloat("Fast history clamping sigma scale", &m_relaxSettings.fastHistoryClampingSigmaScale, 0.0f, 10.0f, "%.1f");
 
           ImGui::Text("SPATIAL FILTERING:");
           RemixGui::SliderInt("A-trous iterations", (int32_t*) &m_relaxSettings.atrousIterationNum, 2, 8);
@@ -500,7 +494,18 @@ namespace dxvk {
     // to avoid divide-by-zero on frame 0 in deterministic mode and when advanceTime is off.
     const float fallbackMs = RtxOptions::timeDeltaBetweenFrames() > 0.f ? RtxOptions::timeDeltaBetweenFrames() : 16.6f;
     const float effectiveFrameTimeMs = frameTimeMs > 0.0f ? frameTimeMs : fallbackMs;
-    const uint32_t maxAccumFrameNum = static_cast<uint32_t>(ceil(m_adaptiveAccumulationLengthMs / effectiveFrameTimeMs));
+
+    // NRD's recommended filter, with a 0.2 s time constant at any frame rate (NRDSettings.h).
+    // A hitch counts as at most twice the current average.
+    if (m_smoothedFrameTimeMs <= 0.0f) {
+      m_smoothedFrameTimeMs = effectiveFrameTimeMs;
+    } else {
+      const float smoothedFramesPerTimeConstant = 200.0f / m_smoothedFrameTimeMs;
+      const float clampedFrameTimeMs = std::min(effectiveFrameTimeMs, 2.0f * m_smoothedFrameTimeMs);
+      m_smoothedFrameTimeMs += (clampedFrameTimeMs - m_smoothedFrameTimeMs) / (1.0f + smoothedFramesPerTimeConstant);
+    }
+
+    const uint32_t maxAccumFrameNum = static_cast<uint32_t>(ceil(m_adaptiveAccumulationLengthMs / m_smoothedFrameTimeMs));
     if (m_denoiserDesc.denoiser == nrd::Denoiser::REBLUR_DIFFUSE_SPECULAR) {
       m_reblurSettings.maxAccumulatedFrameNum = Clamp(maxAccumFrameNum, m_adaptiveMinAccumulatedFrameNum, nrd::REBLUR_MAX_HISTORY_FRAME_NUM);
     } else if (m_denoiserDesc.denoiser == nrd::Denoiser::RELAX_DIFFUSE_SPECULAR) {

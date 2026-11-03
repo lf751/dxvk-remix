@@ -28,6 +28,79 @@ Entry format:
 - Docs: [RemixApi.md](RemixApi.md)   (only if a public doc covers it)
 ```
 
+## 2026-11-03
+
+### JPOG integration: current dev runtime and SDK updates
+Merge Remix Plus dev through 5c44db98a, including D3D9 object re-entry matching, texture and micromap residency, in-flight micromap lifetime, NRD 4.18 and FSR SDK 2.4. Preserve terrain blending, authored displacement modes, smooth normals and the D3D9 reset-mask repair.
+- Options and defaults: upstream changes are retained. No terrain SCCR mode is added. Game configuration is unchanged.
+- Upstream: https://github.com/RemixProjGroup/dxvk-remix/commit/5c44db98a.
+
+## 2026-11-01
+
+### GPU device loss when a BLAS drops an opacity micromap in flight
+Rebuilding or releasing a BLAS let go of the micromaps it held while an earlier frame's TLAS could still be traced through them, so a large micromap's memory was unmapped under the GPU (page fault, then device loss). Those micromaps now stay alive until the current command list completes.
+- Options: none.
+- Measured: replay of an open-world recording lost the device in 5 of 7 runs before, 0 of 8 after.
+- Commits: the commit that adds this entry.
+
+### D3D9: a static object that comes into view no longer takes a look-alike's place
+A draw streamed through a discarded buffer whose bytes match an object elsewhere took that object's slot, up to `rtx.uniqueObjectDistance` away. Each object entering the view while the camera moved reset a look-alike's history and opacity micromaps for a frame and removed it from its place, which can show as flicker on alpha-tested objects. Such a draw now takes no slot farther away than its own size, and prefers a slot drawn in the previous frame over a stale one.
+- Options: none.
+- Measured: `ring-static` scenario, per 300 frames: history resets 13 -> 0, micromap topology resets 6 -> 0. All 73 objects stay in the scene, where 63 did.
+- Commits: the commit that adds this entry.
+
+### Game sky returns at once after switching away from the NUMOS sky
+While NUMOS renders the sky, the game's sky draws are rejected with a growing back-off of up to 2048 frames. After switching back to the game's sky they kept waiting that out, so the sky stayed black for up to 2048 frames. Changing the sky mode now clears every draw's back-off.
+- Options: none.
+- Tests: new D3D9 suite scenario `sky-fog-switch`. `sky-fog-numos` now expects the sky draw's back-off and rejection, as `sky-numos` does, and also checks that the ground and crate stay in the scene.
+- Commits: the commit that adds this entry.
+
+### VRAM: replacement-texture mips and micromaps follow the scene, one mesh cannot take the micromap budget
+A ten-minute run of a modded D3D9 game went from 1.3 to 10.7 GB of driver usage with no leak: material textures grew from 1.1 to 4.2 GB, because sampler feedback keeps the sharpest mip ever sampled until a budget shortage resets it (a reset in that run showed that the same area needed 1.9 GB), and free space inside chunks grew to 2 GB around them. One mesh also reserved 850 MiB of the 1536 MiB micromap budget. Replacement textures now drop mips nothing sampled for a while, down to the largest mip sampled in that time and never below 256 pixels. Micromaps unused for a while are evicted at any pressure level. A 4-state micromap that would reserve more than 128 MiB gets a lower subdivision level. Material textures in draining chunks load again into other chunks at the same mip count. A streamed opacity texture that shrinks no longer rebakes its micromaps, since the array holds the sharper bake.
+- Options: added `rtx.vramBudget.idleMipFrames` (3600; Ultra 7200, High 3600, Medium and Low 1800; 0 = never), `rtx.vramBudget.idleMicromapFrames` (1800; Ultra 3600, High 1800, Medium and Low 900; 0 = only at the cache limit), `rtx.opacityMicromap.cache.maxItemSizeMB` (128; 0 = no limit) and `rtx.vramBudget.relocateDrainingTextures` (default on). All four default on, against the default-off rule, because they are the fix.
+- Image and stutter: a dropped mip loads again from disk when it is sampled, so a surface seen from up close after a long time can be blurry for a moment. An evicted micromap bakes again, and its mesh alpha-tests every ray until then. A mesh over the size limit alpha-tests more rays for good. Unknown micro-triangles keep the alpha test, so micromap changes do not alter the image.
+- Measured (memory only, shared GPU, API replays at 2560x1600): in one scene with 753 micromap users, driver usage 5598 → 5193 MiB, micromap budget 1437 → 1032 MiB, and the triangles covered by ready micromaps 96.6% → 99.8%. In the other scene the cache stays at its limit (6203 → 6357 MiB, within what chunk placement moves between runs), and covered triangles go 4.0% → 7.0%. Image of the second scene: 51.7 dB against the options off.
+- Log: `[VramBudget]` counts textures that dropped idle mips and textures relocated. The new `[OmmCache]` line says what fills the micromap budget.
+- Not done: dropping scene geometry copies after the BLAS build, since hit shading reads them on every ray. Lowering `rtx.opacityMicromap.cache.maxBudgetSizeMB` is left at 1536, because it trades micromap coverage for memory.
+- Commits: the commit that adds this entry.
+- Docs: [D3D9-Performance.md](D3D9-Performance.md)
+
+### D3D9: a view model of skinned draws always has its camera
+A skinned draw set up no camera, so a view model made only of skinned draws had a view-model camera only in frames with a plain view-model draw, such as a muzzle flash. In those frames the view model moved to its corrected place (`rtx.viewModel.scale` and the field of view) with its original hidden, and after them the copies were dropped while an original that had not changed since stayed hidden, so the view model jumped when firing and could vanish. A skinned draw of the view-model class now sets up the view-model camera, and the first one in a frame stands for the frame. Main-camera skinned draws still set up no camera.
+- Options: none. `[D3D9v2]` lines with `rtx.d3d9v2.log` gain `viewModelFrames` and `viewModelCameraFrames`, and a skinned draw's `changed` line names the parts of its material that changed.
+- Tests: D3D9 scenario skinned-view-model-effect, and check SV2 on skinned-shared-palette.
+- Commits: the commit that adds this entry.
+
+### RTXDI denoiser confidence is off by default
+Without Ray Reconstruction, RTXDI's confidence signal could swing across a whole room several times a second in a still scene, and ReLAX blurred direct shadows away each time. It is now off by default, which Ray Reconstruction's settings already did. ReLAX may respond more slowly where direct lighting changes.
+- Options: default flipped `rtx.di.enableDenoiserConfidence` to False.
+- Commits: this change.
+
+### NRD 4.18 from source
+NRD moves from the prebuilt 4.13 package to version 4.18.0, built from an unmodified `submodules/nrd` submodule while configuring (`scripts-common/build_nrd.py`, SPIR-V only, encodings 2 and 1, quad intrinsics off because the runtime does not enable `VK_KHR_compute_shader_derivatives`). A build needs CMake 3.30 or newer, a Vulkan SDK for its SPIR-V compiler, and network access on the first configure to fetch NRD's pinned MathLib and ShaderMake. Denoiser choices are unchanged. NRD's inputs now get their own copies, because 4.18 uses its outputs as scratch while reading its inputs, and the runtime used to pass one image as both. Switching the denoiser at runtime now recreates the NRD instance, so the ImGui switch really changes denoisers.
+- Options: removed REBLUR's performance mode, hit distance D, hit distance anti-lag and specular probability thresholds, which NRD removed. Added controls for REBLUR's fast history clamp and responsive accumulation minimum.
+- Memory: 2 RGBA16F full-resolution images for the input copies, shared between denoisers and allocated only while NRD denoises.
+- Commits: this change.
+
+### NRD input fixes for every denoiser
+Fixes that apply to ReLAX and REBLUR alike, none of which touch Ray Reconstruction. Sampling tuned for Ray Reconstruction no longer stays active on the NRD path with FSR, XeSS, TAA-U, NIS or a GPU without DLSS, because every path without Ray Reconstruction now gets the default preset. First-bounce misses report a distant hit instead of 0, which NRD read as a skipped lobe, so reflections of the sky keep their specular tracking. History length follows a low pass filtered frame time, so one hitch no longer cuts it in half. The direct denoiser reconstructs specular hit distance, which holds zeros wherever the diffuse lobe was sampled. NRD receives camera jitter in pixels with the sign it documents, which also corrects its disocclusion threshold bonus. NRD's history now stays at a pre-exposure of its own, so an exposure step no longer clears every denoiser's history; only a drift of more than 4 stops does.
+- Options: `rtx.rayreconstruction.preserveSettingsInNativeMode` now applies only while NRD is not denoising.
+- Commits: this change.
+
+### AMD FSR SDK 2.4.0: FSR 4 on Vulkan
+The FSR submodule moves from FidelityFX SDK 1.1.4 to AMD FSR SDK 2.4.0, ported from `d8146a274` by KingVulpes, so `rtx.upscalerType` 5 and `rtx.frameGenerationType` 2 run the newest version the GPU supports. AMD lists the ML upscaler for RX 6000, 7000 and 9000 discrete GPUs and selected Ryzen processors, and ML frame generation for RX 9000 GPUs and later. NVIDIA, Intel and older AMD GPUs get the non-ML FSR 3.1.6 upscaler and frame generation 3.1.6 with swapchain 3.1.7. The ML path has not been run yet because the test machine has no supported GPU.
+- On AMD GPUs the device enables the features AMD's Vulkan sample enables for ML (cooperative matrix, 8-bit float, compute derivatives, subgroup size control), and retries without them if device creation fails. Other vendors' devices are unchanged.
+- The menus and the log say which path runs and why it is not ML. If no version can start or the DLLs are missing, the frame renders at the output resolution without upscaling, and the menus and the log say so. A version that fails to start falls back to the non-ML version.
+- Frame generation now configures before its prepare dispatch, the order FSR Frame Generation requires, and passes the reset to the prepare dispatch.
+- `amd_fidelityfx_vk.dll` is replaced by `amd_fidelityfx_loader_vk.dll`, `amd_fidelityfx_upscaler_vk.dll` and `amd_fidelityfx_framegeneration_vk.dll`, about 73 MB against 9 MB. A deploy has to copy all three.
+- Options: added `rtx.fsr.forceNonMl` (default off), shown only on GPUs that offer the ML version. The `rtx.upscalerType` values are unchanged.
+- Commits: the commit that adds this entry.
+
+### D3D9: a draw that changes only its fog is no longer a repeat
+A draw of a scene-owned object whose only change was its fog state was treated as unchanged, so the object kept its old fog and a fog state reached only through such draws never found its USD replacement material. Such a draw now records the new fog and keeps the draw for the replacement, without rebuilding the object.
+- Options: none.
+- Commits: the commit that adds this entry.
+
 ## 2026-10-31
 
 ### D3D9 reset synchronizes active texture and hazard masks

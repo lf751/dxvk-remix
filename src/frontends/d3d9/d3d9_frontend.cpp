@@ -463,24 +463,24 @@ namespace dxvk {
             ? state.getGeometryData().positionBuffer.buffer().ptr() : nullptr;
         }
 
-        // What a description of a processed draw depends on besides the world matrix: the geometry (FullGeometryHash, the
-        // hash acquireGeometry reuses geometry by), the bones, both materials, the texture transform, the categories, the
-        // camera, the fog and the resolver's replacement (ReplacementQuery::version). The world matrix is compared with
-        // Object::objectToWorld, which follows the moves applied since the description.
+        // What a description of a processed draw depends on besides the world matrix and the fog: the geometry
+        // (FullGeometryHash, the hash acquireGeometry reuses geometry by), the bones, both materials, the texture
+        // transform, the categories, the camera and the resolver's replacement (ReplacementQuery::version). The world
+        // matrix is compared with Object::objectToWorld, which follows the moves applied since the description. The fog
+        // is compared with Object::fogHash, since the scene's copy is built the same under any fog.
         static XXH64_hash_t descriptionKey(const DrawCallState& state, const MaterialData& material, uint64_t replacement) {
           const DrawCallTransforms& transforms = state.getTransformData();
           const struct {
-            XXH64_hash_t geometry, bones, material, legacyMaterial, fog;
+            XXH64_hash_t geometry, bones, material, legacyMaterial;
             uint64_t replacementVersion;
             uint32_t categories, cameraType, texgenMode, pad;
           } k = {
             state.getGeometryData().getHashForRule<rules::FullGeometryHash>(), state.getSkinningState().boneHash,
             material.getHash(), state.getMaterialData().computeIdentityHash(),
-            state.getFogState().mode != frontend::FogMode::None ? state.getFogState().getHash() : 0,
             replacement, state.getCategoryFlags().raw(), uint32_t(state.cameraType),
             uint32_t(transforms.texgenMode), 0u
           };
-          static_assert(sizeof(k) == 64, "no implicit padding");
+          static_assert(sizeof(k) == 56, "no implicit padding");
           const XXH64_hash_t h = XXH3_64bits(&k, sizeof(k));
           return XXH3_64bits_withSeed(&transforms.textureTransform, sizeof(transforms.textureTransform), h);
         }
@@ -858,7 +858,9 @@ namespace dxvk {
         // when its description or world matrix differs from the scene's copy.
         void handover(RtxContext* ctx, const DrawParameters& params, DrawCallState& state, uint64_t handle, bool update,
                       bool verify = false) {
-          totals.handovers++;
+          if (!verify) {
+            totals.handovers++;
+          }
           frontend::SceneInterface scene { *ctx };
           const MaterialData* overrideMaterial = nullptr;
           // A 3D-skybox draw is described as a Main-camera object (Sky category cleared, transforms reprojected). Its
@@ -923,6 +925,7 @@ namespace dxvk {
           // the rebuild. Captured, 3D-skybox and baked-terrain draws are always described again, since their positions or
           // transforms come from more than the geometry hash and the draw's own transforms show.
           const XXH64_hash_t described = descriptionKey(kept, material, replacement.version);
+          const XXH64_hash_t fogHash = kept.getFogState().mode != frontend::FogMode::None ? kept.getFogState().getHash() : 0;
           if (update && !kept.vertexCaptured && !skybox && !bakedTerrain) {
             const auto previous = objects.find(handle);
             const Matrix4& objectToWorld = kept.getTransformData().objectToWorld;
@@ -930,16 +933,17 @@ namespace dxvk {
                                          previous->second.reprepareEpoch == reprepareEpoch;
             const bool sameWorld = previous != objects.end() &&
                                    std::memcmp(&previous->second.objectToWorld, &objectToWorld, sizeof(Matrix4)) == 0;
+            const bool sameFog = previous != objects.end() && previous->second.fogHash == fogHash;
             if (verify && previous != objects.end() && !previous->second.releasing) {
               totals.verified++;
-              if (!sameDescription || !sameWorld) {
+              if (!sameDescription || !sameWorld || !sameFog) {
                 totals.verifyMismatches++;
                 if (verifyLogs < 20) {
                   ++verifyLogs;
                   const Vector3 was = previous->second.objectToWorld[3].xyz();
                   const Vector3 now = objectToWorld[3].xyz();
                   Logger::warn(str::format("[D3D9v2] repeatMismatch: a draw the change test found unchanged differs from the "
-                                           "scene's copy in its ", !sameDescription ? "description" : "world matrix",
+                                           "scene's copy in its ", !sameDescription ? "description" : !sameWorld ? "world matrix" : "fog",
                                            " (handle 0x", std::hex, handle, std::dec, ", skinned ",
                                            kept.getSkinningState().numBones > 0 || kept.vertexBlend ? 1 : 0, ", translation (",
                                            was.x, ", ", was.y, ", ", was.z, ") -> (", now.x, ", ", now.y, ", ", now.z,
@@ -949,6 +953,7 @@ namespace dxvk {
             }
             if (previous != objects.end() && !previous->second.releasing && sameDescription && sameWorld) {
               previous->second.frameLastSeen = scene.frameIndex();
+              previous->second.fogHash = fogHash;
               totals.unchangedUpdates++;
               return;
             }
@@ -996,9 +1001,7 @@ namespace dxvk {
           object.frameLastSeen = frame;
           object.described = described;
           object.reprepareEpoch = reprepareEpoch;
-          if (kept.getFogState().mode != frontend::FogMode::None) {
-            object.fogHash = kept.getFogState().getHash();
-          }
+          object.fogHash = fogHash;
 
           frontend::SceneInstanceDesc desc = describe(kept);
           XXH64_hash_t meshKey;
@@ -1560,6 +1563,8 @@ namespace dxvk {
           uint64_t changed = 0;           // direct, changed: handed back
           uint64_t handovers = 0;
           uint64_t cameraFeeds = 0;       // Cameras sent (first draw of a camera type in a frame)
+          uint64_t viewModelFrames = 0;   // Frames with a view-model draw
+          uint64_t viewModelCameraFrames = 0;  // Frames that sent the view-model camera
           // The early change test
           uint64_t preKeyHits = 0;        // skipped before preparation, unchanged
           uint64_t preKeyMoves = 0;       // skipped before preparation, moved
@@ -1589,6 +1594,7 @@ namespace dxvk {
           uint64_t resetPairs = 0;        // new objects after a device Reset that took over a scene object of the same draw
         } totals;
         uint32_t mismatchLogs = 0;        // [D3D9v2] preKeyMismatch lines written (first 20)
+        uint32_t viewModelDrawnFrame = ~0u;  // The last frame counted in viewModelFrames
         // Skinned lifecycle lines written in this log interval.
         static constexpr uint32_t kSkinEventLinesPerInterval = 40;
         uint32_t skinEventLines = 0;
@@ -1649,6 +1655,7 @@ namespace dxvk {
           uint32_t skinFirstBone = 0;
           uint32_t skinBoneCount = 0;
           XXH64_hash_t skinMaterial = 0;
+          translator::MaterialIdentityParts skinMaterialParts;
           XXH64_hash_t skinObjectKey = 0;
           XXH64_hash_t resetSignature = 0;  // translator::DrawInputs::resetSignature of the last draw (0 = coarse-keyed)
           // The last full preparation's record and derived state.
@@ -1656,6 +1663,7 @@ namespace dxvk {
           PreparedState prepared;
         };
         std::unordered_map<XXH64_hash_t, Object> objects;       // by object key + slot (InstanceMatcher)
+        SkyMode lastSkyMode = SkyMode::SkyboxRasterization;
         std::unordered_map<uint64_t, XXH64_hash_t> byHandle;    // direct objects
         translator::InstanceMatcher matcher;
         // This frame's draws (frameDrawKey) to the object of the first one, by inputs and by pre-key.
@@ -1794,7 +1802,8 @@ namespace dxvk {
             " matchContentExact=", perFrame(totals.matchContentExact), " matchContentNear=", perFrame(totals.matchContentNear),
             " skinEvents=", skinEventLines, "/", totals.skinEvents, " (logged/all)",
             " resetPairs=", totals.resetPairs,
-            " | interval totals: skipped=", totals.skipped, " handovers=", totals.handovers, " changed=", totals.changed));
+            " | interval totals: skipped=", totals.skipped, " handovers=", totals.handovers, " changed=", totals.changed,
+            " viewModelFrames=", totals.viewModelFrames, " viewModelCameraFrames=", totals.viewModelCameraFrames));
           // Draws per frame not handed over, per class (non-exclusive).
           std::string notEligibleLine;
           for (uint32_t i = 0; i < kNeCount; ++i) {
@@ -1838,6 +1847,8 @@ namespace dxvk {
         // its bone extent (skinPairBound), since another character of the same mesh may have left the view nearby. Other
         // draws take a stale slot within rtx.uniqueObjectDistance and one of another material within a twentieth of it.
         // A coarse-keyed draw takes a slot of its own shape first (InstanceMatcher::Query::shapeFirst).
+        // A draw of known bytes takes no slot farther away than its own size, the reach of RetainedScene's rigid jump
+        // test, since an object that comes into view would otherwise take the slot of a look-alike elsewhere.
         static SlotQuery slotQuery(const translator::DrawInputs& in) {
           SlotQuery query;
           query.material = in.material;
@@ -1847,6 +1858,9 @@ namespace dxvk {
           query.shapeFirst = in.usesCoarseKey();
           // The bones of a fixed-function skinned draw are not in its bytes, so look-alike characters have one content.
           query.content = in.usesCoarseKey() && !(in.flags & translator::DrawInputs::kSkinned) ? in.contentKey() : 0;
+          if (query.content != 0 && in.extent > 0.f) {
+            query.maxDistanceSqr = in.extent * in.extent;
+          }
           query.positionUnknown = in.skinNonFinite;
           query.predict = (in.flags & translator::DrawInputs::kSkinned) != 0;
           return query;
@@ -1907,7 +1921,37 @@ namespace dxvk {
           return what.empty() ? std::string("none") : what;
         }
 
-        void noteSkinned(Object& object, XXH64_hash_t key, const translator::DrawInputs& in) {
+        // The parts of a material identity that differ between two draws, with their values where they are readable.
+        static std::string materialChanges(const translator::MaterialIdentityParts& a, const translator::MaterialIdentityParts& b) {
+          std::string what;
+          const auto add = [&](const char* name, const std::string& text) {
+            what += str::format(what.empty() ? "" : ",", name, text);
+          };
+          if (a.textures != b.textures) {
+            add("textures", "");
+          }
+          if (a.samplers != b.samplers) {
+            add("samplers", "");
+          }
+          if (a.blend != b.blend) {
+            add("blend", "");
+          }
+          if (a.tFactor != b.tFactor) {
+            add("tFactor", str::format(":0x", std::hex, a.tFactor, "->0x", b.tFactor));
+          }
+          if (a.alphaTest != b.alphaTest) {
+            add("alphaTest", str::format(":0x", std::hex, a.alphaTest, "->0x", b.alphaTest));
+          }
+          if (a.textureOps != b.textureOps) {
+            add("textureOps", str::format(":0x", std::hex, a.textureOps, "->0x", b.textureOps));
+          }
+          if (a.lighting != b.lighting) {
+            add("lighting", str::format(":", a.lighting, "->", b.lighting));
+          }
+          return what.empty() ? std::string("none") : what;
+        }
+
+        void noteSkinned(Object& object, XXH64_hash_t key, const translator::DrawInputs& in, const PreparedState* prepared) {
           const bool known = object.skinClass != 0;
           const bool changed = known &&
             (object.skinMaterial != in.material || object.skinBoneCount != in.skinBoneCount ||
@@ -1917,6 +1961,9 @@ namespace dxvk {
             what = str::format("was material=0x", std::hex, object.skinMaterial, std::dec, " bones=", object.skinFirstBone,
                                "+", object.skinBoneCount, " counts=", uint32_t(object.skinCounts >> 32), "/",
                                uint32_t(object.skinCounts));
+            if (object.skinMaterial != in.material && prepared != nullptr) {
+              what += str::format(" materialChanges=", materialChanges(object.skinMaterialParts, prepared->materialParts));
+            }
           }
           object.skinVelocity = known ? in.skinPosition - object.skinPosition : Vector3(0.f);
           object.skinPosition = in.skinPosition;
@@ -1925,6 +1972,9 @@ namespace dxvk {
           object.skinFirstBone = in.skinFirstBone;
           object.skinBoneCount = in.skinBoneCount;
           object.skinMaterial = in.material;
+          if (prepared != nullptr) {
+            object.skinMaterialParts = prepared->materialParts;
+          }
           object.skinObjectKey = in.identityKey();
           const XXH64_hash_t skinClass = skinClassOf(in);
           if (object.skinClass != skinClass) {
@@ -2109,6 +2159,11 @@ namespace dxvk {
           if (updatesCamera && cameras.firstOfFrame(type)) {
             decision.feedCamera = true;
             totals.cameraFeeds++;
+            totals.viewModelCameraFrames += type == translator::CameraClass::ViewModel ? 1 : 0;
+          }
+          if (type == translator::CameraClass::ViewModel && viewModelDrawnFrame != frame) {
+            viewModelDrawnFrame = frame;
+            totals.viewModelFrames++;
           }
         }
 
@@ -2463,6 +2518,7 @@ namespace dxvk {
             derived.terrain = CategoryFlags(prepared->categories).test(InstanceCategories::Terrain);
             derived.terrainBaking = frontend::terrainBakeActive();
             derived.freeCamera = frontend::freeCameraEnabled();
+            derived.fog = prepared->fog.mode != 0 ? prepared->fog.hash() : 0;
           }
           const translator::ChangeVerdict verdict =
             translator::ChangeTest::test(object.change, change, prepared != nullptr ? &derived : nullptr, reprepareEpoch);
@@ -2513,7 +2569,7 @@ namespace dxvk {
                                                          p.z, ") moved=", length(in.skinPosition - p)));
               }
             }
-            noteSkinned(object, key, in);
+            noteSkinned(object, key, in, prepared);
             // A new skinned object close to a scene-owned character of the same material that was drawn in the previous
             // frame but not yet in this one (its draw moved to other buffers or another key, as when a character becomes
             // a ragdoll) waits one frame, and that character is kept for it. If the character stays undrawn, endFrame
@@ -2691,6 +2747,19 @@ namespace dxvk {
 
         void endFrame() {
           applyResults();
+
+          // The scene rejects the game's sky draws while the backend renders its own sky, and those draws must not wait
+          // out that back-off once the game's sky is back. Rejections made under the old mode have arrived by now, since
+          // the CS thread applies an option change only after it has processed the earlier frames.
+          const SkyMode skyMode = RtxOptions::skyMode();
+          if (skyMode != lastSkyMode) {
+            lastSkyMode = skyMode;
+            for (auto& [key, object] : objects) {
+              object.rejects = 0;
+              object.backoffUntil = 0;
+            }
+          }
+
           pairSkinned();
           if (!resetCandidates.empty() && frame - resetFrame >= kResetFrames) {
             resetCandidates.clear();

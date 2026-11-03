@@ -44,6 +44,7 @@
 #include "rtx_fork_sccr_shell.h"
 #include "rtx_sparse_rendering.h"
 #include "rtx_numos_settings.h"
+#include "rtx_vram_budget.h"
 
 namespace dxvk {
   namespace {
@@ -398,17 +399,17 @@ namespace dxvk {
     // Code-driven changes for lighting setting (automatically routes to User layer when preset is Custom)
     RtxOptionLayerTarget layerTarget(RtxOptionEditTarget::Derived);
 
-    bool isRayReconstruction = RtxOptions::isRayReconstructionEnabled();
-    bool isDLSS = RtxOptions::isDLSSEnabled();
-    bool isNative = RtxOptions::upscalerType() == UpscalerType::None;
-    if (isRayReconstruction) {
+    if (RtxOptions::isRayReconstructionEnabled()) {
       updatePathTracerPreset(DxvkRayReconstruction::pathTracerPreset());
-    } else if (isDLSS) {
+      return;
+    }
+
+    // NRD always gets the sampling it is tuned for, whichever upscaler runs.
+    // The native mode preserve option only applies while NRD is not denoising.
+    const bool isNative = RtxOptions::upscalerType() == UpscalerType::None;
+    const bool isNrdDenoising = RtxOptions::useDenoiser() && !RtxOptions::useDenoiserReferenceMode();
+    if (isNrdDenoising || !isNative || !DxvkRayReconstruction::preserveSettingsInNativeMode()) {
       updatePathTracerPreset(PathTracerPreset::Default);
-    } else if (isNative) {
-      if (!DxvkRayReconstruction::preserveSettingsInNativeMode()) {
-        updatePathTracerPreset(PathTracerPreset::Default);
-      }
     }
   }
 
@@ -563,6 +564,18 @@ namespace dxvk {
     {
       std::lock_guard<std::mutex> lock(RtxOptionImpl::getUpdateMutex());
       DxvkDLFG::litePreset.disableLayerValue(RtxOptionLayer::getQualityLayer());
+    }
+
+    // How long idle replacement-texture mips and micromaps stay in memory. Lower presets target cards with less of it.
+    if (graphicsPreset() == GraphicsPreset::Ultra) {
+      VramBudget::idleMipFrames.setDeferred(7200);
+      VramBudget::idleMicromapFrames.setDeferred(3600);
+    } else if (graphicsPreset() == GraphicsPreset::High) {
+      VramBudget::idleMipFrames.setDeferred(3600);
+      VramBudget::idleMicromapFrames.setDeferred(1800);
+    } else if (graphicsPreset() == GraphicsPreset::Medium || graphicsPreset() == GraphicsPreset::Low) {
+      VramBudget::idleMipFrames.setDeferred(1800);
+      VramBudget::idleMicromapFrames.setDeferred(900);
     }
 
     if (graphicsPreset() == GraphicsPreset::Ultra) {

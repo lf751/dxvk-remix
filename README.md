@@ -131,7 +131,7 @@ option is listed in [`RtxOptions.md`](RtxOptions.md).
 ### Also in Remix Plus
 
 Carried over from the first Remix Plus release: RemixFX post-processing effects in an ordered stack (with HDR depth of
-field and NTSC/VHS looks), FSR 3 upscaling and frame generation, DLSS-NR, the froxel radiance cache for
+field and NTSC/VHS looks), AMD FSR upscaling and frame generation, DLSS-NR, the froxel radiance cache for
 particles and decals while volumetrics are off, and the Remix API extensions for batched meshes and lights, texture
 hash categories, game values and VRAM control.
 
@@ -221,6 +221,7 @@ keeps every setting as you set it.
 - [Windows SDK 10.0.19041.0](https://developer.microsoft.com/en-us/windows/downloads/sdk-archive/) or newer.
 - [Meson 1.8.2+](https://mesonbuild.com/) and Ninja (`pip install --user meson ninja`).
 - [Vulkan SDK 1.4.313.2+](https://vulkan.lunarg.com/sdk/home#windows).
+- CMake 3.30+, to build NRD from its submodule. The one in Visual Studio works. The first configure downloads NRD's pinned dependencies.
 - [Python 3.9+](https://www.python.org/downloads/) (not the Microsoft Store version).
 - Internet access for the first configure, which downloads the prebuilt dependencies listed in
   `packman-external.xml` into `external/`.
@@ -289,6 +290,7 @@ With code and ideas from:
 | Tone curve and color grade | TheGreatHmmmmm | MIT |
 | Prism, which inspired the tone curve | Jon (OopyDoopy / KickFister), for RenoDX; shoulder curve by Musa Haji | MIT |
 | Auto-exposure meter, from the halocedlaart Halo CE path-tracer addon | TheGreatHmmmmm | MIT |
+| HDR10 output | TheGreatHmmmmm | MIT |
 | Retained instance table | doodlum (`doodlum/dxvk-remix`) | MIT |
 | Host world origin | CattaRappa (sambow23, BetaRT) | MIT |
 | Underwater look | Mochabeanproto (`Mochabeanproto/dxvk-remix`) | MIT, used with permission |

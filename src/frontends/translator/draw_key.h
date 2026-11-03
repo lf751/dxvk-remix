@@ -37,6 +37,17 @@
 namespace dxvk {
   namespace translator {
 
+    // The parts of a draw's material identity (DrawInputs::material), for the log of what changed between two draws.
+    struct MaterialIdentityParts {
+      XXH64_hash_t textures = 0;
+      XXH64_hash_t samplers = 0;
+      XXH64_hash_t blend = 0;
+      uint32_t tFactor = 0;
+      uint32_t alphaTest = 0;
+      uint32_t textureOps = 0;
+      uint32_t lighting = 0;
+    };
+
     struct DrawInputs {
       static constexpr uint32_t kMaxStreams = 16;
 
@@ -113,6 +124,9 @@ namespace dxvk {
       // translation when that cannot be read. A draw whose vertices are already in world space has an identity world
       // matrix, so its translation does not tell its objects apart. Not part of any key.
       Vector3 anchor;
+      // A kContent draw's size in world units: the diagonal of its vertices' box, or 0 when it is not known. Not part of
+      // any key.
+      float extent = 0.f;
 
       uint8_t flags = 0;
 

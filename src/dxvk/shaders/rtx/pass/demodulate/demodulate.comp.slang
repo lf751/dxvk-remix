@@ -36,7 +36,7 @@
 #include "rtx/pass/sparse_rendering/sparse_rendering.slangh"
 #include "rtx/pass/sparse_rendering/compact_active_pixels.slangh"
 #include "rtx/algorithm/integrator_helpers.slangh"
-#include "rtx/external/NRD.slangh"
+#include "rtx/utility/nrd.slangh"
 
 struct DemodulationData
 {
@@ -74,6 +74,9 @@ void demodulate(
     specularRadiance *= getRoughnessDemodulationFactor(demodulationData.perceptualRoughness, cb.roughnessDemodulationOffset);
   }
 
+  diffuseRadiance *= nrd.frameToDenoiser;
+  specularRadiance *= nrd.frameToDenoiser;
+
   packedDiffuseAndHitT = vec4(0.f);
   packedSpecularAndHitT = vec4(0.f);
   bool sanitize = true;
@@ -81,11 +84,11 @@ void demodulate(
   {
     float normHitDist = 0;
     normHitDist = REBLUR_FrontEnd_GetNormHitDist(
-      diffuseHitT, demodulationData.linearViewZ, nrd.hitDistanceParams, 1.0);
+      diffuseHitT, demodulationData.linearViewZ, nrd.hitDistanceParams.xyz, 1.0);
     packedDiffuseAndHitT = REBLUR_FrontEnd_PackRadianceAndNormHitDist(diffuseRadiance, normHitDist, sanitize);
 
     normHitDist = REBLUR_FrontEnd_GetNormHitDist(
-      specularHitT, demodulationData.linearViewZ, nrd.hitDistanceParams, demodulationData.perceptualRoughness);
+      specularHitT, demodulationData.linearViewZ, nrd.hitDistanceParams.xyz, demodulationData.perceptualRoughness);
     packedSpecularAndHitT = REBLUR_FrontEnd_PackRadianceAndNormHitDist(specularRadiance, normHitDist, sanitize);
   }
   else 
