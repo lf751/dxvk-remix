@@ -910,11 +910,11 @@ namespace dxvk {
     // Parts of an expanded mesh replacement start from the entry's transforms and categories.
     const DrawCallTransforms baseTransforms = state.drawCall.getTransformData();
     const bool hasParts = state.frontendResolved && state.inlineSubmeshParts != nullptr;
-    const SceneDraw baseDraw = state.drawCall;
+    const std::optional<SceneDraw> baseDraw = hasParts ? std::make_optional(state.drawCall) : std::nullopt;
 
     for (size_t i = 0; i < count; ++i) {
-      if (hasParts) {
-        state.drawCall = baseDraw;
+      if (baseDraw) {
+        state.drawCall = *baseDraw;
       }
       std::shared_ptr<MaterialData> keepAlive;
       const MaterialData* materialPtr = &m_scene.prepareExternalSubmeshDrawCall(state, submeshesRef, i, keepAlive);
