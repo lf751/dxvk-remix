@@ -910,8 +910,12 @@ namespace dxvk {
     // Parts of an expanded mesh replacement start from the entry's transforms and categories.
     const DrawCallTransforms baseTransforms = state.drawCall.getTransformData();
     const bool hasParts = state.frontendResolved && state.inlineSubmeshParts != nullptr;
+    const SceneDraw baseDraw = state.drawCall;
 
     for (size_t i = 0; i < count; ++i) {
+      if (hasParts) {
+        state.drawCall = baseDraw;
+      }
       std::shared_ptr<MaterialData> keepAlive;
       const MaterialData* materialPtr = &m_scene.prepareExternalSubmeshDrawCall(state, submeshesRef, i, keepAlive);
       if (const ExternalDrawState::SubmeshPart* part = submeshPart(state, i)) {
@@ -975,12 +979,13 @@ namespace dxvk {
       key.mesh = reinterpret_cast<uintptr_t>(entry.desc.mesh);
       key.submesh = uint32_t(i);
       key.material = drawCall.materialIndependentGeometry ? drawCall.geometryShareKey : drawCall.getMaterialData().getHash();
-      if (drawCall.getSkinningState().numBones > 0 || state.deforming) {
+      const bool submeshDeforming = state.submeshIsDeforming(i);
+      if (drawCall.getSkinningState().numBones > 0 || submeshDeforming) {
         key.owner = entry.handle;
       }
       bool jumped = false;
       sub.geometry = acquireGeometry(ctx, key, drawCall, &jumped);
-      if (sub.geometry != nullptr && state.deforming) {
+      if (sub.geometry != nullptr && submeshDeforming) {
         // Deforming geometry gets its own BLAS at once (the accel manager's promotion for in-place rebuilt geometry).
         sub.geometry->blas.deforming = true;
       }

@@ -193,6 +193,9 @@ struct ExternalDrawState {
   // Draw-instance identity for ReplacementInstance lookup. Excludes per-frame camera matrices
   // (worldToView / viewToProjection / objectToView) filled in submitExternalDraw after hashing.
   XXH64_hash_t computeExternalDrawIdentityHash() const;
+
+  // Evaluates the currently prepared submesh, with original parts retaining the host's deformation.
+  bool submeshIsDeforming(size_t index) const;
 };
 
 // Declared here so SceneManager can befriend the hook, which uses m_drawCallMeta.

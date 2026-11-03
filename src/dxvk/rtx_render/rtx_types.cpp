@@ -31,6 +31,15 @@
 
 namespace dxvk {
 
+  void SceneDraw::overrideReplacementGeometryData(std::shared_ptr<const RasterGeometry> overriddenGeometryData) {
+    overrideGeometryData(std::move(overriddenGeometryData));
+    if (getGeometryData().numBonesPerVertex == 0) {
+      skinningData = SkinningData {};
+      usesVertexShader = false;
+      newGeometryEveryFrame = false;
+    }
+  }
+
   // Instance constructor, getter, and assignment operator
   PrimInstance::PrimInstance(RtInstance* instance) : m_type(Type::Instance) {
     m_ptr.instance = instance;

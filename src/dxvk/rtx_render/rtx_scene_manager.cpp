@@ -1394,7 +1394,7 @@ namespace dxvk {
       // RasterGeometry is a value member of MeshReplacement, not separately allocated.
       // The aliasing ctor makes a shared_ptr<RasterGeometry> that shares the ref-count
       // of the MeshReplacement, keeping it alive for the BlasEntry's lifetime.
-      newDrawCallState->overrideGeometryData(
+      newDrawCallState->overrideReplacementGeometryData(
         std::shared_ptr<const RasterGeometry>(replacement.geometry, &replacement.geometry->data));
       newDrawCallState->modifyCategoryFlags() = replacement.categories.applyCategoryFlags(newDrawCallState->getCategoryFlags());
       return newDrawCallState;
@@ -4288,6 +4288,14 @@ namespace dxvk {
     }
   }
 
+  bool ExternalDrawState::submeshIsDeforming(size_t index) const {
+    if (frontendResolved && inlineSubmeshParts != nullptr && index < inlineSubmeshParts->size() &&
+        (*inlineSubmeshParts)[index].meshReplacement) {
+      return drawCall.getGeometryData().numBonesPerVertex > 0 && drawCall.getSkinningState().numBones > 0;
+    }
+    return deforming;
+  }
+
   const MaterialData& SceneManager::prepareExternalSubmeshDrawCall(ExternalDrawState& state,
                                                                    const std::shared_ptr<const std::vector<RasterGeometry>>& submeshesRef,
                                                                    size_t index,
@@ -4297,8 +4305,13 @@ namespace dxvk {
     // allocated. The aliasing ctor shares submeshesRef's ref-count while pointing at
     // the element, keeping the vector alive if destroyExternalMesh erases the entry
     // while a BlasEntry still holds this pointer.
-    state.drawCall.overrideGeometryData(
-      std::shared_ptr<const RasterGeometry>(submeshesRef, &submeshes[index]));
+    auto geometry = std::shared_ptr<const RasterGeometry>(submeshesRef, &submeshes[index]);
+    if (state.frontendResolved && state.inlineSubmeshParts != nullptr && index < state.inlineSubmeshParts->size() &&
+        (*state.inlineSubmeshParts)[index].meshReplacement) {
+      state.drawCall.overrideReplacementGeometryData(std::move(geometry));
+    } else {
+      state.drawCall.overrideGeometryData(std::move(geometry));
+    }
 
     if (state.frontendResolved) {
       // The frontend's own draw: its cull mode, material hash and categories stay; picking meta is tracked by the

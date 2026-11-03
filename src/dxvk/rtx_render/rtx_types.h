@@ -593,6 +593,9 @@ struct SceneDraw {
     overrides.geometryData = std::move(overriddenGeometryData);
   }
 
+  // Authored unskinned meshes do not use the original draw's pose or vertex shader.
+  void overrideReplacementGeometryData(std::shared_ptr<const RasterGeometry> overriddenGeometryData);
+
   void overrideCullMode(VkCullModeFlags overriddenCullMode) {
     overrides.cullMode = overriddenCullMode;
   }
