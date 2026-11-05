@@ -237,8 +237,8 @@ namespace dxvk {
   }
 
   void DxvkPathtracerIntegrateDirect::prewarmShaders(DxvkPipelineManager& pipelineManager) const {
-    const auto& terrain = m_device->getCommon()->getSceneManager().getTerrainBlendArgs();
-    const bool terrainShadowsEnabled = terrain.enabled && terrain.displacementEnabled && terrain.displacementStrength > 0.f && terrain.displacementSelfShadowEnabled && terrain.displacementShadowStrength > 0.f;
+    const auto& terrain = m_device->getCommon()->getSceneManager().getTerrainBlendShaderFeatures();
+    const bool terrainShadowsEnabled = terrain.selfShadow;
 
     ScopedCpuProfileZoneN("Direct Integrate Shader Prewarming");
 
@@ -608,8 +608,8 @@ namespace dxvk {
   }
 
   Rc<DxvkShader> DxvkPathtracerIntegrateDirect::getComputeShader(const bool deferredNrcTrainingSetup, const SlimLevel slimLevel) const {
-    const auto& terrain = m_device->getCommon()->getSceneManager().getTerrainBlendArgs();
-    const bool terrainShadowsEnabled = terrain.enabled && terrain.displacementEnabled && terrain.displacementStrength > 0.f && terrain.displacementSelfShadowEnabled && terrain.displacementShadowStrength > 0.f;
+    const auto& terrain = m_device->getCommon()->getSceneManager().getTerrainBlendShaderFeatures();
+    const bool terrainShadowsEnabled = terrain.selfShadow;
 
     if (deferredNrcTrainingSetup) {
       return GET_TERRAIN_SHADOW_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, IntegrateDirectRayGenShader, integrate_direct_nrc_rayquery);
@@ -643,8 +643,8 @@ namespace dxvk {
   }
 
   void DxvkPathtracerIntegrateDirect::prewarmLevel(const bool deferredNrcTrainingSetup, const SlimLevel level) const {
-    const auto& terrain = m_device->getCommon()->getSceneManager().getTerrainBlendArgs();
-    const bool terrainShadowsEnabled = terrain.enabled && terrain.displacementEnabled && terrain.displacementStrength > 0.f && terrain.displacementSelfShadowEnabled && terrain.displacementShadowStrength > 0.f;
+    const auto& terrain = m_device->getCommon()->getSceneManager().getTerrainBlendShaderFeatures();
+    const bool terrainShadowsEnabled = terrain.selfShadow;
 
     // dedicatedSunActive() turns on during the run, once a sky provider renders, so the sun kernels are warmed
     // whenever the options allow them.
@@ -676,8 +676,8 @@ namespace dxvk {
   }
 
   Rc<DxvkShader> DxvkPathtracerIntegrateDirect::getSplitShadeShader(const bool dedicatedSun) const {
-    const auto& terrain = m_device->getCommon()->getSceneManager().getTerrainBlendArgs();
-    const bool terrainShadowsEnabled = terrain.enabled && terrain.displacementEnabled && terrain.displacementStrength > 0.f && terrain.displacementSelfShadowEnabled && terrain.displacementShadowStrength > 0.f;
+    const auto& terrain = m_device->getCommon()->getSceneManager().getTerrainBlendShaderFeatures();
+    const bool terrainShadowsEnabled = terrain.selfShadow;
 
     // The shade kernel traces nothing, so one serves Lean, LeanCore and LeanLegacy.
     return dedicatedSun
@@ -686,8 +686,8 @@ namespace dxvk {
   }
 
   Rc<DxvkShader> DxvkPathtracerIntegrateDirect::getSplitTraceShader(const SlimLevel slimLevel) const {
-    const auto& terrain = m_device->getCommon()->getSceneManager().getTerrainBlendArgs();
-    const bool terrainShadowsEnabled = terrain.enabled && terrain.displacementEnabled && terrain.displacementStrength > 0.f && terrain.displacementSelfShadowEnabled && terrain.displacementShadowStrength > 0.f;
+    const auto& terrain = m_device->getCommon()->getSceneManager().getTerrainBlendShaderFeatures();
+    const bool terrainShadowsEnabled = terrain.selfShadow;
 
     // The trace kernel carries the level's visibility form (old record, core, core + legacy). Any dedicated sun sample is
     // in the record.

@@ -37,6 +37,8 @@ namespace dxvk {
     DxvkRtxdiRayQuery(DxvkDevice* device);
     ~DxvkRtxdiRayQuery() = default;
 
+    void prewarmShaders(bool terrainShadowsEnabled) const;
+
     void dispatch(RtxContext* ctx, const Resources::RaytracingOutput& rtOutput);
     void dispatchGradient(RtxContext* ctx, const Resources::RaytracingOutput& rtOutput);
     void dispatchConfidence(RtxContext* ctx, const Resources::RaytracingOutput& rtOutput);

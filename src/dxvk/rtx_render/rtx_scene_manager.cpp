@@ -2032,6 +2032,11 @@ namespace dxvk {
     }
   }
 
+  TerrainBlendShaderFeatures SceneManager::getTerrainBlendShaderFeatures() const {
+    const auto preset = m_pReplacer->getTerrainBlendPreset();
+    return preset ? preset->shaderFeatures() : TerrainBlendShaderFeatures {};
+  }
+
   const std::shared_ptr<const TerrainBlendPreset>& SceneManager::getActiveTerrainBlendPreset() {
     const uint32_t frame = m_device->getCurrentFrameId();
     if (m_terrainBlendFrame != frame) {
@@ -2079,7 +2084,6 @@ namespace dxvk {
     m_terrainBlendArgs.heightBlendWidth = preset->heightBlendWidth;
     m_terrainBlendArgs.displacementEnabled = preset->displacementEnabled &&
       preset->displacementMode != TerrainDisplacementMode::Off;
-    m_terrainBlendArgs.displacementMode = static_cast<uint32_t>(preset->displacementMode);
     m_terrainBlendArgs.displacementStrength = preset->displacementStrength;
     m_terrainBlendArgs.displacementMaxIterations = static_cast<uint32_t>(preset->displacementMaxIterations);
     m_terrainBlendArgs.displacementSelfShadowEnabled = preset->displacementSelfShadowEnabled;

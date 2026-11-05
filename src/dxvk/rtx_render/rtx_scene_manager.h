@@ -37,6 +37,7 @@
 #include "../util/util_hashtable.h"
 
 #include "rtx_globals.h"
+#include "rtx_terrain_blend_types.h"
 #include "../shaders/rtx/pass/terrain_blend_args.h"
 #include "rtx_retained_buffer_table.h"
 #include "rtx_types.h"
@@ -381,6 +382,7 @@ public:
   std::unique_ptr<AssetReplacer>& getAssetReplacer() { return m_pReplacer; }
   TerrainBaker& getTerrainBaker() { return *m_terrainBaker.get(); }
   const TerrainBlendArgs& getTerrainBlendArgs() const { return m_terrainBlendArgs; }
+  TerrainBlendShaderFeatures getTerrainBlendShaderFeatures() const;
   const std::shared_ptr<const TerrainBlendPreset>& getActiveTerrainBlendPreset();
 
   // Scene utility functions

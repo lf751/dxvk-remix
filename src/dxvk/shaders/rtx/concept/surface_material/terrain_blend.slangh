@@ -161,32 +161,6 @@ float terrainReliefHeight(vec3 position, vec3 normal, vec4 weights, float lod) {
   return sanitize(height * args.displacementStrength, 0.f);
 }
 
-float terrainRaymarchIntersection(vec3 position, vec3 normal, vec3 outwardView, vec4 weights, float lod) {
-  const TerrainBlendArgs args = cb.terrainBlendArgs;
-  const float facing = dot(outwardView, normal);
-  const vec2 bounds = terrainReliefBounds(weights);
-  if (facing <= 1e-4f || bounds.y - bounds.x <= 0.f) {
-    return 0.f;
-  }
-  float previousDistance = bounds.y / facing;
-  float previousGap = previousDistance * facing -
-    terrainReliefHeight(position + outwardView * previousDistance, normal, weights, lod);
-  if (previousGap <= 0.f) {
-    return previousDistance;
-  }
-  for (uint step = 1; step <= args.displacementMaxIterations; ++step) {
-    const float distance = lerp(bounds.y, bounds.x, float(step) / float(args.displacementMaxIterations)) / facing;
-    const float gap = distance * facing - terrainReliefHeight(position + outwardView * distance, normal, weights, lod);
-    if (gap <= 0.f) {
-      const float intersection = saturate(previousGap / max(previousGap - gap, 1e-8f));
-      return sanitize(lerp(previousDistance, distance, intersection), 0.f);
-    }
-    previousDistance = distance;
-    previousGap = gap;
-  }
-  return previousDistance;
-}
-
 void terrainQuadtreeCell(vec3 position, vec3 direction, vec3 normal, vec4 weights, uint level, uint minimumLevel,
     out float maximumHeight, out float exitDistance) {
   const TerrainBlendArgs args = cb.terrainBlendArgs;
@@ -369,14 +343,6 @@ bool terrainQuadtreeIntersection(vec3 position, vec3 normal, vec3 outwardView, v
   return false;
 }
 
-bool terrainReliefIntersection(vec3 position, vec3 normal, vec3 outwardView, vec4 weights, float lod, out float intersection) {
-  if (cb.terrainBlendArgs.displacementMode == 2) {
-    return terrainQuadtreeIntersection(position, normal, outwardView, weights, lod, intersection);
-  }
-  intersection = terrainRaymarchIntersection(position, normal, outwardView, weights, lod);
-  return true;
-}
-
 float terrainBlendShadowThroughput(MinimalSurfaceInteraction interaction, vec3 lightDirection,
     vec3 outwardViewDirection, vec2 terrainHitData) {
   const TerrainBlendArgs args = cb.terrainBlendArgs;
@@ -391,7 +357,7 @@ float terrainBlendShadowThroughput(MinimalSurfaceInteraction interaction, vec3 l
   }
   const vec3 anchor = interaction.position + args.worldOffset.xyz;
   const float placementLod = max(terrainHitData.y, 0.f);
-  const float lod = args.displacementMode == 2 ? floor(placementLod) - cb.totalMipBias : placementLod;
+  const float lod = floor(placementLod) - cb.totalMipBias;
   const float grazingFade = smoothstep(0.05f, 0.2f, dot(outwardViewDirection, normal));
   const vec4 weights = terrainPlacementWeights(anchor, normal, placementLod) * grazingFade;
   const vec3 virtualHit = anchor + outwardViewDirection * terrainHitData.x;
@@ -502,7 +468,7 @@ OpaqueSurfaceMaterialInteraction terrainBlendInteractionCreate(Surface surface, 
   if (args.displacementEnabled && args.displacementStrength > 0.f && dot(ray.viewDirection, interaction.geometryNormal) > 1e-4f) {
     const float grazingFade = smoothstep(0.05f, 0.2f, dot(ray.viewDirection, interaction.geometryNormal));
     float distance;
-    hasRelief = terrainReliefIntersection(position, interaction.geometryNormal, ray.viewDirection, weights * grazingFade, lod, distance);
+    hasRelief = terrainQuadtreeIntersection(position, interaction.geometryNormal, ray.viewDirection, weights * grazingFade, lod, distance);
     if (hasRelief) {
       virtualPosition += ray.viewDirection * distance;
       interaction.textureCoordinates = vec2(distance, lod);

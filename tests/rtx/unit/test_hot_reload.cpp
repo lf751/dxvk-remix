@@ -167,6 +167,41 @@ static void testTerrainPresetReloadLifetime() {
   Logger::info("testTerrainPresetReloadLifetime passed");
 }
 
+static void testTerrainShaderFeaturesBeforeGeometry() {
+  AssetReplacements replacements;
+  auto preset = std::make_shared<TerrainBlendPreset>();
+  preset->displacementEnabled = true;
+  replacements.setTerrainBlendPreset(preset);
+  const auto loaded = replacements.getTerrainBlendPreset();
+  if (loaded->displacementMode != TerrainDisplacementMode::QuadtreePOM || loaded->shaderFeatures().key() != 3u) {
+    throw DxvkError("a loaded terrain preset must expose blend and shadow variants before geometry or textures exist");
+  }
+  const auto blendOnly = [&preset] {
+    if (preset->shaderFeatures().key() != 1u) {
+      throw DxvkError("terrain without active relief shadows must request only the blend variants");
+    }
+  };
+  preset->displacementMode = TerrainDisplacementMode::Off;
+  blendOnly();
+  preset->displacementMode = TerrainDisplacementMode::QuadtreePOM;
+  preset->displacementStrength = 0.f;
+  blendOnly();
+  preset->displacementStrength = 1.f;
+  preset->displacementShadowStrength = 0.f;
+  blendOnly();
+  preset->displacementShadowStrength = 1.f;
+  preset->displacementSelfShadowEnabled = false;
+  blendOnly();
+  preset->displacementSelfShadowEnabled = true;
+  preset->displacementEnabled = false;
+  blendOnly();
+  preset->enabled = false;
+  if (preset->shaderFeatures().key() != 0u) {
+    throw DxvkError("a disabled terrain preset must not request terrain shaders");
+  }
+  Logger::info("testTerrainShaderFeaturesBeforeGeometry passed");
+}
+
 static void testTerrainPresetNoticeClassification() {
   ChangeCapture cap;
   const auto classify = [&cap](const char* path, bool resync) {
@@ -1312,6 +1347,7 @@ int main() {
     dxvk::UsdMod::loadUsdPlugins();
 
     dxvk::testTerrainPresetReloadLifetime();
+    dxvk::testTerrainShaderFeaturesBeforeGeometry();
     dxvk::testTerrainPresetNoticeClassification();
     dxvk::testTerrainPlacementEditsTriggerReload();
 

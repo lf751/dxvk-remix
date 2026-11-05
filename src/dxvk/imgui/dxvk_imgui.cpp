@@ -1512,7 +1512,6 @@ namespace dxvk {
   void ImGUI::showShaderPrewarmScreen(const Rc<DxvkContext>& ctx) {
     // Frames without ray tracing (menus, loading screens) register the shaders for changed options here.
     RtxInitializer& initializer = ctx->getCommonObjects()->getRtxInitializer();
-    initializer.refreshPrewarm();
     const RtxInitializer::PrewarmProgress progress = initializer.updateStartupPrewarm();
 
     // Warm caches finish the prewarm in about a second without a real compile, so the screen waits for a compile that

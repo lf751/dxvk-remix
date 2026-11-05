@@ -28,6 +28,18 @@ Entry format:
 - Docs: [RemixApi.md](RemixApi.md)   (only if a public doc covers it)
 ```
 
+## 2026-11-05
+
+### Quadtree-only terrain relief and startup shader compilation
+Terrain Blend removes its raymarched traversal and uses Quadtree POM whenever relief is enabled. Shader selection reads the loaded preset before geometry binding, and preset feature changes queue the terrain G-buffer and lighting variants through the existing startup compilation screen and cache.
+- Presets: Off remains 0, Quadtree remains 2; legacy mode 1 and missing modes migrate to Quadtree. Other displacement and blending controls are preserved.
+- Options: none added. Ordinary material displacement modes are unchanged.
+- Tests: terrain shader features are available before geometry/textures, and disabled displacement/shadows request the corresponding variant set.
+- Validation: 31 runtime and 27 Toolkit tests passed. The isolated startup queued 40 terrain pipelines before its first 3D frame, displayed the existing wait screen, and compiled no pipelines on demand during the first ten seconds of gameplay. The user confirmed normal rendering.
+- Measured: terrain SPIR-V 258593168 -> 252960952 bytes (2.18% smaller); compressed runtime DLL 335324160 -> 331246080 bytes (3.89 MiB smaller).
+- Commits: the commit that adds this entry.
+- Docs: [TerrainBlend.md](../documentation/TerrainBlend.md).
+
 ## 2026-11-03
 
 ### Direct DLL compatibility for neural rendering

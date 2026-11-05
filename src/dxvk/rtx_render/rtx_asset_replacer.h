@@ -33,10 +33,10 @@
 #include "rtx_mod_manager.h"
 #include "rtx_utils.h"
 #include "rtx_lights_data.h"
+#include "rtx_terrain_blend_types.h"
 
 namespace dxvk {
   enum class TerrainRockMode : uint32_t { Slope = 0, Elevation = 1, Both = 2 };
-  enum class TerrainDisplacementMode : uint32_t { Off = 0, RaymarchPOM = 1, QuadtreePOM = 2 };
 
   struct TerrainBlendPreset {
     bool enabled = true;
@@ -59,7 +59,7 @@ namespace dxvk {
     float dirtMinElevation = 0.0f;
     float dirtElevationFadeWidth = 1.0f;
     bool displacementEnabled = false;
-    TerrainDisplacementMode displacementMode = TerrainDisplacementMode::RaymarchPOM;
+    TerrainDisplacementMode displacementMode = TerrainDisplacementMode::QuadtreePOM;
     float displacementStrength = 1.0f;
     uint32_t displacementMaxIterations = 64;
     float displacementInward[4] = { 0.1f, 0.1f, 0.1f, 0.1f };
@@ -69,6 +69,11 @@ namespace dxvk {
     bool displacementSelfShadowEnabled = true;
     float displacementShadowStrength = 1.f;
     uint32_t displacementShadowMaxIterations = 32;
+
+    TerrainBlendShaderFeatures shaderFeatures() const {
+      return { enabled, enabled && displacementEnabled && displacementMode != TerrainDisplacementMode::Off &&
+        displacementStrength > 0.f && displacementSelfShadowEnabled && displacementShadowStrength > 0.f };
+    }
   };
 
   class DxvkContext;

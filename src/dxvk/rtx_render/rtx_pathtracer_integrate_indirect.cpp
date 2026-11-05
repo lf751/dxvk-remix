@@ -822,8 +822,8 @@ namespace dxvk {
   }
 
   void DxvkPathtracerIntegrateIndirect::prewarmShaders(DxvkPipelineManager& pipelineManager) const {
-    const auto& terrain = m_device->getCommon()->getSceneManager().getTerrainBlendArgs();
-    const bool terrainShadowsEnabled = terrain.enabled && terrain.displacementEnabled && terrain.displacementStrength > 0.f && terrain.displacementSelfShadowEnabled && terrain.displacementShadowStrength > 0.f;
+    const auto& terrain = m_device->getCommon()->getSceneManager().getTerrainBlendShaderFeatures();
+    const bool terrainShadowsEnabled = terrain.selfShadow;
 
     ScopedCpuProfileZoneN("Indirect Integrate Shader Prewarming");
 
@@ -957,7 +957,7 @@ namespace dxvk {
 
   DxvkRaytracingPipelineShaders DxvkPathtracerIntegrateIndirect::getSharcUpdatePipelineShaders(
     const bool depth4, const bool ommEnabled, const bool wboitEnabled, const SlimLevel slimLevel, const bool deferredFlush) const {
-    const bool terrainEnabled = m_device->getCommon()->getSceneManager().getTerrainBlendArgs().enabled;
+    const bool terrainEnabled = m_device->getCommon()->getSceneManager().getTerrainBlendShaderFeatures().enabled;
 
     DxvkRaytracingPipelineShaders shaders;
     if (deferredFlush) {
@@ -1051,7 +1051,7 @@ namespace dxvk {
 
   DxvkRaytracingPipelineShaders DxvkPathtracerIntegrateIndirect::getSharcUpdateSerPipelineShaders(
     const bool depth4, const bool ommEnabled, const SlimLevel slimLevel) const {
-    const bool terrainEnabled = m_device->getCommon()->getSceneManager().getTerrainBlendArgs().enabled;
+    const bool terrainEnabled = m_device->getCommon()->getSceneManager().getTerrainBlendShaderFeatures().enabled;
 
     // The TraceRay + SER update. Raygen with SER, the update hit shader of the same level and the update miss
     // shader, all with the deferred-flush payload (SHARC_DEFERRED_FLUSH) of the propagation depth.
@@ -1221,8 +1221,8 @@ namespace dxvk {
   }
 
   Rc<DxvkShader> DxvkPathtracerIntegrateIndirect::getAssemblyShader(const bool nrcEnabled, const bool restirGiEnabled, const SlimLevel slimLevel) const {
-    const auto& terrain = m_device->getCommon()->getSceneManager().getTerrainBlendArgs();
-    const bool terrainShadowsEnabled = terrain.enabled && terrain.displacementEnabled && terrain.displacementStrength > 0.f && terrain.displacementSelfShadowEnabled && terrain.displacementShadowStrength > 0.f;
+    const auto& terrain = m_device->getCommon()->getSceneManager().getTerrainBlendShaderFeatures();
+    const bool terrainShadowsEnabled = terrain.selfShadow;
 
     // The assembly slim levels (see selectAssemblySlimLevel; SlimPom is mapped to Full).
     const bool lean = slimLevel == SlimLevel::Lean;
@@ -1415,7 +1415,7 @@ namespace dxvk {
     const bool pomEnabled,
     const bool wboitEnabled,
     const SlimLevel slimLevel) const {
-    const bool terrainEnabled = m_device->getCommon()->getSceneManager().getTerrainBlendArgs().enabled;
+    const bool terrainEnabled = m_device->getCommon()->getSceneManager().getTerrainBlendShaderFeatures().enabled;
 
 
     DxvkRaytracingPipelineShaders shaders;
@@ -1922,7 +1922,7 @@ namespace dxvk {
     const bool nrcEnabled,
     const bool wboitEnabled,
     const SlimLevel slimLevel) const {
-    const bool terrainEnabled = m_device->getCommon()->getSceneManager().getTerrainBlendArgs().enabled;
+    const bool terrainEnabled = m_device->getCommon()->getSceneManager().getTerrainBlendShaderFeatures().enabled;
 
 
     DxvkRaytracingPipelineShaders shaders;
@@ -2247,7 +2247,7 @@ namespace dxvk {
   }
 
   Rc<DxvkShader> DxvkPathtracerIntegrateIndirect::getComputeShader(const bool useNeeCache, const bool nrcEnabled, const bool wboitEnabled) const {
-    const bool terrainEnabled = m_device->getCommon()->getSceneManager().getTerrainBlendArgs().enabled;
+    const bool terrainEnabled = m_device->getCommon()->getSceneManager().getTerrainBlendShaderFeatures().enabled;
 
     if (wboitEnabled) {
       if (nrcEnabled) {

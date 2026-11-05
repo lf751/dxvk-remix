@@ -20,6 +20,7 @@
 * DEALINGS IN THE SOFTWARE.
 */
 #pragma once
+#include <atomic>
 #include <chrono>
 
 #include "../../util/rc/util_rc_ptr.h"
@@ -46,7 +47,7 @@ namespace dxvk {
     }
 
     struct PrewarmProgress {
-      // True while the startup prewarm has pipelines left to compile.
+      // True while startup pipelines compile or mod assets can still publish shader requirements.
       bool running = false;
       // True once one of its pipelines took longer than a pipeline cache hit, which means the caches were cold.
       bool compiling = false;
@@ -73,7 +74,7 @@ namespace dxvk {
     static constexpr double kFirstFramesReportSeconds = 10.0;
 
     bool m_warmupComplete = false;
-    bool m_assetsLoaded = false;
+    std::atomic<bool> m_assetsLoaded { false };
 
     bool m_startupPrewarmRunning = false;
     bool m_startupPrewarmCompiling = false;
@@ -82,6 +83,7 @@ namespace dxvk {
     uint32_t m_startupPrewarmQueuedBase = 0;
     DxvkPipelineCache::CompileCounts m_startupPrewarmCountsBase;
     uint32_t m_prewarmOptionGeneration = 0;
+    uint32_t m_prewarmTerrainFeatures = 0;
     std::chrono::steady_clock::time_point m_lastPrewarmRefresh;
 
     bool m_raytracedFrameSeen = false;

@@ -37,6 +37,7 @@
 #include "rtx_debug_view.h"
 #include "rtx_sparse_rendering.h"
 #include "rtx_restir_gi_rayquery.h"
+#include "rtx_rtxdi_rayquery.h"
 #include "rtx_taa.h"
 #include "rtx_nis.h"
 #include "rtx_tone_mapping.h"
@@ -201,6 +202,7 @@ namespace dxvk {
 
   void RtxInitializer::startPrewarmShaders() {
     m_prewarmOptionGeneration = RtxOptionManager::valueChangeGeneration();
+    m_prewarmTerrainFeatures = m_device->getCommon()->getSceneManager().getTerrainBlendShaderFeatures().key();
     m_lastPrewarmRefresh = std::chrono::steady_clock::now();
     // The prewarm below covers the startup values.
     RtxOptionManager::takeChangedOptionNames();
@@ -231,6 +233,7 @@ namespace dxvk {
 
   void RtxInitializer::registerPrewarmShaders() {
     DxvkObjects* pCommon = m_device->getCommon();
+    const auto terrain = pCommon->getSceneManager().getTerrainBlendShaderFeatures();
 
     // Prewarm all the shaders we'll need for RT by registering them (per-pass) with the driver
     pCommon->metaPathtracerGbuffer().prewarmShaders(pCommon->pipelineManager());
@@ -240,7 +243,8 @@ namespace dxvk {
     pCommon->metaDebugView().prewarmShaders(pCommon->pipelineManager());
 
     pCommon->metaSparseRendering().prewarmShaders(pCommon->pipelineManager());
-    pCommon->metaReSTIRGIRayQuery().prewarmShaders(pCommon->pipelineManager());
+    pCommon->metaReSTIRGIRayQuery().prewarmShaders(pCommon->pipelineManager(), terrain.selfShadow);
+    pCommon->metaRtxdiRayQuery().prewarmShaders(terrain.selfShadow);
     pCommon->metaTAA().prewarmShaders(pCommon->pipelineManager());
     pCommon->metaNIS().prewarmShaders(pCommon->pipelineManager());
     pCommon->metaToneMapping().prewarmShaders(pCommon->pipelineManager());
@@ -252,6 +256,9 @@ namespace dxvk {
   }
 
   RtxInitializer::PrewarmProgress RtxInitializer::updateStartupPrewarm() {
+    // Observe asset publication before requesting the variants that can complete startup.
+    const bool assetsLoaded = m_assetsLoaded.load();
+    refreshPrewarm();
     PrewarmProgress progress;
     if (!m_startupPrewarmRunning) {
       return progress;
@@ -263,7 +270,7 @@ namespace dxvk {
     const double elapsedSeconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - m_startupPrewarmStart).count();
     m_startupPrewarmCompiling = m_startupPrewarmCompiling || pipelineManager.remixShaderSlowCompileCount() > 0;
 
-    if (pending == 0) {
+    if (pending == 0 && assetsLoaded) {
       m_startupPrewarmRunning = false;
       DxvkPipelineCache* cache = pipelineManager.pipelineCache();
       cache->setStartupPrewarmDone();
@@ -288,20 +295,25 @@ namespace dxvk {
   }
 
   void RtxInitializer::refreshPrewarm() {
-    // An option change can make other shader variants reachable. Registering is idempotent: a shader that exists is
-    // looked up, and only new ones are compiled.
+    // Asset loading and hot reload can change terrain variants without changing an option.
+    if (!prewarmEnabled()) {
+      return;
+    }
     const uint32_t generation = RtxOptionManager::valueChangeGeneration();
-    if (generation == m_prewarmOptionGeneration || !prewarmEnabled()) {
+    const auto terrain = m_device->getCommon()->getSceneManager().getTerrainBlendShaderFeatures();
+    const bool terrainChanged = terrain.key() != m_prewarmTerrainFeatures;
+    if (generation == m_prewarmOptionGeneration && !terrainChanged) {
       return;
     }
 
     // Until the first ray traced frames are reported, every change registers at once, so the frame after it never
     // compiles on demand. Later, at most once a second, as some options change every frame.
     const auto now = std::chrono::steady_clock::now();
-    if (m_firstFramesReported && std::chrono::duration<double>(now - m_lastPrewarmRefresh).count() < 1.0) {
+    if (m_firstFramesReported && !m_startupPrewarmRunning && std::chrono::duration<double>(now - m_lastPrewarmRefresh).count() < 1.0) {
       return;
     }
     m_prewarmOptionGeneration = generation;
+    m_prewarmTerrainFeatures = terrain.key();
     m_lastPrewarmRefresh = now;
 
     DxvkPipelineManager& pipelineManager = m_device->getCommon()->pipelineManager();
@@ -312,7 +324,9 @@ namespace dxvk {
     if (queued == 0) {
       return;
     }
-    Logger::info(str::format("[ShaderPrewarm] options changed (", changed, "): ", queued, " pipelines queued for the new settings",
+    Logger::info(str::format("[ShaderPrewarm] settings changed (", changed,
+                             terrainChanged ? str::format(" terrain blend=", terrain.enabled, " self-shadow=", terrain.selfShadow) : std::string(),
+                             "): ", queued, " pipelines queued for the new settings",
                              m_raytracedFrameSeen ? "" : ", before the first 3D frame"));
 
     // Before the first 3D frame, the wait screen covers these like the startup prewarm.

@@ -334,7 +334,7 @@ namespace dxvk {
       return terrain != 0u ? kGbufferVariantTerrain : 0u;
     }
 
-    uint32_t getGbufferTerrainVariantKey(const TerrainBlendArgs& terrain) {
+    uint32_t getGbufferTerrainVariantKey(const TerrainBlendShaderFeatures& terrain) {
       return getGbufferTerrainVariantKey(terrain.enabled != 0u
         ? RTX_SHADER_VARIANT_MATRIX_GBUFFER_TERRAIN_TERRAIN : 0u);
     }
@@ -706,15 +706,15 @@ namespace dxvk {
       return nullptr;
     }
 
-    void prewarmGbufferCompactPSRComputeShaders(const bool wboitEnabled) {
-      getGbufferRayQueryCompactPSRComputeShader(true, wboitEnabled, GbufferSlimLevel::Full, false);
-      getGbufferRayQueryCompactPSRComputeShader(false, wboitEnabled, GbufferSlimLevel::Full, false);
+    void prewarmGbufferCompactPSRComputeShaders(const bool wboitEnabled, const bool terrainEnabled) {
+      getGbufferRayQueryCompactPSRComputeShader(true, wboitEnabled, GbufferSlimLevel::Full, terrainEnabled);
+      getGbufferRayQueryCompactPSRComputeShader(false, wboitEnabled, GbufferSlimLevel::Full, terrainEnabled);
       if (wboitEnabled) {
         for (int32_t stochasticAlpha = 1; stochasticAlpha >= 0; stochasticAlpha--) {
-          getGbufferRayQueryCompactPSRComputeShader(stochasticAlpha, true, GbufferSlimLevel::Slim, false);
-          getGbufferRayQueryCompactPSRComputeShader(stochasticAlpha, true, GbufferSlimLevel::Lean, false);
-          getGbufferRayQueryCompactPSRComputeShader(stochasticAlpha, true, GbufferSlimLevel::SlimPom, false);
-          getGbufferRayQueryCompactPSRComputeShader(stochasticAlpha, true, GbufferSlimLevel::LeanPom, false);
+          getGbufferRayQueryCompactPSRComputeShader(stochasticAlpha, true, GbufferSlimLevel::Slim, terrainEnabled);
+          getGbufferRayQueryCompactPSRComputeShader(stochasticAlpha, true, GbufferSlimLevel::Lean, terrainEnabled);
+          getGbufferRayQueryCompactPSRComputeShader(stochasticAlpha, true, GbufferSlimLevel::SlimPom, terrainEnabled);
+          getGbufferRayQueryCompactPSRComputeShader(stochasticAlpha, true, GbufferSlimLevel::LeanPom, terrainEnabled);
         }
       }
     }
@@ -723,46 +723,46 @@ namespace dxvk {
     // The slim level is picked per frame, so warm every level of the feature set the configuration runs, or of all.
     // NRC runs psr_inline, and otherwise psr_prepare runs, each with or without stochastic alpha.
     void prewarmGbufferSlimComputeShaders(const bool prepareSet, const bool prepareStochasticAlphaSet, const bool inlineNrcSet,
-                                          const bool inlineNrcStochasticAlphaSet) {
+                                          const bool inlineNrcStochasticAlphaSet, const bool terrainEnabled) {
       const GbufferSlimLevel levels[] = { GbufferSlimLevel::Slim, GbufferSlimLevel::Lean, GbufferSlimLevel::SlimPom, GbufferSlimLevel::LeanPom };
       for (const GbufferSlimLevel level : levels) {
         for (int32_t isPSRPass = 1; isPSRPass >= 0; isPSRPass--) {
           if (prepareSet) {
-            getGbufferRayQuerySlimComputeShader(RTX_SHADER_VARIANT_MATRIX_GBUFFER_RAYQUERY_FEATURES_PSR_PREPARE, isPSRPass, level, false);
+            getGbufferRayQuerySlimComputeShader(RTX_SHADER_VARIANT_MATRIX_GBUFFER_RAYQUERY_FEATURES_PSR_PREPARE, isPSRPass, level, terrainEnabled);
           }
           if (prepareStochasticAlphaSet) {
-            getGbufferRayQuerySlimComputeShader(kGbufferRayQueryFeaturesPsrPrepareStochasticAlpha, isPSRPass, level, false);
+            getGbufferRayQuerySlimComputeShader(kGbufferRayQueryFeaturesPsrPrepareStochasticAlpha, isPSRPass, level, terrainEnabled);
           }
           if (inlineNrcSet) {
-            getGbufferRayQuerySlimComputeShader(RTX_SHADER_VARIANT_MATRIX_GBUFFER_RAYQUERY_FEATURES_PSR_INLINE, isPSRPass, level, false);
+            getGbufferRayQuerySlimComputeShader(RTX_SHADER_VARIANT_MATRIX_GBUFFER_RAYQUERY_FEATURES_PSR_INLINE, isPSRPass, level, terrainEnabled);
           }
           if (inlineNrcStochasticAlphaSet) {
-            getGbufferRayQuerySlimComputeShader(kGbufferRayQueryFeaturesPsrInlineStochasticAlpha, isPSRPass, level, false);
+            getGbufferRayQuerySlimComputeShader(kGbufferRayQueryFeaturesPsrInlineStochasticAlpha, isPSRPass, level, terrainEnabled);
           }
         }
         if (prepareSet || prepareStochasticAlphaSet) {
-          getGbufferPSRPrepareSlimComputeShader(level, false);
+          getGbufferPSRPrepareSlimComputeShader(level, terrainEnabled);
         }
-        getGbufferDecalPrepareSlimComputeShader(level, false);
+        getGbufferDecalPrepareSlimComputeShader(level, terrainEnabled);
       }
     }
 
-    void prewarmGbufferDecalPrepareComputeShaders() {
+    void prewarmGbufferDecalPrepareComputeShaders(const bool terrainEnabled) {
       for (uint32_t key = 0; key < (1u << 1); key++) {
-        getGbufferDecalPrepareComputeShader(key);
+        getGbufferDecalPrepareComputeShader(key, terrainEnabled);
       }
     }
 
     void prewarmGbufferRayQueryComputeShaders(
       const bool allVariants,
       const bool nrcEnabled,
-      const bool wboitEnabled) {
+      const bool wboitEnabled, const bool terrainEnabled) {
       if (allVariants) {
         for (uint32_t featureVariant = 0; featureVariant < kGbufferRayQueryFeatureVariantCount; featureVariant++) {
           for (int32_t isPSRPass = 1; isPSRPass >= 0; isPSRPass--) {
             for (int32_t useNRC = nrcEnabled; useNRC >= 0; useNRC--) {
               for (int32_t useWBOIT = 1; useWBOIT >= 0; useWBOIT--) {
-                getGbufferRayQueryComputeShader(getGbufferRayQueryVariantKey(featureVariant, isPSRPass, useNRC, useWBOIT));
+                getGbufferRayQueryComputeShader(getGbufferRayQueryVariantKey(featureVariant, isPSRPass, useNRC, useWBOIT) | getGbufferTerrainVariantKey(uint32_t(terrainEnabled)));
               }
             }
           }
@@ -784,7 +784,7 @@ namespace dxvk {
       for (const uint32_t featureVariant : featureVariants) {
         for (int32_t isPSRPass = 1; isPSRPass >= 0; isPSRPass--) {
           for (int32_t useNRC = nrcEnabled; useNRC >= 0; useNRC--) {
-            getGbufferRayQueryComputeShader(getGbufferRayQueryVariantKey(featureVariant, isPSRPass, useNRC, wboitEnabled));
+            getGbufferRayQueryComputeShader(getGbufferRayQueryVariantKey(featureVariant, isPSRPass, useNRC, wboitEnabled) | getGbufferTerrainVariantKey(uint32_t(terrainEnabled)));
           }
         }
       }
@@ -906,7 +906,7 @@ namespace dxvk {
     // (psr_inline with NRC, otherwise psr_prepare with or without stochastic alpha). Requests only: compiles run on the
     // state cache workers like the rest of the prewarm.
     void prewarmGbufferVariantTable(const bool nrcEnabled, const bool stochasticAlpha, const bool wboitEnabled,
-                                    const TerrainBlendArgs& terrainArgs) {
+                                    const TerrainBlendShaderFeatures& terrainArgs) {
       const uint32_t key = gbufferConfiguredVariantModeKey();
       const uint32_t featureVariant = nrcEnabled
         ? (stochasticAlpha ? kGbufferRayQueryFeaturesPsrInlineStochasticAlpha : RTX_SHADER_VARIANT_MATRIX_GBUFFER_RAYQUERY_FEATURES_PSR_INLINE)
@@ -947,6 +947,7 @@ namespace dxvk {
 
   void DxvkPathtracerGbuffer::prewarmShaders(DxvkPipelineManager& pipelineManager) const {
     ScopedCpuProfileZoneN("Gbuffer Shader Prewarming");
+    const bool terrainEnabled = m_device->getCommon()->getSceneManager().getTerrainBlendShaderFeatures().enabled;
 
     const bool isNrcSupported = NeuralRadianceCache::checkIsSupported(device());
     const bool isOpacityMicromapSupported = OpacityMicromapManager::checkIsOpacityMicromapSupported(*m_device);
@@ -981,17 +982,17 @@ namespace dxvk {
         }
       }
 
-      prewarmGbufferRayQueryComputeShaders(true, isNrcSupported, false);
-      getGbufferPSRPrepareComputeShader(m_device->getCommon()->getSceneManager().getTerrainBlendArgs().enabled);
-      prewarmGbufferDecalPrepareComputeShaders();
+      prewarmGbufferRayQueryComputeShaders(true, isNrcSupported, false, terrainEnabled);
+      getGbufferPSRPrepareComputeShader(m_device->getCommon()->getSceneManager().getTerrainBlendShaderFeatures().enabled);
+      prewarmGbufferDecalPrepareComputeShaders(terrainEnabled);
       // The slim levels.
-      prewarmGbufferSlimComputeShaders(true, true, isNrcSupported, isNrcSupported);
+      prewarmGbufferSlimComputeShaders(true, true, isNrcSupported, isNrcSupported, terrainEnabled);
       // The deferred unordered particle resolve.
-      getGbufferDecalPrepareParticlesComputeShader(GbufferSlimLevel::Slim, m_device->getCommon()->getSceneManager().getTerrainBlendArgs().enabled);
-      getGbufferDecalPrepareParticlesComputeShader(GbufferSlimLevel::SlimPom, m_device->getCommon()->getSceneManager().getTerrainBlendArgs().enabled);
+      getGbufferDecalPrepareParticlesComputeShader(GbufferSlimLevel::Slim, m_device->getCommon()->getSceneManager().getTerrainBlendShaderFeatures().enabled);
+      getGbufferDecalPrepareParticlesComputeShader(GbufferSlimLevel::SlimPom, m_device->getCommon()->getSceneManager().getTerrainBlendShaderFeatures().enabled);
       // The compact PSR kernels.
-      prewarmGbufferCompactPSRComputeShaders(false);
-      prewarmGbufferCompactPSRComputeShaders(true);
+      prewarmGbufferCompactPSRComputeShaders(false, terrainEnabled);
+      prewarmGbufferCompactPSRComputeShaders(true, terrainEnabled);
     } else {
       // Note: The getters for these SER/OMM enabled flags also check if SER/OMMs are supported, so we do not need to check for that manually.
       const bool serEnabled = RtxOptions::isShaderExecutionReorderingInPathtracerGbufferEnabled();
@@ -1008,28 +1009,28 @@ namespace dxvk {
 
       switch (RtxOptions::renderPassGBufferRaytraceMode()) {
       case RaytraceMode::RayQuery:
-        prewarmGbufferRayQueryComputeShaders(false, nrcEnabled, wboitEnabled);
+        prewarmGbufferRayQueryComputeShaders(false, nrcEnabled, wboitEnabled, terrainEnabled);
         // The slim levels of the configured feature set only (WBOIT only). With rtx.enableStochasticAlphaBlend
         // the frames run the stochastic alpha form of psr_prepare or psr_inline.
         if (wboitEnabled) {
           const bool stochasticAlpha = CompositePass::enableStochasticAlphaBlend();
           prewarmGbufferSlimComputeShaders(!nrcEnabled && !stochasticAlpha, !nrcEnabled && stochasticAlpha,
-                                           nrcEnabled && !stochasticAlpha, nrcEnabled && stochasticAlpha);
+                                           nrcEnabled && !stochasticAlpha, nrcEnabled && stochasticAlpha, terrainEnabled);
         }
         // The compact PSR kernels, for the PSR prepare feature set only (NRC keeps inline PSR).
         if (!nrcEnabled) {
-          prewarmGbufferCompactPSRComputeShaders(wboitEnabled);
+          prewarmGbufferCompactPSRComputeShaders(wboitEnabled, terrainEnabled);
         }
         // The deferred unordered particle resolve, only when it can bind (slim levels, WBOIT, no NRC).
         if (wboitEnabled && !nrcEnabled) {
-          getGbufferDecalPrepareParticlesComputeShader(GbufferSlimLevel::Slim, m_device->getCommon()->getSceneManager().getTerrainBlendArgs().enabled);
-          getGbufferDecalPrepareParticlesComputeShader(GbufferSlimLevel::SlimPom, m_device->getCommon()->getSceneManager().getTerrainBlendArgs().enabled);
+          getGbufferDecalPrepareParticlesComputeShader(GbufferSlimLevel::Slim, m_device->getCommon()->getSceneManager().getTerrainBlendShaderFeatures().enabled);
+          getGbufferDecalPrepareParticlesComputeShader(GbufferSlimLevel::SlimPom, m_device->getCommon()->getSceneManager().getTerrainBlendShaderFeatures().enabled);
         }
         // Every variant table entry of the configured mode key plus Full. The blocks
         // above already request these (they warm every level of the configured feature set); this adds the Full PSR
         // Prepare kernel with portals configured and follows the table when entries are added.
         prewarmGbufferVariantTable(nrcEnabled, CompositePass::enableStochasticAlphaBlend(), wboitEnabled,
-                                  m_device->getCommon()->getSceneManager().getTerrainBlendArgs());
+                                  m_device->getCommon()->getSceneManager().getTerrainBlendShaderFeatures());
         break;
       case RaytraceMode::RayQueryRayGen:
       case RaytraceMode::TraceRay:
@@ -1056,10 +1057,10 @@ namespace dxvk {
       }
 
       if (!portalsEnabled) {
-        getGbufferPSRPrepareComputeShader(m_device->getCommon()->getSceneManager().getTerrainBlendArgs().enabled);
+        getGbufferPSRPrepareComputeShader(m_device->getCommon()->getSceneManager().getTerrainBlendShaderFeatures().enabled);
       }
 
-      prewarmGbufferDecalPrepareComputeShaders();
+      prewarmGbufferDecalPrepareComputeShaders(terrainEnabled);
     }
   }
 
@@ -1251,15 +1252,15 @@ namespace dxvk {
       const auto levelReady = [&](const SlimLevel level) {
         bool ready = isVariantComputeShaderReady(*ctx, getComputeShader(rayQueryFeatureVariant, false, nrcEnabled, wboitEnabled, level));
         ready = isVariantComputeShaderReady(*ctx, compactPsrActive
-          ? getGbufferRayQueryCompactPSRComputeShader(compactPsrStochasticAlpha, wboitEnabled, level, m_device->getCommon()->getSceneManager().getTerrainBlendArgs().enabled)
+          ? getGbufferRayQueryCompactPSRComputeShader(compactPsrStochasticAlpha, wboitEnabled, level, m_device->getCommon()->getSceneManager().getTerrainBlendShaderFeatures().enabled)
           : getComputeShader(rayQueryFeatureVariant, true, nrcEnabled, wboitEnabled, level)) && ready;
         if (usePSRPrepare) {
-          ready = isVariantComputeShaderReady(*ctx, getGbufferPSRPrepareSlimComputeShader(level, m_device->getCommon()->getSceneManager().getTerrainBlendArgs().enabled)) && ready;
+          ready = isVariantComputeShaderReady(*ctx, getGbufferPSRPrepareSlimComputeShader(level, m_device->getCommon()->getSceneManager().getTerrainBlendShaderFeatures().enabled)) && ready;
         }
         if (deferUnorderedDecals) {
           ready = isVariantComputeShaderReady(*ctx, level == SlimLevel::Full
-            ? getGbufferDecalPrepareComputeShader(decalPrepareVariantKey, m_device->getCommon()->getSceneManager().getTerrainBlendArgs().enabled)
-            : getGbufferDecalPrepareSlimComputeShader(level, m_device->getCommon()->getSceneManager().getTerrainBlendArgs().enabled)) && ready;
+            ? getGbufferDecalPrepareComputeShader(decalPrepareVariantKey, m_device->getCommon()->getSceneManager().getTerrainBlendShaderFeatures().enabled)
+            : getGbufferDecalPrepareSlimComputeShader(level, m_device->getCommon()->getSceneManager().getTerrainBlendShaderFeatures().enabled)) && ready;
         }
         return ready;
       };
@@ -1291,7 +1292,7 @@ namespace dxvk {
       wboitEnabled && slimLevel != SlimLevel::Full && usePSRPrepare && deferUnorderedDecals &&
       !debugViewEnabled && !rtOutput.m_raytraceArgs.enableObjectPicking && !RtxOptions::FrameFeatures::validate();
     if (deferParticles && variantTables && variantFallbackActive(*ctx)) {
-      deferParticles = isVariantComputeShaderReady(*ctx, getGbufferDecalPrepareParticlesComputeShader(slimLevel, m_device->getCommon()->getSceneManager().getTerrainBlendArgs().enabled));
+      deferParticles = isVariantComputeShaderReady(*ctx, getGbufferDecalPrepareParticlesComputeShader(slimLevel, m_device->getCommon()->getSceneManager().getTerrainBlendShaderFeatures().enabled));
     }
     if (deferParticles != m_loggedDeferParticles) {
       m_loggedDeferParticles = deferParticles;
@@ -1342,7 +1343,7 @@ namespace dxvk {
         ctx->bindResourceBuffer(GBUFFER_BINDING_COMPACT_PSR_LIST, DxvkBufferSlice(m_compactPsrList));
         ctx->bindResourceBuffer(GBUFFER_BINDING_COMPACT_PSR_ARGS, DxvkBufferSlice(m_compactPsrArgs));
       }
-      ctx->bindShader(VK_SHADER_STAGE_COMPUTE_BIT, getGbufferPSRPrepareSlimComputeShader(slimLevel, m_device->getCommon()->getSceneManager().getTerrainBlendArgs().enabled));
+      ctx->bindShader(VK_SHADER_STAGE_COMPUTE_BIT, getGbufferPSRPrepareSlimComputeShader(slimLevel, m_device->getCommon()->getSceneManager().getTerrainBlendShaderFeatures().enabled));
       ctx->dispatch(workgroups.width, workgroups.height, workgroups.depth);
       stamp("GBufferPSRPrepare");
     };
@@ -1358,10 +1359,10 @@ namespace dxvk {
       ScopedGpuProfileZone(ctx, "Unordered Decal Prepare");
       // The particle variant whenever Primary Rays skipped their particle walk.
       ctx->bindShader(VK_SHADER_STAGE_COMPUTE_BIT, deferParticles
-        ? getGbufferDecalPrepareParticlesComputeShader(slimLevel, m_device->getCommon()->getSceneManager().getTerrainBlendArgs().enabled)
+        ? getGbufferDecalPrepareParticlesComputeShader(slimLevel, m_device->getCommon()->getSceneManager().getTerrainBlendShaderFeatures().enabled)
         : slimLevel == SlimLevel::Full
-        ? getGbufferDecalPrepareComputeShader(decalPrepareVariantKey, m_device->getCommon()->getSceneManager().getTerrainBlendArgs().enabled)
-        : getGbufferDecalPrepareSlimComputeShader(slimLevel, m_device->getCommon()->getSceneManager().getTerrainBlendArgs().enabled));
+        ? getGbufferDecalPrepareComputeShader(decalPrepareVariantKey, m_device->getCommon()->getSceneManager().getTerrainBlendShaderFeatures().enabled)
+        : getGbufferDecalPrepareSlimComputeShader(slimLevel, m_device->getCommon()->getSceneManager().getTerrainBlendShaderFeatures().enabled));
       ctx->dispatch(workgroups.width, workgroups.height, workgroups.depth);
       stamp("GBufferDecals");
     };
@@ -1378,7 +1379,7 @@ namespace dxvk {
         ScopedGpuProfileZone(ctx, "Primary Rays");
         // rtx.frameFeatures.validate binds the Full kernel's validation variant when one exists.
         Rc<DxvkShader> validateShader = RtxOptions::FrameFeatures::validate()
-          ? getGbufferRayQueryValidateComputeShader(rayQueryFeatureVariant, nrcEnabled, wboitEnabled, m_device->getCommon()->getSceneManager().getTerrainBlendArgs().enabled) : nullptr;
+          ? getGbufferRayQueryValidateComputeShader(rayQueryFeatureVariant, nrcEnabled, wboitEnabled, m_device->getCommon()->getSceneManager().getTerrainBlendShaderFeatures().enabled) : nullptr;
         if (validateShader != nullptr) {
           noteFrameFeaturesValidateKernel(FrameFeaturesValidateKernel::GBuffer);
           ctx->bindShader(VK_SHADER_STAGE_COMPUTE_BIT, validateShader);
@@ -1399,7 +1400,7 @@ namespace dxvk {
         ctx->setFramePassStage(RtxFramePassStage::ReflectionPSR);
         if (compactPsrActive) {
           // One thread per pixel of the list (args written by PSR Prepare).
-          ctx->bindShader(VK_SHADER_STAGE_COMPUTE_BIT, getGbufferRayQueryCompactPSRComputeShader(compactPsrStochasticAlpha, wboitEnabled, slimLevel, m_device->getCommon()->getSceneManager().getTerrainBlendArgs().enabled));
+          ctx->bindShader(VK_SHADER_STAGE_COMPUTE_BIT, getGbufferRayQueryCompactPSRComputeShader(compactPsrStochasticAlpha, wboitEnabled, slimLevel, m_device->getCommon()->getSceneManager().getTerrainBlendShaderFeatures().enabled));
           ctx->bindDrawBuffers(DxvkBufferSlice(m_compactPsrArgs), DxvkBufferSlice());
           ctx->dispatchIndirect(0);
         } else {
@@ -1840,7 +1841,7 @@ namespace dxvk {
     const bool wboitEnabled) const {
     ScopedCpuProfileZone();
 
-    const auto& terrain = m_device->getCommon()->getSceneManager().getTerrainBlendArgs();
+    const auto& terrain = m_device->getCommon()->getSceneManager().getTerrainBlendShaderFeatures();
     const bool terrainEnabled = terrain.enabled != 0u;
     const uint32_t terrainKey = getGbufferTerrainVariantKey(terrain);
     const uint32_t rayGenBaseKey = getGbufferVariantKey(featureVariant, isPSRPass, nrcEnabled, wboitEnabled) | terrainKey;
@@ -1876,9 +1877,9 @@ namespace dxvk {
     if (slimLevel != SlimLevel::Full) {
       // selectSlimLevel returns a slim level only for the psr_prepare (with or without stochastic alpha)
       // and psr_inline + NRC feature sets (WBOIT).
-      return getGbufferRayQuerySlimComputeShader(featureVariant, isPSRPass, slimLevel, m_device->getCommon()->getSceneManager().getTerrainBlendArgs().enabled);
+      return getGbufferRayQuerySlimComputeShader(featureVariant, isPSRPass, slimLevel, m_device->getCommon()->getSceneManager().getTerrainBlendShaderFeatures().enabled);
     }
-    return getGbufferRayQueryComputeShader(getGbufferRayQueryVariantKey(featureVariant, isPSRPass, nrcEnabled, wboitEnabled) | getGbufferTerrainVariantKey(m_device->getCommon()->getSceneManager().getTerrainBlendArgs()));
+    return getGbufferRayQueryComputeShader(getGbufferRayQueryVariantKey(featureVariant, isPSRPass, nrcEnabled, wboitEnabled) | getGbufferTerrainVariantKey(m_device->getCommon()->getSceneManager().getTerrainBlendShaderFeatures()));
   }
 
   const char* DxvkPathtracerGbuffer::raytraceModeToString(RaytraceMode raytraceMode)

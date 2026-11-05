@@ -179,14 +179,14 @@ namespace dxvk {
   DxvkReSTIRGIRayQuery::DxvkReSTIRGIRayQuery(DxvkDevice* device): RtxPass(device) {
   }
 
-  void DxvkReSTIRGIRayQuery::prewarmShaders(DxvkPipelineManager& pipelineManager) const {
+  void DxvkReSTIRGIRayQuery::prewarmShaders(DxvkPipelineManager& pipelineManager, bool terrainShadowsEnabled) const {
     if (!RtxOptions::useReSTIRGI()) {
       return;
     }
 
-    ReSTIRGITemporalReuseShader::getShader();
-    ReSTIRGISpatialReuseShader::getShader();
-    ReSTIRGIFinalShadingShader::getShader();
+    GET_TERRAIN_SHADOW_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, ReSTIRGITemporalReuseShader, restir_gi_temporal_reuse);
+    GET_TERRAIN_SHADOW_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, ReSTIRGISpatialReuseShader, restir_gi_spatial_reuse);
+    GET_TERRAIN_SHADOW_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, ReSTIRGIFinalShadingShader, restir_gi_final_shading);
   }
 
   void DxvkReSTIRGIRayQuery::showImguiSettings() {

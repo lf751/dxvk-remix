@@ -311,6 +311,14 @@ namespace dxvk {
   DxvkRtxdiRayQuery::DxvkRtxdiRayQuery(DxvkDevice* device) {
   }
 
+  void DxvkRtxdiRayQuery::prewarmShaders(bool terrainShadowsEnabled) const {
+    const bool portals = useRtxdiPortalShaderVariants();
+    getRtxdiInitialSamplingShader(portals, terrainShadowsEnabled);
+    getRtxdiTemporalReuseShader(portals, terrainShadowsEnabled);
+    getRtxdiSpatialReuseShader(portals, true, terrainShadowsEnabled);
+    getRtxdiSpatialReuseShader(portals, false, terrainShadowsEnabled);
+  }
+
   void DxvkRtxdiRayQuery::showImguiSettings() {
     RemixGui::SliderInt("Initial Sample Count", &initialSampleCountObject(), 1, 64);
     RemixGui::Checkbox("Sample Best Lights", &enableBestLightSamplingObject());

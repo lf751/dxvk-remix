@@ -62,7 +62,7 @@ namespace dxvk {
 
     void dispatch(RtxContext* ctx, const Resources::RaytracingOutput& rtOutput);
 
-    void prewarmShaders(DxvkPipelineManager& pipelineManager) const;
+    void prewarmShaders(DxvkPipelineManager& pipelineManager, bool terrainShadowsEnabled) const;
 
     void showImguiSettings();
 
