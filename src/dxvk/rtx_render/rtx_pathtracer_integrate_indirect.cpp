@@ -821,6 +821,11 @@ namespace dxvk {
     , m_integrateIndirectMode(IntegrateIndirectMode::Count) {
   }
 
+  bool DxvkPathtracerIntegrateIndirect::rayQueryUsesRaygen() const {
+    return !rayQueryComputeKernel()
+      && m_device->adapter()->deviceProperties().vendorID == static_cast<uint32_t>(DxvkGpuVendor::Nvidia);
+  }
+
   void DxvkPathtracerIntegrateIndirect::prewarmShaders(DxvkPipelineManager& pipelineManager) const {
     const auto& terrain = m_device->getCommon()->getSceneManager().getTerrainBlendShaderFeatures();
     const bool terrainShadowsEnabled = terrain.selfShadow;
@@ -895,7 +900,11 @@ namespace dxvk {
           DxvkComputePipelineShaders shaders;
           switch (RtxOptions::renderPassIntegrateIndirectRaytraceMode()) {
           case RaytraceMode::RayQuery:
-            getComputeShader(useNeeCache, nrcEnabled, wboitEnabled);
+            if (rayQueryUsesRaygen()) {
+              pipelineManager.registerRaytracingShaders(getPipelineShaders(true, serEnabled, ommEnabled, useNeeCache, includesPortals, pomEnabled, nrcEnabled, wboitEnabled));
+            } else {
+              getComputeShader(useNeeCache, nrcEnabled, wboitEnabled);
+            }
             break;
           case RaytraceMode::RayQueryRayGen:
             pipelineManager.registerRaytracingShaders(getPipelineShaders(true, serEnabled, ommEnabled, useNeeCache, includesPortals, pomEnabled, nrcEnabled, wboitEnabled));
@@ -1044,7 +1053,7 @@ namespace dxvk {
   bool DxvkPathtracerIntegrateIndirect::sharcUpdateSerPossible(const bool serEnabled, const bool ommEnabled, const bool wboitEnabled,
                                                                const bool includePortals) {
     // The TraceRay + SER update variants exist for the deferred flush (WBOIT, no OMM 2-state) without
-    // portals; the caller also needs a Full / Slim / Lean level on a frame without POM and the deferred-flush buffer.
+    // portals; the caller also needs a Full / Slim / Lean level that allows it (see the update dispatch) and the deferred-flush buffer.
     // The SER update is used wherever these hold.
     return serEnabled && !includePortals && sharcDeferredFlushPossible(ommEnabled, wboitEnabled);
   }
@@ -1556,11 +1565,13 @@ namespace dxvk {
         noteSlimLevel(SlimPass::SharcUpdate, updateSlimLevel);
         // The same update through TraceRay with SER, where the variants exist:
         // the deferred flush is bound, a Full / Slim / Lean level (the POM-kept levels keep the inline update), and for Full no
-        // POM this frame (its hit shader has no POM, like the query hit while POM is off). Everything else: the RayQuery update.
+        // POM this frame, or rtx.integrateIndirect.sharcUpdateSerWithPom with indirect hits that ignore POM (its hit shader has
+        // no POM, like the query hit while POM is off). Everything else: the RayQuery update.
         const bool updateSer = deferredFlush &&
           sharcUpdateSerPossible(serEnabled, ommEnabled, wboitEnabled, includePortals) &&
           (updateSlimLevel == SlimLevel::Slim || updateSlimLevel == SlimLevel::Lean ||
-           (updateSlimLevel == SlimLevel::Full && !ctx->getFrameFeatures().has(RtFrameFeatures::kScenePom)));
+           (updateSlimLevel == SlimLevel::Full && (!ctx->getFrameFeatures().has(RtFrameFeatures::kScenePom) ||
+             (sharcUpdateSerWithPom() && !RtxOptions::Displacement::enableIndirectHit()))));
         ctx->bindRaytracingPipelineShaders(updateSer
           ? getSharcUpdateSerPipelineShaders(depth4, ommEnabled, updateSlimLevel)
           : getSharcUpdatePipelineShaders(depth4, ommEnabled, wboitEnabled, updateSlimLevel, deferredFlush));
@@ -1727,6 +1738,18 @@ namespace dxvk {
 
       switch (RtxOptions::renderPassIntegrateIndirectRaytraceMode()) {
       case RaytraceMode::RayQuery:
+        // NVIDIA traces the ray query kernel as a ray generation shader (rayQueryUsesRaygen); the compute
+        // dispatch of the same kernel faults the device there.
+        if (rayQueryUsesRaygen()) {
+          if (!m_rayQueryRaygenLogged) {
+            m_rayQueryRaygenLogged = true;
+            Logger::info("[IntegrateIndirect] Ray Query mode traces the ray query kernel as a ray generation shader on this GPU "
+                         "(rtx.integrateIndirect.rayQueryComputeKernel runs the compute kernel instead).");
+          }
+          ctx->bindRaytracingPipelineShaders(getPipelineShaders(true, serEnabled, ommEnabled, neeCacheEnabled, includePortals, pomEnabled, nrcEnabled, wboitEnabled));
+          ctx->traceRays(rayDims.width, rayDims.height, rayDims.depth);
+          break;
+        }
         ctx->bindShader(VK_SHADER_STAGE_COMPUTE_BIT, getComputeShader(neeCacheEnabled, nrcEnabled, wboitEnabled));
         ctx->dispatch(workgroups.width, workgroups.height, workgroups.depth);
         break;

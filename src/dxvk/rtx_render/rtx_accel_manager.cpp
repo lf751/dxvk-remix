@@ -2170,6 +2170,16 @@ namespace dxvk {
         build = true;
       }
 
+      // rtx.maxBlasRefitsBeforeRebuild: after this many consecutive refits the BLAS is rebuilt to restore trace
+      // quality. The rebuild goes into a fresh BLAS below, like every full build. The previous frame's TLAS still
+      // references the current one, and ray tracing traverses that TLAS this frame, so no full build may land in it.
+      const uint32_t maxRefits = optMaxBlasRefitsBeforeRebuild;
+      if (update && !build && maxRefits != 0 && selectedBlas->refitCount >= maxRefits) {
+        update = false;
+        build = true;
+        m_buildStats.refitLimitRebuilds++;
+      }
+
       // There is no such BLAS - create one
       if (build) {
         if (selectedBlas.ptr()) {
@@ -2183,15 +2193,6 @@ namespace dxvk {
       assert(selectedBlas.ptr());
       selectedBlas->frameLastTouched = currentFrame;
       blasEntry->dynamicBlas->opacityMicromapSourceHash = boundOpacityMicromapHash;
-
-      // rtx.maxBlasRefitsBeforeRebuild: after N consecutive refits, rebuild in place (same
-      // buffer, same size, since the build info is unchanged) to restore trace quality.
-      const uint32_t maxRefits = optMaxBlasRefitsBeforeRebuild;
-      if (update && !build && maxRefits != 0 && selectedBlas->refitCount >= maxRefits) {
-        update = false;
-        build = true; // no new BLAS: selectedBlas was already chosen above
-        m_buildStats.refitLimitRebuilds++;
-      }
 
       if (update || build) {
         if (update && !build) {
@@ -3049,6 +3050,7 @@ namespace dxvk {
       }
 
       // There is no such BLAS - create one and put it into the pool
+      const bool freshBlas = selectedBlas == nullptr;
       if (!selectedBlas) {
         auto newBlas = createPooledBlas(sizeInfo.accelerationStructureSize, "BLAS Merged");
 
@@ -3057,6 +3059,16 @@ namespace dxvk {
         m_blasPool.push_back(std::move(newBlas));
       }
       assert(selectedBlas);
+      // Self-check (rtx.accelIncrementalSelfCheckFrames): the previous frame's TLAS is traversed this frame, so a
+      // BLAS it references must not take a full build. The pool search above keeps such a BLAS out by its last
+      // touched frame. This names any that slipped through, with the frame the stamp claims it was last used.
+      if (!freshBlas && !m_previousTlasBlasReferences.empty() &&
+          buildInfo.mode == VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR &&
+          m_previousTlasBlasReferences.count(selectedBlas->accelerationStructureReference) != 0) {
+        Logger::warn(str::format("[AccelGuard] frame ", currentFrame, ": a merged bucket takes a full build into BLAS 0x",
+          std::hex, selectedBlas->accelerationStructureReference, std::dec, " (", selectedBlas->accelStructure->info().size,
+          " bytes) that the previous frame's TLAS references; its last touched frame is ", selectedBlas->frameLastTouched));
+      }
       selectedBlas->frameLastTouched = currentFrame;
       selectedBlas->topologyHash = newTopologyHash;
 
@@ -3892,15 +3904,24 @@ namespace dxvk {
       m_uploadedSurfaceData.clear();
     }
 
-    // Previous -> current surface index mapping, written in slot order.
+    // Previous -> current surface index mapping, written in slot order. An index counts only when the previous
+    // frame's table held this instance there. A stored index goes stale while an instance is out of the table, and
+    // would otherwise take over the entry of the instance the previous frame's TLAS has at that index.
     surfaceIndexMapping.resize(maxPreviousSurfaceIndex + 1);
     std::fill(surfaceIndexMapping.begin(), surfaceIndexMapping.end(), SURFACE_INDEX_INVALID);
+    uint32_t staleMappings = 0;
     for (uint32_t i = 0; i < surfaceCount; ++i) {
       const uint32_t prev = slotPrevIndex[i];
-      if (prev != SURFACE_INDEX_INVALID) {
+      if (prev == SURFACE_INDEX_INVALID) {
+        continue;
+      }
+      if (previousSurfaceSlotHeldBy(prev, m_reorderedSurfaces[i])) {
         surfaceIndexMapping[prev] = i;
+      } else {
+        ++staleMappings;
       }
     }
+    noteStaleSurfaceMappings(staleMappings);
 
     // [PerfCpu] prep.merge.surfaceUpload.gpuData: the parallel pass (everything before the ordered part).
     m_mergeSubMs[8] += std::chrono::duration<double, std::milli>(gpuDataStart - passStart).count();
@@ -4076,7 +4097,21 @@ namespace dxvk {
     // Allocate and initialize the surface mapping buffer
     surfaceIndexMapping.resize(maxPreviousSurfaceIndex + 1);
     std::fill(surfaceIndexMapping.begin(), surfaceIndexMapping.end(), SURFACE_INDEX_INVALID);
-    
+
+    // A previous index counts only when the previous frame's table held this instance there (see the parallel path).
+    uint32_t staleMappings = 0;
+    const auto mapPreviousSurface = [&](const RtInstance& instance, uint32_t surfaceIndex) {
+      const uint32_t prev = instance.getPreviousSurfaceIndex();
+      if (prev == SURFACE_INDEX_INVALID) {
+        return;
+      }
+      if (previousSurfaceSlotHeldBy(prev, &instance)) {
+        surfaceIndexMapping[prev] = surfaceIndex;
+      } else {
+        ++staleMappings;
+      }
+    };
+
     // Assign surface indices to instances that don't have one yet (i.e. those that
     // entered m_reorderedSurfaces via addBlas or bucket insertion rather than the
     // early setSurfaceIndex path for zero-mask OMM/billboard instances).
@@ -4090,20 +4125,17 @@ namespace dxvk {
         // For PointInstancers, all instances share a single surface entry
         if (surface.surface.instancesToObject) {
           assert(surfaceIndex == surface.surface.surfaceIndexOfFirstInstance);
-          if (surface.getPreviousSurfaceIndex() != SURFACE_INDEX_INVALID) {
-            surfaceIndexMapping[surface.getPreviousSurfaceIndex()] = surfaceIndex;
-          }
+          mapPreviousSurface(surface, surfaceIndex);
           surface.setPreviousSurfaceIndex(surfaceIndex);
         }
       }
 
       if (surface.getBillboardCount() == 0 && !surface.surface.instancesToObject) {
-        if (surface.getPreviousSurfaceIndex() != SURFACE_INDEX_INVALID) {
-          surfaceIndexMapping[surface.getPreviousSurfaceIndex()] = surfaceIndex;
-        }
+        mapPreviousSurface(surface, surfaceIndex);
         surface.setPreviousSurfaceIndex(surfaceIndex);
       }
     }
+    noteStaleSurfaceMappings(staleMappings);
     } // !rtx.parallelSurfaceUpload
 
     if (RtxOptions::trackParticleObjects()) {
@@ -4135,6 +4167,22 @@ namespace dxvk {
 
       ctx->writeToBuffer(m_surfaceMappingBuffer, 0, surfaceIndexMapping.size() * sizeof(surfaceIndexMapping[0]), surfaceIndexMapping.data());
     }
+
+    // This frame's table, which next frame's mapping is checked against.
+    m_previousFrameSurfaces.assign(m_reorderedSurfaces.begin(), m_reorderedSurfaces.end());
+  }
+
+  // [SurfaceMappingCheck] (rtx.accelIncrementalSelfCheckFrames): stored previous surface indices that the previous
+  // frame's table does not confirm. Each would have sent the previous frame's TLAS hits at that index to the wrong
+  // instance's surface and material records. The entries are dropped from the mapping either way.
+  void AccelManager::noteStaleSurfaceMappings(uint32_t count) {
+    if (count == 0 || RtxOptions::accelIncrementalSelfCheckFrames() == 0) {
+      return;
+    }
+    m_surfaceMappingCheckMismatches += count;
+    Logger::warn(str::format("[SurfaceMappingCheck] frame ", m_device->getCurrentFrameId(), ": ", count,
+      " stored previous surface indices are not held by their instance in the previous frame's table and were dropped "
+      "from the mapping. Total so far ", m_surfaceMappingCheckMismatches, "."));
   }
 
   void AccelManager::buildBlases(Rc<DxvkContext> ctx,
@@ -4330,11 +4378,27 @@ namespace dxvk {
       m_tlasRefit[Tlas::SSS].valid = false;
     }
 
+    // Ray tracing and ray queries in compute shaders read the TLAS after its build.
     ctx->emitMemoryBarrier(0,
       VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
       VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR,
-      VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
+      VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR | VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
       VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR);
+
+    // Self-check (rtx.accelIncrementalSelfCheckFrames): the BLASes this frame's TLASes reference.
+    // Next frame they are the previous TLASes, which ray tracing still traverses, so createBlasBuffersAndInstances
+    // reports a full build into any of them.
+    m_previousTlasBlasReferences.clear();
+    if (RtxOptions::accelIncrementalSelfCheckFrames() != 0) {
+      for (const auto& list : m_mergedInstances) {
+        for (const VkAccelerationStructureInstanceKHR& instance : list) {
+          m_previousTlasBlasReferences.insert(instance.accelerationStructureReference);
+        }
+      }
+      for (const PointInstancerBatch& batch : m_pointInstancerBatches) {
+        m_previousTlasBlasReferences.insert(batch.blasReference);
+      }
+    }
 
     m_scratchRequiredThisFrame = std::max(m_scratchRequiredThisFrame, VkDeviceSize(totalScratchSize));
     m_scratchRequiredLastFrame = m_scratchRequiredThisFrame;

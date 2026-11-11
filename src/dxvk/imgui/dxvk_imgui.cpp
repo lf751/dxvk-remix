@@ -54,6 +54,7 @@
 #include "rtx_render/rtx_hash_collision_detection.h"
 #include "rtx_render/rtx_options.h"
 #include "rtx_render/rtx_pipeline_stats.h"
+#include "rtx_render/rtx_gpu_breadcrumbs.h"
 #include "rtx_render/rtx_stress.h"
 #include "rtx_render/rtx_fork_api_recorder.h"
 #include "rtx_render/rtx_scene_interface.h"
@@ -4130,6 +4131,11 @@ namespace dxvk {
     if (RemixGui::CollapsingHeader("Shader Variants", collapsingHeaderClosedFlags)) {
       ImGui::Indent();
       RemixGui::Checkbox("Slim Indirect Variants Keep POM", &DxvkPathtracerIntegrateIndirect::slimKeepPomObject());
+      RemixGui::Checkbox("SER SHARC Update on Displacement Frames", &DxvkPathtracerIntegrateIndirect::sharcUpdateSerWithPomObject());
+      RemixGui::Checkbox("Indirect Ray Query Mode Runs the Compute Kernel on NVIDIA", &DxvkPathtracerIntegrateIndirect::rayQueryComputeKernelObject());
+      RemixGui::SetTooltipToLastWidgetOnHover(
+        "rtx.integrateIndirect.rayQueryComputeKernel. Off, Ray Query mode traces the ray query kernel as a ray generation shader\n"
+        "on NVIDIA GPUs, where the compute dispatch of this kernel faults the device. Other GPUs always run the compute kernel.");
       showVariantTablesImguiSettings();
       showFrameFeaturesImguiSettings();
       RemixGui::Checkbox("Log Pipeline Shader Stats (restart required)", &RtxPipelineStats::logPipelineStatsObject());
@@ -4152,6 +4158,11 @@ namespace dxvk {
       RemixGui::DragInt("API Retained: Self-Check Steady Path Every N Frames (0 = off)", &RtxOptions::retainedSteadySelfCheckFramesObject(), 1.f, 0, 100000);
       RemixGui::DragInt("Scene: Self-Check Every N Frames (0 = off)", &scene::Options::selfCheckFramesObject(), 1.f, 0, 100000);
       RemixGui::Checkbox("Log Sampled GPU Stage Timings (verbose)", &RtxContext::gpuStagesObject());
+      RemixGui::Checkbox("Device Fault Diagnostics on NVIDIA (restart required)", &GpuBreadcrumbs::deviceFaultDiagnosticsObject());
+      RemixGui::SetTooltipToLastWidgetOnHover(
+        "rtx.deviceFaultDiagnostics. Restart required: the Vulkan extensions are enabled at device creation (save rtx.conf first).\n"
+        "After a device loss, remix-dxvk.log gets [DeviceFault] lines: the driver's fault description, each faulting GPU address\n"
+        "with the buffer that holds or recently held it, and the pass the GPU was in. GPUs other than NVIDIA always have this.");
       frontend_ui::drawPanels(frontend_ui::Group::SelfChecks);
       ImGui::Unindent();
     }
@@ -4959,6 +4970,7 @@ namespace dxvk {
         RemixGui::Checkbox("Compact Stable BLAS", &RtxOptions::compactStableBlasObject());
         RemixGui::DragInt("Compact BLAS Unchanged for N Frames", &RtxOptions::compactStableBlasFramesObject(), 1.f, 1, 100000);
         RemixGui::DragInt("Rebuild BLAS After N Refits (0 = never)", &RtxOptions::maxBlasRefitsBeforeRebuildObject(), 1.f, 0, 100000);
+        RemixGui::Checkbox("Temporal Passes Trace the Previous Frame's TLAS", &AccelManager::usePreviousTlasObject());
         RemixGui::Checkbox("Refit TLAS While Instances Are Unchanged", &AccelManager::tlasRefitObject());
         RemixGui::DragInt("TLAS: Full Build After N Refits", &AccelManager::tlasRefitRebuildFramesObject(), 1.f, 1, 1000);
         RemixGui::DragFloat("TLAS: Full Build When Moved Fraction Exceeds", &AccelManager::tlasRefitMovedFractionObject(), 0.01f, 0.f, 1.f, "%.2f");

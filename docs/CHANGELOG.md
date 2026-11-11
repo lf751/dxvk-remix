@@ -28,6 +28,96 @@ Entry format:
 - Docs: [RemixApi.md](RemixApi.md)   (only if a public doc covers it)
 ```
 
+## 2026-11-11
+
+### JPOG integration: latest Remix Plus dev
+Integrate all 18 dev commits through f9e5f8577, retaining Quadtree terrain startup prewarming, static replacement geometry sharing, neural DLL compatibility and device-reset repairs. The update includes acceleration-structure lifetime and synchronization fixes, persistent pipeline caches, asynchronous NUMOS compilation and presentation guards.
+- Options and defaults: retain upstream defaults; existing game configuration is unchanged.
+- Upstream: https://github.com/RemixProjGroup/dxvk-remix/commit/f9e5f857763e82e134e2c44138cec7a0ae710d91.
+
+## 2026-11-06
+
+### Remix API plugin guide
+A step-by-step developer guide for writing a game plugin or wrapper against the Remix API: the 64-bit and bridge ways in, version negotiation, the hosting modes, a first frame, materials, textures, skinning, categories, lights, retained instances, config variables, identity and history, debugging, mods and the threading and lifetime rules. A new `examples/remixapi/first_frame.c` is the guide's complete first frame. `RemixApi.md`, `RemixSDK.md`, `RemixApi-Migration.md` and `api-host-path-migration.md` now match the code on light persistence and updates, material replacement keys, `dxvk_RegisterD3D9Device`, `dxvk_GetSharedD3D11TextureHandle`, `SetConfigVariable`, the version rule and what the bridge forwards.
+- Options: none.
+- Commits: the commit that adds this entry.
+- Docs: [RemixApi-Plugin-Guide.md](../documentation/RemixApi-Plugin-Guide.md), [RemixApi.md](RemixApi.md)
+
+### RemixFX shader guide
+A developer guide for people new to RemixFX: setup, a first effect explained line by line, scene inputs, passes, history and file textures, porting from ReShade, debugging, performance, shipping precompiled SPIR-V, and control through the Remix API. A new `vignette` example is the guide's first effect. `RemixFx.md` now matches the loader on unlisted metadata failures, compiler search, defines, include paths, rebuild granularity, error prefixes and when the persisted options are read, and `lut_color_grade` states that it indexes its LUT with linear values.
+- Options: none.
+- Commits: the commit that adds this entry.
+- Docs: [RemixFx-Shader-Guide.md](../documentation/RemixFx-Shader-Guide.md), [RemixFx.md](RemixFx.md)
+
+## 2026-11-03
+
+### Device loss on the first ray-traced frame with Ray Query indirect integration on NVIDIA
+With `rtx.renderPassIntegrateIndirectRaytraceMode` = 0 (Ray Query) and an indirect mode other than SHARC, the indirect integration ran as a compute shader, and that dispatch faulted the device on its first frame (a read of an invalid address, the same address every run) on an RTX 5080 Laptop, while the ray generation shader built from the same code (mode 1) runs clean. The SPIR-V of the two kernels is identical apart from the execution model, and so are their descriptor sets, so the fault is in the driver's compute path, not in the kernel. On NVIDIA GPUs, Ray Query mode now traces the same ray query kernel as a ray generation shader; other GPUs keep the compute kernel. The non-NVIDIA presets select ReSTIR GI with Ray Query, which is this path.
+- Options: added `rtx.integrateIndirect.rayQueryComputeKernel` (default off; on, NVIDIA runs the compute kernel again).
+- Commits: the commit that adds this entry.
+
+### Device loss in the temporal passes: stale surface indices no longer reach the previous frame's TLAS
+A hit on the previous frame's TLAS is resolved through the previous-to-current surface index mapping, which was built from each instance's stored previous index. That index goes stale while an instance is out of the surface table (hidden, culled or toggled), and when the instance returned it took over the mapping entry of the instance the previous TLAS really has at that index, so those hits read another instance's surface and material records, decoded with the wrong layout, and the garbage texture and sampler indices faulted the GPU. The mapping now accepts an index only when the previous frame's table held that instance there, a stored index is cleared on every frame the instance is out of the table, and the visibility shader reads a previous-TLAS hit's material with the record's own type. With `rtx.accelIncrementalSelfCheckFrames` on, stale indices are reported as `[SurfaceMappingCheck]`.
+- Options: none added.
+- Commits: the commit that adds this entry.
+
+### The previous frame's TLAS can be kept out of the temporal passes
+RTXDI temporal bias correction and the denoiser gradients trace visibility rays against the previous frame's TLAS when ray reconstruction is off; `rtx.accel.usePreviousTlas` turns that off, so those rays trace the current TLAS from the previous positions, which is what they already do with ray reconstruction on.
+- Options: added `rtx.accel.usePreviousTlas` (default on, the previous behavior).
+- Commits: the commit that adds this entry.
+
+### A refit-limit rebuild never lands in a BLAS the previous TLAS references
+With `rtx.maxBlasRefitsBeforeRebuild` set, a per-geometry BLAS that reached the limit was rebuilt in place, while the previous frame's TLAS, which the temporal passes still traverse, referenced it. The rebuild now goes into a fresh BLAS like every other full build. With `rtx.accelIncrementalSelfCheckFrames` on, a full build into any BLAS the previous frame's TLAS references is reported as `[AccelGuard]`.
+- Options: none added; `rtx.maxBlasRefitsBeforeRebuild` keeps its default of 0.
+- Commits: the commit that adds this entry.
+
+### Device-loss diagnostics on NVIDIA without Aftermath
+The VK_AMD_buffer_marker pass markers and the VK_EXT_device_fault report, which other GPUs always get, can be turned on for NVIDIA GPUs, and the report names the buffer that holds or recently held each faulting address, from a registry of buffer device addresses kept while the option is on. The `[GpuStall]` line after a long fence wait no longer calls it a recovery, since a device reset signals fences too.
+- Options: added `rtx.deviceFaultDiagnostics` (default off; env `DXVK_DEVICE_FAULT_DIAGNOSTICS`; restart required).
+- Logs: `[DeviceFault]` lines in remix-dxvk.log after a device loss.
+## 2026-11-04
+
+### Ray tracing waits for the TLAS build
+The barrier after the TLAS builds ordered them only against later acceleration structure builds, so ray tracing and compute ray queries could start reading a TLAS before its build finished. It now covers the ray tracing and compute shader stages, like the barriers after BLAS compaction. This is a candidate cause of a device loss on an AMD Radeon 610M on the first ray traced frame of a session (a read of an unmapped address in the first pass that traces); that is not yet confirmed.
+
+### No crash or hang when the window is minimized during a present
+When acquiring a swap chain image returned suboptimal or out of date while the window had a zero-sized client area, for example during alt-tab or a minimize, the present recreated a swap chain that could not exist. With suboptimal it then read the semaphores of the destroyed swap chain, and the runtime crashed with `std::out_of_range` in `Presenter::getSync`. With out of date it retried in a busy loop until the window was restored. The present now skips the frame until the window is restored, still firing its frame latency signal. A New Vegas RTX player on an Intel Arc B580 hit the crash.
+- Options: none.
+- Commits: the commit that adds this entry.
+
+### NUMOS shaders compile in the background
+The prewarm wait screen no longer waits for the NUMOS passes, and frames no longer skip ray tracing while they compile. On an RX 6700 XT with a cold cache the wait screen stayed up 101 minutes, and closed one second after `cloud_render` finished. The NUMOS passes still start compiling at startup, but no frame waits for them. Until NUMOS's small core passes are ready the sky has no NUMOS sky, sun or moon, as when its shaders fail to load. Until the on-screen cloud pass is ready the directly visible sky has no clouds. Until the cloud dome pass is ready reflections and indirect light have no clouds. These passes are held back by switching off, for that frame only, the NUMOS settings that dispatch them, so NUMOS restarts their temporal history when they first run. The log names each held-back pass and when it becomes ready. The pipeline cache still saves only once no compile is in flight.
+- Options: none.
+- Commits: the commit that adds this entry.
+
+### The shader prewarm compiles one NUMOS cloud render variant
+The startup prewarm compiled both on-screen cloud passes, `cloud_render` and `cloud_render_fast`, although a frame uses only the one `rtx.atmosphere.cloudPerformancePreset` selects. Both are very large shaders: `cloud_render` alone took 97 minutes to compile on an RX 6700 XT. The prewarm now registers only the selected variant (the reference variant while `rtx.atmosphere.cloudProfilingMode` is 9), and the other compiles when a setting change selects it.
+- Options: none.
+- Commits: the commit that adds this entry.
+
+### SER SHARC update on frames with displacement
+On a frame with displacement the SHARC update ran inline with displacement compiled in, so it marched the height field at every hit on a displaced surface although `rtx.displacement.enableIndirectHit` was off, and it got no SER. With the option on, such frames bind the existing Full TraceRay and SER update, whose hit shader has no displacement, as SHARC query hits already do. The launch from the primary surface keeps its displacement attenuation. The POM-kept slim levels (`rtx.integrateIndirect.slimKeepPom`) keep the inline update.
+- Options: added `rtx.integrateIndirect.sharcUpdateSerWithPom` (default off). Not set by the graphics presets: screenshots so far show no difference above frame noise, from one exterior view only.
+- Measured: a D3D9 open-world exterior at a low sun, 1485x835 with DLSS-RR: GPU frame 39.1 to 32.9 ms, IndirectSharcUpdate 8.3-9.5 to 2.7 ms (in-run A/B, two phases on between three off). Screenshots from one camera differ no more between on and off than between two off phases. Interiors not measured.
+- Credit: Anton Putrin (vidrug), pull request #3.
+- Commits: the commit that adds this entry.
+
+### Low graphics preset traces one indirect bounce
+The Low preset now traces one indirect bounce instead of two, because Low measured no faster than Medium. With SHARC, the query at the first indirect vertex still returns the cache's multi-bounce radiance and the update paths follow `rtx.sharc.updateBounces`, so only cache misses lose their second bounce. Where the presets select ReSTIR GI, Low becomes single-bounce GI.
+- Options: none added. Per preset, `rtx.pathMaxBounces` is Ultra 4, High 4, Medium 2, Low 1 (was 2).
+- Measured before the change (RTX 5080 Laptop, 2560x1600, DLSS Balanced, volumetrics off): Medium 20.4 ms, Low 20.6 ms GPU.
+- Commits: the commit that adds this entry.
+
+### The pipeline cache survives runtime updates
+The saved `.remix-pipeline-cache` was discarded whenever the runtime DLL changed, so every update compiled every Remix pipeline again, over 90 minutes on an RX 6700 XT. The file is now checked against the GPU and driver only (vendor, device, driver version and `pipelineCacheUUID`), as the Vulkan pipeline cache data itself is: the driver keys each pipeline by its shader code and state, so an update compiles only the shaders it changed. Files saved by earlier builds load too. The `rtx.pipelineCache.maxSizeMB` cap still applies, so a cache that outgrows it across many updates is dropped and rebuilt.
+- Options: none.
+- Commits: the commit that adds this entry.
+
+### Sparse rendering: RTXDI spatial reuse no longer reads inactive neighbors
+With sparse rendering on and `rtx.sparseRendering.enableRtxdiReuseForInactivePixels` off, nothing writes an inactive pixel's slot in the reservoir page that spatial reuse reads, so the slot holds an older frame's reservoir, with that frame's light indices and sample count, or the transmission PSR payload the G-buffer parks in that page. Spatial reuse took those slots from neighbors as reservoirs, which can pick the wrong light and carry it forward through temporal reuse. It now reads an inactive neighbor as an empty reservoir. This is the suspected cause of colored light building up at sampling rates around 0.6, not yet confirmed in game.
+- Options: none. Frames without sparse rendering, or with RTXDI reuse for inactive pixels on, are unchanged.
+- Commits: the commit that adds this entry.
+
 ## 2026-11-05
 
 ### Quadtree-only terrain relief and startup shader compilation

@@ -150,6 +150,11 @@ class AccelManager : public CommonDeviceObject {
   };
 
 public:
+  RTX_OPTION("rtx.accel", bool, usePreviousTlas, true,
+             "Lets the temporal passes trace visibility rays against the previous frame's TLAS when ray reconstruction "
+             "is off or ReSTIR GI is on (RTXDI temporal bias correction and the denoiser gradients). Off, those rays "
+             "trace the current frame's TLAS from the previous frame's positions, as they do with ray reconstruction. "
+             "Turn it off to see whether a device loss follows the previous frame's TLAS.");
   RTX_OPTION("rtx.accel", bool, tlasRefit, true,
              "Updates (refits) each TLAS instead of rebuilding it while its instance list keeps the same "
              "length, order and BLASes, so only transforms and masks change. A full build still happens every "
@@ -738,7 +743,18 @@ private:
   VkQueryPool m_compactionQueryPool = VK_NULL_HANDLE;
   std::vector<CompactionQuery> m_compactionQueries;
   std::vector<uint32_t> m_freeCompactionSlots;
+  // The instances the previous frame's surface table held, by surface index. A previous -> current mapping entry is
+  // accepted only when the table held the instance there, since the previous frame's TLAS resolves its hits through
+  // these indices. Entries are compared by pointer only: an instance may have been freed since.
+  std::vector<RtInstance*> m_previousFrameSurfaces;
+  uint32_t m_surfaceMappingCheckMismatches = 0;
+  bool previousSurfaceSlotHeldBy(uint32_t previousIndex, const RtInstance* instance) const {
+    return previousIndex < m_previousFrameSurfaces.size() && m_previousFrameSurfaces[previousIndex] == instance;
+  }
+  void noteStaleSurfaceMappings(uint32_t count);
   std::vector<std::pair<Rc<DxvkAccelStructure>, uint32_t>> m_retiredAccelStructures;
+  // The BLAS addresses the last built TLASes reference, kept while rtx.accelIncrementalSelfCheckFrames is on.
+  std::unordered_set<uint64_t> m_previousTlasBlasReferences;
   void processBlasCompaction(Rc<DxvkContext> ctx);
   VkBuildAccelerationStructureFlagsKHR compactionBuildFlag() const;
   // rtx.vramBudget.drainSparseChunks: copies in-use BLASes whose memory lies in a draining
