@@ -21,118 +21,118 @@
  */
 #pragma once
 
-#include "util_common.h"
-#include "util_scopedlock.h"
+#include <d3d9.h>
 
-#include "base.h"
+#include <cstdint>
+#include <cstring>
+#include <memory>
+#include <mutex>
+#include <new>
 #include <unordered_map>
-#include <comip.h>
+#include <vector>
 
-// Specialize std::hash
 namespace std {
   template<> struct hash<GUID> {
     size_t operator()(const GUID& guid) const noexcept {
-      const std::uint64_t* p = reinterpret_cast<const std::uint64_t*>(&guid);
-      std::hash<std::uint64_t> hash;
-      return hash(p[0]) ^ hash(p[1]);
+      std::uint64_t words[2];
+      std::memcpy(words, &guid, sizeof(guid));
+      return std::hash<std::uint64_t>()(words[0]) ^ std::hash<std::uint64_t>()(words[1]);
     }
   };
 }
 
-
 class PrivateDataFactory {
   struct PrivateData {
-    void* pData;
-    DWORD SizeOfData;
+    std::vector<std::uint8_t> bytes;
+    IUnknown* pInterface = nullptr;
 
-    PrivateData(CONST void* _pData, DWORD size)
-      : pData(std::malloc(size)), SizeOfData(size) {
-      memcpy(pData, _pData, SizeOfData);
+    PrivateData(const void* data, DWORD size, bool isInterface) {
+      if (isInterface) {
+        pInterface = const_cast<IUnknown*>(static_cast<const IUnknown*>(data));
+        pInterface->AddRef();
+      } else if (size) {
+        const auto* source = static_cast<const std::uint8_t*>(data);
+        bytes.assign(source, source + size);
+      }
     }
+
+    PrivateData(const PrivateData&) = delete;
+    PrivateData& operator=(const PrivateData&) = delete;
 
     ~PrivateData() {
-      std::free(pData);
-    }
-  };
-
-  struct PrivateInterface {
-    IUnknown* pInterface;
-    inline static const DWORD SizeOfData = sizeof(IUnknown*);
-
-    PrivateInterface(IUnknown* _pData)
-      : pInterface(_pData) {
-      if (pInterface)
-        pInterface->AddRef();
-    }
-
-    ~PrivateInterface() {
-      if (pInterface)
+      if (pInterface) {
         pInterface->Release();
+      }
+    }
+
+    DWORD size() const {
+      return pInterface ? sizeof(IUnknown*) : static_cast<DWORD>(bytes.size());
     }
   };
 
-  std::unordered_map<GUID, PrivateData> m_privateData;
-  std::unordered_map<GUID, PrivateInterface> m_privateInterfaces;
+  std::mutex m_mutex;
+  std::unordered_map<GUID, std::shared_ptr<PrivateData>> m_privateData;
 
 public:
-
-  ~PrivateDataFactory() {
-    m_privateData.clear();
-    m_privateInterfaces.clear();
-  }
-
-
-  HRESULT setData(REFGUID refguid, CONST void* pData, DWORD SizeOfData, DWORD Flags) {
-    if (Flags & D3DSPD_IUNKNOWN) {
-      if (SizeOfData != sizeof(IUnknown*))
-        return D3DERR_INVALIDCALL;
-
-      if (pData != nullptr) {
-        IUnknown* pInterface = const_cast<IUnknown*>(reinterpret_cast<const IUnknown*>(pData));
-        m_privateInterfaces.insert_or_assign(refguid, pInterface);
-      }
-    } else {
-      m_privateData.insert_or_assign(refguid, PrivateData(pData, SizeOfData));
+  HRESULT setData(REFGUID refguid, const void* pData, DWORD sizeOfData, DWORD flags) {
+    if ((flags & ~D3DSPD_IUNKNOWN) || (!pData && sizeOfData) ||
+        ((flags & D3DSPD_IUNKNOWN) && (!pData || sizeOfData != sizeof(IUnknown*)))) {
+      return D3DERR_INVALIDCALL;
     }
 
-    return S_OK;
+    try {
+      auto data = std::make_shared<PrivateData>(pData, sizeOfData, (flags & D3DSPD_IUNKNOWN) != 0);
+      {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_privateData[refguid].swap(data);
+      }
+      // Release replaced COM objects outside the lock, since Release can call application code.
+      return D3D_OK;
+    } catch (const std::bad_alloc&) {
+      return E_OUTOFMEMORY;
+    }
   }
 
   HRESULT getData(REFGUID refguid, void* pData, DWORD* pSizeOfData) {
-    if (m_privateData.count(refguid)) {
-      const PrivateData data = m_privateData.at(refguid);
-      if (pData != nullptr)
-        memcpy(pData, data.pData, data.SizeOfData);
-
-      (*pSizeOfData) = data.SizeOfData;
-      return S_OK;
+    if (!pSizeOfData) {
+      return D3DERR_INVALIDCALL;
     }
-
-    if (m_privateInterfaces.count(refguid)) {
-      const PrivateInterface& data = m_privateInterfaces.at(refguid);
-      if (pData != nullptr) {
-        data.pInterface->AddRef();
-        memcpy(pData, &data.pInterface, data.SizeOfData);
+    std::shared_ptr<PrivateData> data;
+    {
+      std::lock_guard<std::mutex> lock(m_mutex);
+      const auto entry = m_privateData.find(refguid);
+      if (entry == m_privateData.end()) {
+        return D3DERR_NOTFOUND;
       }
-
-      (*pSizeOfData) = data.SizeOfData;
-      return S_OK;
+      data = entry->second;
     }
-
-    return D3DERR_INVALIDCALL;
+    const DWORD capacity = *pSizeOfData;
+    *pSizeOfData = data->size();
+    if (capacity < data->size()) {
+      return D3DERR_MOREDATA;
+    }
+    if (pData) {
+      if (data->pInterface) {
+        data->pInterface->AddRef();
+        std::memcpy(pData, &data->pInterface, sizeof(IUnknown*));
+      } else if (!data->bytes.empty()) {
+        std::memcpy(pData, data->bytes.data(), data->bytes.size());
+      }
+    }
+    return D3D_OK;
   }
 
   HRESULT freeData(REFGUID refguid) {
-    if (m_privateData.count(refguid)) {
-      m_privateData.erase(refguid);
-      return S_OK;
+    std::shared_ptr<PrivateData> data;
+    {
+      std::lock_guard<std::mutex> lock(m_mutex);
+      const auto entry = m_privateData.find(refguid);
+      if (entry == m_privateData.end()) {
+        return D3DERR_NOTFOUND;
+      }
+      data = std::move(entry->second);
+      m_privateData.erase(entry);
     }
-
-    if (m_privateInterfaces.count(refguid)) {
-      m_privateInterfaces.erase(refguid);
-      return S_OK;
-    }
-
-    return D3DERR_INVALIDCALL;
+    return D3D_OK;
   }
 };

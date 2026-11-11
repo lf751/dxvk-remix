@@ -35,6 +35,14 @@ Integrate all 18 dev commits through f9e5f8577, retaining Quadtree terrain start
 - Options and defaults: retain upstream defaults; existing game configuration is unchanged.
 - Upstream: https://github.com/RemixProjGroup/dxvk-remix/commit/f9e5f857763e82e134e2c44138cec7a0ae710d91.
 
+### Session texture categories
+
+`AddTextureHash` and `RemoveTextureHash` accept a `session:` prefix on the category, for example `session:rtx.terrainTextures`. These edits target the non-persistent Derived layer, merge with authored categories, and last until the runtime process exits. Unprefixed calls continue editing the User layer. The existing bridge forwards the string unchanged; no table or IPC layout changes are needed. This lets automatically detected terrain hashes remain session-only. No options or defaults change.
+
+
+### Bridge private data ownership
+Resource private data now owns copied byte storage and retained COM interfaces without shallow owning copies. Replacing or removing entries releases the previous interface, and reads respect buffer capacity and allow size queries. This fixes dangling storage, double frees and reference-count errors exposed by resource-owned proxy metadata. No settings or IPC layouts change. The actual-header x86 debug-CRT suite passes 42 checks; both bridge architectures build.
+
 ## 2026-11-06
 
 ### Remix API plugin guide

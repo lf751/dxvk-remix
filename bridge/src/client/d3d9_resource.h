@@ -96,9 +96,6 @@ public:
 
   STDMETHOD(GetPrivateData)(THIS_ REFGUID refguid, void* pData, DWORD* pSizeOfData) {
     LogFunctionCall();
-    if (pData == nullptr) {
-      return D3DERR_INVALIDCALL;
-    }
     return m_privateData.getData(refguid, pData, pSizeOfData);
   }
 

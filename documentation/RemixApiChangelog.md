@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   contract; `remix_c.h` and `remixapi_Interface` are unchanged.
 
 ### Changed
+- 2026-11-11: `AddTextureHash` and `RemoveTextureHash` accept a `session:` prefix
+  on the category to edit the non-persistent Derived layer. Authored hashes
+  remain intact and unprefixed calls retain their User-layer behavior. The
+  existing bridge forwards the prefix unchanged; no API table or IPC layout changes.
 - 2026-10-30: `CreateMaterial` with a live hash no longer ignores the new data. An
   identical description returns at once with no rebuilds, and different data
   replaces the material and rebuilds its users. `DestroyMaterial` then

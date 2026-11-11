@@ -116,44 +116,6 @@ namespace fork_hooks {
   //
   // The caller holds s_mutex, and addHash and removeHash then take the RtxOption update mutex.
   // The reverse order deadlocks against command-stream lambdas that hold the RtxOption mutex.
-  remixapi_ErrorCode mutateTextureHashOption(
-      const char* textureCategory,
-      const char* textureHash,
-      bool add) {
-    if (!textureCategory || textureCategory[0] == '\0' || !textureHash) {
-      return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
-    }
-
-    RtxOptionImpl* option = RtxOptionImpl::getOptionByFullName(std::string { textureCategory });
-    if (!option) {
-      return REMIXAPI_ERROR_CODE_GENERAL_FAILURE;
-    }
-    if (option->getType() != OptionType::HashSet) {
-      return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
-    }
-
-    XXH64_hash_t h = 0;
-    try {
-      h = std::stoull(textureHash, nullptr, 16);
-    } catch (...) {
-      return REMIXAPI_ERROR_CODE_GENERAL_FAILURE;
-    }
-
-    const RtxOptionLayer* layer = RtxOptionLayer::getUserLayer();
-    if (!layer) {
-      return REMIXAPI_ERROR_CODE_GENERAL_FAILURE;
-    }
-
-    // Safe because getType() == HashSet implies T == fast_unordered_set.
-    auto* hashSetOption = static_cast<RtxOption<fast_unordered_set>*>(option);
-    if (add) {
-      hashSetOption->addHash(h, layer);
-    } else {
-      hashSetOption->removeHash(h, layer);
-    }
-    return REMIXAPI_ERROR_CODE_SUCCESS;
-  }
-
   remixapi_ErrorCode drawScreenOverlay(
       RemixApiDevice* remixDevice,
       const void*   pPixelData,

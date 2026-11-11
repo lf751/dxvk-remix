@@ -139,6 +139,11 @@ client forwards:
 | `dxvk_CreateD3D9`, `dxvk_RegisterD3D9Device` | Return `GENERAL_FAILURE`: the server registers the game's device itself. |
 | Every other slot, `Startup`, `Shutdown`, `Present`, `SetupCamera` and `CreateMeshBatched` among them | Null. Check a slot before you call it. |
 
+In this custom integration the bridge also forwards `AddTextureHash` and `dxvk_GetTextureHash`,
+waiting for their server results. `RemoveTextureHash` is not forwarded. Automatically detected
+categories can use `session:rtx.terrainTextures` with `AddTextureHash` to merge hashes into the
+non-persistent Derived layer; unprefixed category edits retain their User-layer behavior.
+
 The client also exports `remixapi_RegisterCallbacks` and the color grading functions (`remixapi_SetColorGradePreset`
 and the rest, see [RemixApi.md](../docs/RemixApi.md#color-grading-named-exports)). It exports none of the other named
 exports, such as retained instances or host settings.

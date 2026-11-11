@@ -27,6 +27,11 @@
 #include "../../../src/util/util_hash_set_layer.h"
 
 #include "../../test_utils.h"
+#define REMIX_WINAPI_NO_LIBRARY_LOADER
+#include "../../../public/include/remix/remix_c.h"
+namespace dxvk::fork_hooks {
+  remixapi_ErrorCode mutateTextureHashOption(const char*, const char*, bool);
+}
 
 #include <cmath>
 #include <fstream>
@@ -610,6 +615,37 @@ namespace option_layer_export_test {
   // Test Runner
   // ============================================================================
   
+  void testSessionTextureHashExport() {
+    RtxOptionLayer::initializeSystemLayers();
+    const auto* user = RtxOptionLayer::getUserLayer();
+    const auto* session = RtxOptionLayer::getDerivedLayer();
+    TEST_ASSERT(user && session, "System layers must exist");
+    constexpr const char* key = "rtx.test.export.testHashSetOption";
+    TEST_ASSERT(fork_hooks::mutateTextureHashOption(key, "1234", true) == REMIXAPI_ERROR_CODE_SUCCESS,
+                "Authored category insertion must succeed");
+    TEST_ASSERT(fork_hooks::mutateTextureHashOption("session:rtx.test.export.testHashSetOption", "5678", true)
+                  == REMIXAPI_ERROR_CODE_SUCCESS, "Session insertion must succeed");
+    auto& option = TestExportOptions::testHashSetOption;
+    const auto* authored = option.getGenericValue(user)->hashSet;
+    const auto* transient = option.getGenericValue(session)->hashSet;
+    TEST_ASSERT(authored && authored->hasPositive(0x1234) && !authored->hasPositive(0x5678),
+                "Session edit must not enter the user layer");
+    TEST_ASSERT(transient && transient->hasPositive(0x5678), "Session hash must enter Derived");
+    const std::string file = "test_export_session.conf";
+    cleanupTestFile(file);
+    TEST_ASSERT(user->exportUnsavedChanges(file), "User export must succeed");
+    const auto text = readOptionFromFile(file, key);
+    TEST_ASSERT(text.find("1234") != std::string::npos && text.find("5678") == std::string::npos,
+                "Saving user settings must exclude session hashes");
+    TEST_ASSERT(fork_hooks::mutateTextureHashOption("session:rtx.test.export.testHashSetOption", "5678", false)
+                  == REMIXAPI_ERROR_CODE_SUCCESS, "Session removal must succeed");
+    TEST_ASSERT(!transient->hasPositive(0x5678) && authored->hasPositive(0x1234),
+                "Session removal must preserve authored hashes");
+    TEST_ASSERT(fork_hooks::mutateTextureHashOption("session:rtx.test.export.testIntOption", "1", true)
+                  == REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS, "Session edits must reject scalar options");
+    cleanupTestFile(file);
+  }
+
   void runAllTests() {
     std::cout << "\n=== Running Option Layer Export Tests ===" << std::endl;
     
@@ -623,6 +659,7 @@ namespace option_layer_export_test {
       testExportHashSetConflictInMerge();
       testExportNonHashSetMergeOverwrite();
       testExportNoUnsavedChanges();
+      testSessionTextureHashExport();
       
       std::cout << "\n=== All Option Layer Export Tests PASSED ===" << std::endl;
     } catch (const DxvkError& e) {

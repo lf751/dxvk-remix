@@ -842,3 +842,8 @@ For the dated change log, see
 - [`RemixConfig.md`](../documentation/RemixConfig.md) — `RtxOptions` config-layer architecture.
 - [`RtxOptions.md`](../RtxOptions.md) — auto-generated complete `rtx.*` reference.
 - [`RemixSkyAPI.md`](RemixSkyAPI.md) — Sky / atmosphere plugin surface (sun, stars, moons, clouds) plus weather preset blender.
+
+
+## 2026-11-11: session texture categories
+
+`AddTextureHash` and `RemoveTextureHash` accept a `session:` prefix on the category, for example `session:rtx.terrainTextures`. These edits target the non-persistent Derived layer, merge with authored categories, and last until the runtime process exits. Unprefixed calls continue editing the User layer. The existing bridge forwards the string unchanged; no table or IPC layout changes are needed. This lets automatically detected terrain hashes remain session-only. No options or defaults change.
