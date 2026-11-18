@@ -740,24 +740,24 @@ namespace dxvk {
     // (gbuffer_rayquery_visibility.comp.slang), or null when there is none. Only WBOIT kernels have it.
     Rc<DxvkShader> getGbufferRayQueryVisibilityComputeShader(const uint32_t featureVariant, const GbufferSlimLevel level) {
       if (featureVariant == kGbufferRayQueryFeaturesDebug) {
-        return level == GbufferSlimLevel::Full ? GBUFFER_SLIM_COMPUTE(gbuffer_rayquery_debug_wboit_visibility) : nullptr;
+        return level == GbufferSlimLevel::Full ? GET_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, GbufferRayGenShader, gbuffer_rayquery_debug_wboit_visibility) : nullptr;
       }
       if (featureVariant == kGbufferRayQueryFeaturesPsrPrepare) {
         switch (level) {
-        case GbufferSlimLevel::Full: return GBUFFER_SLIM_COMPUTE(gbuffer_rayquery_psr_prepare_wboit_visibility);
-        case GbufferSlimLevel::Slim: return GBUFFER_SLIM_COMPUTE(gbuffer_rayquery_psr_prepare_wboit_slim_visibility);
-        case GbufferSlimLevel::Lean: return GBUFFER_SLIM_COMPUTE(gbuffer_rayquery_psr_prepare_wboit_lean_visibility);
-        case GbufferSlimLevel::SlimPom: return GBUFFER_SLIM_COMPUTE(gbuffer_rayquery_psr_prepare_wboit_slimpom_visibility);
-        case GbufferSlimLevel::LeanPom: return GBUFFER_SLIM_COMPUTE(gbuffer_rayquery_psr_prepare_wboit_leanpom_visibility);
+        case GbufferSlimLevel::Full: return GET_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, GbufferRayGenShader, gbuffer_rayquery_psr_prepare_wboit_visibility);
+        case GbufferSlimLevel::Slim: return GET_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, GbufferRayGenShader, gbuffer_rayquery_psr_prepare_wboit_slim_visibility);
+        case GbufferSlimLevel::Lean: return GET_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, GbufferRayGenShader, gbuffer_rayquery_psr_prepare_wboit_lean_visibility);
+        case GbufferSlimLevel::SlimPom: return GET_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, GbufferRayGenShader, gbuffer_rayquery_psr_prepare_wboit_slimpom_visibility);
+        case GbufferSlimLevel::LeanPom: return GET_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, GbufferRayGenShader, gbuffer_rayquery_psr_prepare_wboit_leanpom_visibility);
         }
       }
       if (featureVariant == kGbufferRayQueryFeaturesPsrPrepareStochasticAlpha) {
         switch (level) {
-        case GbufferSlimLevel::Full: return GBUFFER_SLIM_COMPUTE(gbuffer_rayquery_psr_prepare_stochastic_alpha_wboit_visibility);
-        case GbufferSlimLevel::Slim: return GBUFFER_SLIM_COMPUTE(gbuffer_rayquery_psr_prepare_stochastic_alpha_wboit_slim_visibility);
-        case GbufferSlimLevel::Lean: return GBUFFER_SLIM_COMPUTE(gbuffer_rayquery_psr_prepare_stochastic_alpha_wboit_lean_visibility);
-        case GbufferSlimLevel::SlimPom: return GBUFFER_SLIM_COMPUTE(gbuffer_rayquery_psr_prepare_stochastic_alpha_wboit_slimpom_visibility);
-        case GbufferSlimLevel::LeanPom: return GBUFFER_SLIM_COMPUTE(gbuffer_rayquery_psr_prepare_stochastic_alpha_wboit_leanpom_visibility);
+        case GbufferSlimLevel::Full: return GET_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, GbufferRayGenShader, gbuffer_rayquery_psr_prepare_stochastic_alpha_wboit_visibility);
+        case GbufferSlimLevel::Slim: return GET_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, GbufferRayGenShader, gbuffer_rayquery_psr_prepare_stochastic_alpha_wboit_slim_visibility);
+        case GbufferSlimLevel::Lean: return GET_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, GbufferRayGenShader, gbuffer_rayquery_psr_prepare_stochastic_alpha_wboit_lean_visibility);
+        case GbufferSlimLevel::SlimPom: return GET_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, GbufferRayGenShader, gbuffer_rayquery_psr_prepare_stochastic_alpha_wboit_slimpom_visibility);
+        case GbufferSlimLevel::LeanPom: return GET_SHADER_VARIANT(VK_SHADER_STAGE_COMPUTE_BIT, GbufferRayGenShader, gbuffer_rayquery_psr_prepare_stochastic_alpha_wboit_leanpom_visibility);
         }
       }
       return nullptr;
