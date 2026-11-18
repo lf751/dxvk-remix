@@ -341,6 +341,16 @@ namespace dxvk {
     m_pCbData = nullptr;
     m_pSmoothNormalsHashData = nullptr;
     m_skinningContext = nullptr;
+    m_pendingVertexUploads.clear();
+  }
+
+  void RtxGeometryUtils::dispatchSkinnedSmoothNormals(const RasterGeometry& input, RaytraceGeometry& geo) {
+    const Rc<DxvkContext>& ctx = m_skinningContext;
+    if (ctx->getCommandList() == nullptr) {
+      ctx->beginRecording(ctx->getDevice()->createCommandList());
+    }
+    dispatchSmoothNormals(ctx, input, geo, true);
+    ++m_skinningCommands;
   }
 
   void RtxGeometryUtils::dispatchSkinning(const SceneDraw& drawCallState,
@@ -1140,6 +1150,9 @@ namespace dxvk {
 
     if (desc.hasColor0) 
       output.color0Buffer = RaytraceBuffer(targetSlice, desc.color0Offset, desc.stride, VK_FORMAT_B8G8R8A8_UNORM);
+
+    // The interleaved layout has no second texture coordinate set.
+    output.texcoord1Buffer = RaytraceBuffer();
   }
 
   void RtxGeometryUtils::processGeometryBuffers(const RasterGeometry& input, RaytraceGeometry& output) {
@@ -1155,6 +1168,14 @@ namespace dxvk {
 
     if (input.color0Buffer.defined())
       output.color0Buffer = RaytraceBuffer(slice, input.color0Buffer.offsetFromSlice(), input.color0Buffer.stride(), input.color0Buffer.vertexFormat());
+
+    // The vertices are copied whole, so a second texture coordinate set interleaved with them is copied too.
+    const bool texcoord1Interleaved = input.texcoord1Buffer.defined() && input.texcoordBuffer.defined() &&
+      input.positionBuffer.matches(input.texcoord1Buffer) && input.positionBuffer.stride() == input.texcoord1Buffer.stride() &&
+      input.texcoord1Buffer.vertexFormat() == VK_FORMAT_R32G32_SFLOAT;
+    output.texcoord1Buffer = texcoord1Interleaved
+      ? RaytraceBuffer(slice, input.texcoord1Buffer.offsetFromSlice(), input.texcoord1Buffer.stride(), input.texcoord1Buffer.vertexFormat())
+      : RaytraceBuffer();
   }
 
   size_t RtxGeometryUtils::computeOptimalVertexStride(const RasterGeometry& input, bool forceNormals) {
@@ -1206,9 +1227,9 @@ namespace dxvk {
     // Required
     assert(input.positionBuffer.defined());
 
-    // Calculate stride - when forceNormals is true, reserve space for normals even if input has none
-    output.stride = computeOptimalVertexStride(input, forceNormals);
-    
+    // When forceNormals is true, the layout reserves space for normals even if the input has none.
+    describeInterleavedLayout(input, forceNormals, output);
+
     assert(output.buffer->info().size == align(output.stride * input.vertexCount, CACHE_LINE_SIZE));
 
     bool mustUseGPU = input.positionBuffer.isPendingGpuWrite() || input.positionBuffer.mapPtr() == nullptr;
@@ -1302,29 +1323,65 @@ namespace dxvk {
 
       ctx->writeToBuffer(output.buffer, 0, input.vertexCount * output.stride, dst);
     }
+  }
+
+  void RtxGeometryUtils::describeInterleavedLayout(const RasterGeometry& input, bool forceNormals, InterleavedGeometryDescriptor& output) {
+    output.stride = uint32_t(computeOptimalVertexStride(input, forceNormals));
 
     uint32_t offset = 0;
 
     output.positionOffset = offset;
     offset += sizeof(float) * 3;
 
-    if (input.normalBuffer.defined() || forceNormals) {
-      output.hasNormals = true;
+    output.hasNormals = input.normalBuffer.defined() || forceNormals;
+    if (output.hasNormals) {
       output.normalOffset = offset;
       offset += sizeof(float) * 3;
     }
 
-    if (input.texcoordBuffer.defined()) {
-      output.hasTexcoord = true;
+    output.hasTexcoord = input.texcoordBuffer.defined();
+    if (output.hasTexcoord) {
       output.texcoordOffset = offset;
       offset += sizeof(float) * 2;
     }
 
-    if (input.color0Buffer.defined()) {
-      output.hasColor0 = true;
+    output.hasColor0 = input.color0Buffer.defined();
+    if (output.hasColor0) {
       output.color0Offset = offset;
       offset += sizeof(uint32_t);
     }
+  }
+
+  void RtxGeometryUtils::queueVertexDataUpload(const RasterGeometry& input, RaytraceGeometry& output, bool forceNormals) {
+    if (input.isVertexDataInterleaved() && input.areFormatsGpuFriendly() && !forceNormals) {
+      processGeometryBuffers(input, output);
+    } else {
+      InterleavedGeometryDescriptor layout;
+      layout.buffer = output.historyBuffer[0];
+      describeInterleavedLayout(input, forceNormals, layout);
+      processGeometryBuffers(layout, output);
+    }
+    m_pendingVertexUploads.push_back({ input, output.historyBuffer[0], forceNormals });
+  }
+
+  void RtxGeometryUtils::flushVertexDataUploads(const Rc<DxvkContext>& ctx) {
+    if (m_pendingVertexUploads.empty()) {
+      return;
+    }
+    ScopedGpuProfileZone(ctx, "flushVertexDataUploads");
+    // The same writes cacheVertexDataOnGPU makes, recorded back to back, so they end at most one render pass.
+    for (const PendingVertexUpload& upload : m_pendingVertexUploads) {
+      const RasterGeometry& input = upload.input;
+      if (input.isVertexDataInterleaved() && input.areFormatsGpuFriendly() && !upload.forceNormals) {
+        const size_t vertexBufferSize = input.vertexCount * input.positionBuffer.stride();
+        ctx->copyBuffer(upload.target, 0, input.positionBuffer.buffer(), input.positionBuffer.offset(), vertexBufferSize);
+      } else {
+        InterleavedGeometryDescriptor layout;
+        layout.buffer = upload.target;
+        interleaveGeometry(ctx, input, layout, upload.forceNormals);
+      }
+    }
+    m_pendingVertexUploads.clear();
   }
 
   float RtxGeometryUtils::computeMaxUVTileSize(const RasterGeometry& input, const Matrix4& objectToWorld) {
@@ -1378,7 +1435,8 @@ namespace dxvk {
     return std::sqrtf(maxUvTileSizeSqr);
   }
 
-  void RtxGeometryUtils::dispatchSmoothNormals(const Rc<DxvkContext>& ctx, RaytraceGeometry& geo) {
+  void RtxGeometryUtils::dispatchSmoothNormals(const Rc<DxvkContext>& ctx, const RasterGeometry& input, RaytraceGeometry& geo,
+                                               bool gpuOnly) {
     ScopedGpuProfileZone(ctx, "smoothNormals");
 
     if (!geo.positionBuffer.defined() || !geo.indexBuffer.defined() || !geo.normalBuffer.defined()) {
@@ -1417,7 +1475,7 @@ namespace dxvk {
     const bool pendingGpuWrite = geo.positionBuffer.isPendingGpuWrite() || geo.indexBuffer.isPendingGpuWrite();
 
     const uint32_t kMaxTrianglesForCPU = 512;
-    const bool useCPU = numTriangles <= kMaxTrianglesForCPU && !pendingGpuWrite && !mustUseGPU;
+    const bool useCPU = numTriangles <= kMaxTrianglesForCPU && !pendingGpuWrite && !mustUseGPU && !gpuOnly;
 
     if (useCPU) {
       // --- CPU path: uses the same shared functions as the GPU shader ---

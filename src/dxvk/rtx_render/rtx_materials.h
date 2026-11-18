@@ -22,6 +22,7 @@
 #pragma once
 
 #include <algorithm>
+#include <cmath>
 #include <memory>
 #include <variant>
 
@@ -108,14 +109,105 @@ struct RtEyeParams {
   Vector3 eyeUpV = Vector3{ 0, 1, 0 };
 };
 
+// Returns (cos, sin) of an angle in degrees.
+// Multiples of 90 degrees give exact 0 and +-1 components, so axis-aligned scrolling leaves the other axis still.
+inline Vector2 calcScrollDirection(float angleDegrees) {
+  const long quadrant = std::lround(angleDegrees / 90.f);
+  const float remainderRadians = (angleDegrees - static_cast<float>(quadrant) * 90.f) * (kPi / 180.f);
+  const float cosine = std::cos(remainderRadians);
+  const float sine = std::sin(remainderRadians);
+  switch (quadrant & 3) {
+  case 0:
+    return Vector2(cosine, sine);
+  case 1:
+    return Vector2(-sine, cosine);
+  case 2:
+    return Vector2(-cosine, -sine);
+  default:
+    return Vector2(sine, -cosine);
+  }
+}
+
+// Returns T(offset) * R(rotation) * S(scale) * capturedTransform, with the rotation in degrees.
+// Returns the captured transform unchanged for identity controls.
+inline Matrix4 composeTextureTransform(const Matrix4& capturedTransform, const Vector2& scale, const Vector2& offset, float rotation) {
+  Matrix4 transform = capturedTransform;
+  if (scale == Vector2(1.f) && rotation == 0.f && offset == Vector2(0.f)) {
+    return transform;
+  }
+
+  for (auto& column : transform.data) {
+    column.xy() = column.xy() * scale;
+  }
+
+  if (rotation != 0.f) {
+    const Vector2 direction = calcScrollDirection(rotation);
+    for (auto& column : transform.data) {
+      const Vector2 uv = column.xy();
+      column.xy() = Vector2(direction.x * uv.x - direction.y * uv.y, direction.y * uv.x + direction.x * uv.y);
+    }
+  }
+
+  transform.data[3].xy() += offset;
+  return transform;
+}
+
+// Matches the triangle and micromap baking shaders' padding of loaded 2D texture coordinates.
+inline Vector2 transformTexcoord(const Matrix4& transform, const Vector2& texcoord) {
+  return (transform * Vector4(texcoord.x, texcoord.y, 1.f, 1.f)).xy();
+}
+
 struct RtSurface {
   RtSurface() {
+  }
+
+  bool isTextureScrolling() const {
+    return textureScrollSpeed != Vector2(0.f);
+  }
+
+  // Returns true when a material control scales, mirrors or rotates the texture coordinate axes.
+  bool hasMaterialTextureAxes() const {
+    return textureScale != Vector2(1.f) || textureRotation != 0.f;
+  }
+
+  bool hasMaterialTextureTransform() const {
+    return hasMaterialTextureAxes() || textureOffset != Vector2(0.f) || isTextureScrolling();
+  }
+
+  // Returns the scroll offset in UV units, wrapped to [-1, 1] with a period of 2.
+  // A period of 2 is seamless for both Repeat and Mirrored_Repeat, and wrapping around 0 keeps tiny offsets tiny.
+  // The offset is computed in double precision, so it stays smooth however large the time gets.
+  Vector2 getTextureScrollOffset(uint64_t timeUs) const {
+    if (!isTextureScrolling()) {
+      return Vector2(0.f);
+    }
+    const double timeSeconds = static_cast<double>(timeUs) * 1e-6;
+    const double scrollU = static_cast<double>(textureScrollSpeed.x) * timeSeconds;
+    const double scrollV = static_cast<double>(textureScrollSpeed.y) * timeSeconds;
+    return Vector2(static_cast<float>(scrollU - 2.0 * std::round(scrollU * 0.5)),
+                   static_cast<float>(scrollV - 2.0 * std::round(scrollV * 0.5)));
+  }
+
+  // Returns textureTransform with the wrapped scroll offset added.
+  Matrix4 getTextureTransform(uint64_t timeUs) const {
+    Matrix4 transform = textureTransform;
+    if (isTextureScrolling()) {
+      transform.data[3].xy() += getTextureScrollOffset(timeUs);
+    }
+    return transform;
+  }
+
+  // Sets the static transform from the draw's captured transform and the material controls stored on the surface.
+  void setCapturedTextureTransform(const Matrix4& capturedTransform) {
+    textureTransform = composeTextureTransform(capturedTransform, textureScale, textureOffset, textureRotation);
   }
 
   // firstIndexOffset is added to firstIndex in the record (split billboard geometry); passing it
   // here instead of adjusting firstIndex around the call keeps this const, so records can be
   // written from several threads (rtx.parallelSurfaceUpload).
-  void writeGPUData(unsigned char* data, std::size_t& offset, size_t surfaceIndex = SIZE_MAX, uint32_t firstIndexOffset = 0) const {
+  // A surface scrolls its textures to textureScrollTimeUs. Time 0 writes the static transform.
+  void writeGPUData(unsigned char* data, std::size_t& offset, size_t surfaceIndex = SIZE_MAX, uint32_t firstIndexOffset = 0,
+                    uint64_t textureScrollTimeUs = 0) const {
     [[maybe_unused]] const std::size_t oldOffset = offset;
 
     // Note: Position buffer and surface material index are required for proper
@@ -134,6 +226,9 @@ struct RtSurface {
     flags0 |= isVertexColorBakedLighting ? (1 << 1) : 0;
     flags0 |= terrainBlend ? (1 << 2) : 0;
     flags0 |= worldSpaceSecondaryOpacity ? (1 << 3) : 0;
+    assert(texcoord1DwordOffset <= SURFACE_TEXCOORD1_DWORD_OFFSET_MAX);
+    flags0 |= uint16_t(texcoord1DwordOffset << SURFACE_TEXCOORD1_DWORD_OFFSET_SHIFT);
+    // NOTE: Spare flags bits here
 
     writeGPUHelper(data, offset, flags0);
 
@@ -252,14 +347,22 @@ struct RtSurface {
       writeGPUHelper(data, offset, uint32_t{});
     } else {
       // Note: Only 2 rows of texture transform written for now due to limit of 2 element restriction.
-      writeGPUHelper(data, offset, textureTransform.data[0].x);
-      writeGPUHelper(data, offset, textureTransform.data[1].x);
-      writeGPUHelper(data, offset, textureTransform.data[2].x);
-      writeGPUHelper(data, offset, textureTransform.data[3].x);
-      writeGPUHelper(data, offset, textureTransform.data[0].y);
-      writeGPUHelper(data, offset, textureTransform.data[1].y);
-      writeGPUHelper(data, offset, textureTransform.data[2].y);
-      writeGPUHelper(data, offset, textureTransform.data[3].y);
+      const auto writeTextureTransform = [&](const Matrix4& transform) {
+        writeGPUHelper(data, offset, transform.data[0].x);
+        writeGPUHelper(data, offset, transform.data[1].x);
+        writeGPUHelper(data, offset, transform.data[2].x);
+        writeGPUHelper(data, offset, transform.data[3].x);
+        writeGPUHelper(data, offset, transform.data[0].y);
+        writeGPUHelper(data, offset, transform.data[1].y);
+        writeGPUHelper(data, offset, transform.data[2].y);
+        writeGPUHelper(data, offset, transform.data[3].y);
+      };
+
+      if (isTextureScrolling()) {
+        writeTextureTransform(getTextureTransform(textureScrollTimeUs));
+      } else {
+        writeTextureTransform(textureTransform);
+      }
     }
 
     std::uint32_t textureSpritesheetData = 0;
@@ -333,6 +436,9 @@ struct RtSurface {
   uint32_t texcoordBufferIndex = kSurfaceInvalidBufferIndex;
   uint32_t texcoordOffset = 0;
   uint32_t texcoordStride = 0;
+  // The second texture coordinate set's offset after the first, in dwords, in the same buffer and with the same stride.
+  // 0 means the surface has no second set.
+  uint32_t texcoord1DwordOffset = 0;
 
   uint32_t indexBufferIndex = kSurfaceInvalidBufferIndex;
   uint32_t firstIndex = 0;
@@ -377,6 +483,7 @@ struct RtSurface {
         && normalOffset == surface.normalOffset
         && texcoordBufferIndex == surface.texcoordBufferIndex
         && texcoordOffset == surface.texcoordOffset
+        && texcoord1DwordOffset == surface.texcoord1DwordOffset
         && color0BufferIndex == surface.color0BufferIndex
         && color0Offset == surface.color0Offset
         && firstIndex == surface.firstIndex;
@@ -406,6 +513,7 @@ struct RtSurface {
       "  texcoordBufferIndex: ", texcoordBufferIndex, "\n",
       "  texcoordOffset: ", texcoordOffset, "\n",
       "  texcoordStride: ", texcoordStride, "\n",
+      "  texcoord1DwordOffset: ", texcoord1DwordOffset, "\n",
       "  indexBufferIndex: ", indexBufferIndex, "\n",
       "  firstIndex: ", firstIndex, "\n",
       "  indexStride: ", indexStride, "\n",
@@ -459,6 +567,14 @@ struct RtSurface {
       "  spriteSheetCols: ", static_cast<int>(spriteSheetCols), "\n",
       "  spriteSheetFPS: ", static_cast<int>(spriteSheetFPS)));
     
+    // Print texture transform info
+    Logger::warn("=== Texture Transform Info ===");
+    Logger::warn(str::format(
+      "  textureScrollSpeed: ", textureScrollSpeed, "\n",
+      "  textureScale: ", textureScale, "\n",
+      "  textureOffset: ", textureOffset, "\n",
+      "  textureRotation: ", textureRotation));
+
     // Print instance info
     Logger::warn("=== Instance Info ===");
     Logger::warn(str::format(
@@ -489,12 +605,19 @@ struct RtSurface {
   Matrix4 objectToWorld;
   Matrix4 prevObjectToWorld;
   Matrix3 normalObjectToWorld;
+  // The captured texture transform with the material's scale, rotation and static offset applied.
   Matrix4 textureTransform;
   Vector4 clipPlane;
 
   uint8_t spriteSheetRows = 1;
   uint8_t spriteSheetCols = 1;
   uint8_t spriteSheetFPS = 0;
+
+  // The material's texture controls. Identity values leave the captured transform untouched.
+  float textureRotation = 0.f;
+  Vector2 textureScale = Vector2(1.f);
+  Vector2 textureOffset = Vector2(0.f);
+  Vector2 textureScrollSpeed = Vector2(0.f);
 
   XXH64_hash_t associatedGeometryHash; // NOTE: This is used for the debug view
   uint32_t objectPickingValue = 0; // NOTE: a value to fill GBUFFER_BINDING_PRIMARY_OBJECT_PICKING_OUTPUT
@@ -657,7 +780,7 @@ inline bool rtSurfaceHasTextureOps(const RtSurface& surf) {
 inline bool rtSurfaceHasLegacyState(const RtSurface& surf) {
   const bool eye = surf.eyeParams.has_value();
   // The eye basis aliases the texture transform words, so the transform only counts without the eye.
-  const bool textureTransform = !eye && !(surf.textureTransform == Matrix4());
+  const bool textureTransform = !eye && (!(surf.textureTransform == Matrix4()) || surf.isTextureScrolling());
   const bool spritesheet = surf.spriteSheetFPS != 0 ||
     std::max<uint8_t>(1, surf.spriteSheetRows) != 1 || std::max<uint8_t>(1, surf.spriteSheetCols) != 1;
   return surf.isTextureFactorBlend || surf.texgenMode != TexGenMode::None ||
@@ -1571,6 +1694,45 @@ private:
 // Extension of the three basic types of materials.
 // Don't use material types below standalone. Instead, attach them to the materials above as side load data.
 
+// The layers a surface material extension entry carries besides its subsurface data and albedo tint, already in their
+// GPU encoding: SURFACE_MATERIAL_EXTENSION_FLAG_* bits and words 16-31 of the entry (SubsurfaceMaterial in surface_material.h).
+struct RtSurfaceMaterialLayers {
+  static constexpr uint32_t kFirstWord = 16;
+  static constexpr uint32_t kWordCount = 16;
+  // Word indices, relative to kFirstWord.
+  static constexpr uint32_t kDetailNormalTextureIndex = 0;
+  static constexpr uint32_t kDetailNormalStrength = 1;
+  static constexpr uint32_t kDetailNormalTexcoordScale = 2;
+  static constexpr uint32_t kLayerMaskTextureIndex = 4;
+  static constexpr uint32_t kLayerMaskStrength = 5;
+  static constexpr uint32_t kLayerAlbedo = 6;
+  static constexpr uint32_t kLayerRoughnessMetallic = 7;
+  static constexpr uint32_t kLayerTexcoordScale = 8;
+  static constexpr uint32_t kClearCoat = 10;
+  static constexpr uint32_t kPearlescentColor = 11;
+  static constexpr uint32_t kPearlescentWeight = 12;
+  static constexpr uint32_t kPearlescentExponent = 13;
+  static constexpr uint32_t kLayerMaskEdgeWidth = 14;
+  static constexpr uint32_t kVertexWeightChannels = 15;
+
+  uint32_t flags = 0;
+  uint16_t words[kWordCount] = {};
+
+  bool isSet() const {
+    return flags != 0;
+  }
+
+  template<typename Fn>
+  void forEachTextureIndex(Fn&& fn) const {
+    if (flags & SURFACE_MATERIAL_EXTENSION_FLAG_DETAIL_NORMAL) {
+      fn(uint32_t(words[kDetailNormalTextureIndex]));
+    }
+    if ((flags & SURFACE_MATERIAL_EXTENSION_FLAG_MASKED_LAYER) && words[kLayerMaskTextureIndex] != uint16_t(BINDING_INDEX_INVALID)) {
+      fn(uint32_t(words[kLayerMaskTextureIndex]));
+    }
+  }
+};
+
 // Subsurface Material
 struct RtSubsurfaceMaterial {
   RtSubsurfaceMaterial(
@@ -1589,7 +1751,9 @@ struct RtSubsurfaceMaterial {
     const bool hasAlbedoTint = false,
     const Vector3& albedoTint = Vector3(1.f),
     // SURFACE_MATERIAL_EXTENSION_FLAG_TRANSMITTANCE_* bits (rtx.subsurface.transmittanceFollowsAlbedo).
-    const uint8_t transmittanceFlags = 0)
+    const uint8_t transmittanceFlags = 0,
+    // The opaque material's layers, carried by the extension entry.
+    const RtSurfaceMaterialLayers& layers = {})
     :
     m_subsurfaceTransmittanceTextureIndex(subsurfaceTransmittanceTextureIndex),
     m_subsurfaceThicknessTextureIndex(subsurfaceThicknessTextureIndex),
@@ -1608,7 +1772,8 @@ struct RtSubsurfaceMaterial {
     m_albedoTint { hasAlbedoTint ? albedoTint : Vector3(1.f) },
     m_hasSubsurface { hasSubsurface },
     m_hasAlbedoTint { hasAlbedoTint },
-    m_transmittanceFlags { transmittanceFlags }
+    m_transmittanceFlags { transmittanceFlags },
+    m_layers { layers }
   {
     updateCachedHash();
   }
@@ -1630,6 +1795,7 @@ struct RtSubsurfaceMaterial {
     }
     flags |= uint16_t(m_transmittanceFlags & (SURFACE_MATERIAL_EXTENSION_FLAG_TRANSMITTANCE_TINT |
                                               SURFACE_MATERIAL_EXTENSION_FLAG_TRANSMITTANCE_SRGB));
+    flags |= uint16_t(m_layers.flags);
 
     // data[0]
     writeGPUHelperExplicit<2>(data, offset, flags);
@@ -1676,8 +1842,10 @@ struct RtSubsurfaceMaterial {
     writeGPUHelper(data, offset, glm::packHalf1x16(m_albedoTint.y));
     writeGPUHelper(data, offset, glm::packHalf1x16(m_albedoTint.z));
 
-    // data[16-31]
-    writeGPUPadding<32>(data, offset);
+    // data[16-31]: the layers (RtSurfaceMaterialLayers), 0 when unused
+    for (uint32_t i = 0; i < RtSurfaceMaterialLayers::kWordCount; i++) {
+      writeGPUHelper(data, offset, m_layers.words[i]);
+    }
     assert(offset - oldOffset == kSurfaceMaterialGPUSize);
   }
 
@@ -1691,6 +1859,10 @@ struct RtSubsurfaceMaterial {
 
   const Vector3& getAlbedoTint() const {
     return m_albedoTint;
+  }
+
+  const RtSurfaceMaterialLayers& getLayers() const {
+    return m_layers;
   }
 
   bool operator==(const RtSubsurfaceMaterial& r) const {
@@ -1746,13 +1918,14 @@ struct RtSubsurfaceMaterial {
     fn(m_subsurfaceTransmittanceTextureIndex);
     fn(m_subsurfaceThicknessTextureIndex);
     fn(m_subsurfaceSingleScatteringAlbedoTextureIndex);
+    m_layers.forEachTextureIndex(fn);
   }
 
 private:
 
   void updateCachedHash() {
     static_assert(
-      sizeof(*this) == 88,
+      sizeof(*this) == 128,
       "add new member for hashing if needed: add a MEMBER into the struct + add a VALUE into the list-init"
     );
     struct HashStruct {
@@ -1770,6 +1943,7 @@ private:
       uint32_t m_hasSubsurface;   // NOTE: uint32_t to avoid padding
       uint32_t m_hasAlbedoTint;   // NOTE: uint32_t to avoid padding
       uint32_t m_transmittanceFlags; // NOTE: uint32_t to avoid padding
+      RtSurfaceMaterialLayers m_layers;
       // NOTE: There must be NO padding between members, as the struct is used for hashing
     };
     static_assert(alignof(HashStruct) == 4 && sizeof(HashStruct) % 4 == 0);
@@ -1788,6 +1962,7 @@ private:
       m_hasSubsurface,
       m_hasAlbedoTint,
       m_transmittanceFlags,
+      m_layers,
     };
     m_cachedHash = XXH3_64bits(&hashData, sizeof(hashData));
   }
@@ -1815,7 +1990,8 @@ private:
   Vector3 m_albedoTint;
   bool m_hasSubsurface;
   bool m_hasAlbedoTint;
-  uint8_t m_transmittanceFlags; // Fits the tail padding, so sizeof stays 88.
+  uint8_t m_transmittanceFlags;
+  RtSurfaceMaterialLayers m_layers;
 
   XXH64_hash_t m_cachedHash;
 };
@@ -1838,7 +2014,8 @@ struct RtSurfaceMaterial {
     m_subsurfaceMaterial { subsurfaceMaterial } {}
 
   RtSurfaceMaterial(const RtSurfaceMaterial& surfaceMaterial) :
-    m_type{ surfaceMaterial.m_type } {
+    m_type{ surfaceMaterial.m_type },
+    m_liveKey{ surfaceMaterial.m_liveKey } {
     switch (m_type) {
     default:
       assert(false);
@@ -2046,6 +2223,7 @@ struct RtSurfaceMaterial {
   RtSurfaceMaterial& operator=(const RtSurfaceMaterial& rtSurfaceMaterial) {
     if (this != &rtSurfaceMaterial) {
       m_type = rtSurfaceMaterial.m_type;
+      m_liveKey = rtSurfaceMaterial.m_liveKey;
 
       switch (rtSurfaceMaterial.m_type) {
       default:
@@ -2072,7 +2250,7 @@ struct RtSurfaceMaterial {
 
   bool operator==(const RtSurfaceMaterial& rhs) const {
     // Note: Different Surface Material types are not the same Surface Material so comparison can return false
-    if (m_type != rhs.m_type) {
+    if (m_type != rhs.m_type || m_liveKey != rhs.m_liveKey) {
       return false;
     }
 
@@ -2093,20 +2271,12 @@ struct RtSurfaceMaterial {
   }
 
   XXH64_hash_t getHash() const {
-    switch (m_type) {
-    default:
-      assert(false);
+    return getContentHash() ^ m_liveKey;
+  }
 
-      [[fallthrough]];
-    case RtSurfaceMaterialType::Opaque:
-      return m_opaqueSurfaceMaterial.getHash();
-    case RtSurfaceMaterialType::Translucent:
-      return m_translucentSurfaceMaterial.getHash();
-    case RtSurfaceMaterialType::RayPortal:
-      return m_rayPortalSurfaceMaterial.getHash();
-    case RtSurfaceMaterialType::Subsurface:
-      return m_subsurfaceMaterial.getHash();
-    }
+  // A nonzero key gives the material a cache slot of its own, which no other material with the same content shares.
+  void setLiveKey(uint64_t liveKey) {
+    m_liveKey = liveKey;
   }
 
   RtSurfaceMaterialType getType() const {
@@ -2162,7 +2332,25 @@ struct RtSurfaceMaterial {
 private:
   // Type-specific Surface Material Information
 
+  XXH64_hash_t getContentHash() const {
+    switch (m_type) {
+    default:
+      assert(false);
+
+      [[fallthrough]];
+    case RtSurfaceMaterialType::Opaque:
+      return m_opaqueSurfaceMaterial.getHash();
+    case RtSurfaceMaterialType::Translucent:
+      return m_translucentSurfaceMaterial.getHash();
+    case RtSurfaceMaterialType::RayPortal:
+      return m_rayPortalSurfaceMaterial.getHash();
+    case RtSurfaceMaterialType::Subsurface:
+      return m_subsurfaceMaterial.getHash();
+    }
+  }
+
   RtSurfaceMaterialType m_type;
+  uint64_t m_liveKey = 0;
   union {
     RtOpaqueSurfaceMaterial m_opaqueSurfaceMaterial;
     RtTranslucentSurfaceMaterial m_translucentSurfaceMaterial;
@@ -2381,6 +2569,9 @@ struct MaterialData {
 
 private:
   bool m_usesLegacyDefaults = false;
+  bool m_instancePatched = false;
+  XXH64_hash_t m_stableHash = kEmptyHash;
+  uint64_t m_liveHandle = 0;
 
 public:
 
@@ -2420,10 +2611,42 @@ public:
     return static_cast<MaterialDataType>(m_data.index());
   }
 
+  // Returns the identity of the material in draws, geometry keys, asset keys and replacement lookups.
+  // A material updated in place keeps the hash it had, so nothing keyed by it rebuilds.
   XXH64_hash_t getHash() const {
+    if (m_stableHash != kEmptyHash) {
+      return m_stableHash;
+    }
     const XXH64_hash_t hash = std::visit([](auto const& mat) { return mat.getHash(); }, m_data);
     // Identical authored parameters must not merge legacy and replacement materials in the cache.
     return m_usesLegacyDefaults ? XXH64(&m_usesLegacyDefaults, sizeof(m_usesLegacyDefaults), hash) : hash;
+  }
+
+  void setStableHash(XXH64_hash_t hash) {
+    m_stableHash = hash;
+  }
+
+  bool hasStableHash() const {
+    return m_stableHash != kEmptyHash;
+  }
+
+  // The handle of an API material, 0 otherwise. See SceneManager::updateExternalMaterial.
+  uint64_t getLiveHandle() const {
+    return m_liveHandle;
+  }
+
+  void setLiveHandle(uint64_t handle) {
+    m_liveHandle = handle;
+  }
+
+  // Marks a copy that was changed for one instance. Its surface material cannot be written from the API material.
+  void markInstancePatched() {
+    m_instancePatched = true;
+    m_stableHash = kEmptyHash;
+  }
+
+  bool isInstancePatched() const {
+    return m_instancePatched;
   }
 
   const Rc<DxvkSampler>& getSamplerOverride() const {
@@ -2493,6 +2716,65 @@ public:
     }
   }
   
+  // Returns the UV offset velocity in UV units per second from the signed rate and the angle in degrees.
+  // 0 degrees points along +U, and 90 degrees points along +V.
+  // Visible texture features move opposite the offset.
+  // Scale, static offset, and rotation in degrees are returned unchanged and do not affect the velocity.
+  void getTextureTransformData(Vector2& scrollSpeed, Vector2& textureScale, Vector2& textureOffset, float& textureRotation) const {
+    float rate = 0.f;
+    float angle = 0.f;
+    textureScale = Vector2(1.f);
+    textureOffset = Vector2(0.f);
+    textureRotation = 0.f;
+
+    switch (getType()) {
+    case MaterialDataType::Opaque:
+      rate = getOpaqueMaterialData().getTextureScrollRate();
+      angle = getOpaqueMaterialData().getTextureScrollAngle();
+      textureScale = getOpaqueMaterialData().getTextureScale();
+      textureOffset = getOpaqueMaterialData().getTextureOffset();
+      textureRotation = getOpaqueMaterialData().getTextureRotation();
+      break;
+    case MaterialDataType::Translucent:
+      rate = getTranslucentMaterialData().getTextureScrollRate();
+      angle = getTranslucentMaterialData().getTextureScrollAngle();
+      textureScale = getTranslucentMaterialData().getTextureScale();
+      textureOffset = getTranslucentMaterialData().getTextureOffset();
+      textureRotation = getTranslucentMaterialData().getTextureRotation();
+      break;
+    case MaterialDataType::RayPortal:
+      break;
+    case MaterialDataType::Count:
+    case MaterialDataType::Invalid:
+      assert(0);
+      break;
+    }
+
+    scrollSpeed = rate == 0.f ? Vector2(0.f) : rate * calcScrollDirection(angle);
+  }
+
+  // Resets scale, offset, rotation and scrolling to their identity defaults.
+  void resetTextureTransform() {
+    const auto reset = [](auto& data) {
+      data.setTextureScrollRate(0.f);
+      data.setTextureScrollAngle(0.f);
+      data.setTextureScale(Vector2(1.f));
+      data.setTextureOffset(Vector2(0.f));
+      data.setTextureRotation(0.f);
+    };
+
+    switch (getType()) {
+    case MaterialDataType::Opaque:
+      reset(getOpaqueMaterialData());
+      break;
+    case MaterialDataType::Translucent:
+      reset(getTranslucentMaterialData());
+      break;
+    default:
+      break;
+    }
+  }
+
   void setSpriteSheetData(uint8_t spriteSheetRows, uint8_t spriteSheetCols, uint8_t spriteSheetFPS) {
     switch (getType()) {
     case MaterialDataType::Opaque:

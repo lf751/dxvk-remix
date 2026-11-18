@@ -329,6 +329,7 @@ namespace dxvk {
     verifyAndReleaseBufferCache();
 
     // We still need to clear caches even if the scene wasn't rendered
+    m_bindlessResourceManager.releaseBufferDescriptors(ctx, needWfi);
     m_bufferCache.clear();
     m_preCreationSurfaceMaterialMap.clear();
     m_volumeMaterialCache.clear();
@@ -396,6 +397,10 @@ namespace dxvk {
     // Now safe to clear material caches; all ref counts have been released.
     m_surfaceMaterialCache.clear();
     m_surfaceMaterialExtensionCache.clear();
+    m_surfaceMaterialUsers.clear();
+    m_liveMaterialSlots.clear();
+    m_liveMaterialsWithPatchedUsers.clear();
+    m_liveMaterialUploadPending = false;
     m_lightManager.clear();
     m_graphManager.clear();
     m_rayPortalManager.clear();
@@ -741,7 +746,15 @@ namespace dxvk {
           output.historyBuffer[0] = m_device->createBuffer(desc, memoryProperty, DxvkMemoryStats::Category::RTXSceneGeometry, "Geometry Buffer");
         }
 
-        RtxGeometryUtils::cacheVertexDataOnGPU(ctx, input, output, forceNormals);
+        // rtx.deferVertexUploads: the write waits for flushVertexDataUploads (prepareSceneData).
+        // Smooth normals and skinning read or write the buffer right after this, and invalidateHistory copies it.
+        const bool deferUpload = RtxGeometryUtils::deferVertexUploads() && !invalidateHistory && !needsSmoothNormals &&
+          drawCallState.getSkinningState().numBones == 0;
+        if (deferUpload) {
+          m_device->getCommon()->metaGeometryUtils().queueVertexDataUpload(input, output, forceNormals);
+        } else {
+          RtxGeometryUtils::cacheVertexDataOnGPU(ctx, input, output, forceNormals);
+        }
 
         // Sometimes, we need to invalidate history, do that here by copying the current buffer to the previous..
         if (invalidateHistory) {
@@ -811,6 +824,9 @@ namespace dxvk {
 
   void SceneManager::onFrameEnd(Rc<DxvkContext> ctx, bool raytracedThisFrame) {
     ScopedCpuProfileZone();
+
+    // A frame without ray tracing never reached prepareSceneData.
+    m_device->getCommon()->metaGeometryUtils().flushVertexDataUploads(ctx);
 
     // Commit this frame's texture registrations for preserve next frame. Must run before
     // manageTextureVram(), which may clear the cache and bump the generation so the
@@ -897,6 +913,17 @@ namespace dxvk {
 
     // Not currently safe to cache these across frames (due to texture indices and rtx options potentially changing)
     m_preCreationSurfaceMaterialMap.clear();
+
+    if (m_materialUpdateStats.dirty && m_device->getCurrentFrameId() % 300 == 0) {
+      m_materialUpdateStats.dirty = false;
+      size_t liveSlots = 0;
+      for (const auto& [handle, slots] : m_liveMaterialSlots) {
+        liveSlots += slots.size();
+      }
+      Logger::info(str::format("[MaterialUpdate] totals: inPlace=", m_materialUpdateStats.inPlace,
+                               " rebuilt=", m_materialUpdateStats.rebuilt, " slotsPatched=", m_materialUpdateStats.slotsPatched,
+                               " staticUploads=", m_materialUpdateStats.staticUploads, " liveSlots=", liveSlots));
+    }
 
     // Clear replacement material hashes before the next frame.  These are used by components, so must clear after graphManager updates.
     clearFrameReplacementMaterialHashes();
@@ -1587,6 +1614,8 @@ namespace dxvk {
         geo.positionBuffer.vertexFormat() != old.positionBuffer.vertexFormat()) {
       return false;
     }
+    // The copy below reads the other geometry's current buffer, which may still wait for its upload.
+    m_device->getCommon()->metaGeometryUtils().flushVertexDataUploads(ctx);
     if (geo.historyBuffer[1] == nullptr || geo.historyBuffer[1]->info().size != geo.historyBuffer[0]->info().size ||
         isAliasableGeometryBuffer(*geo.historyBuffer[1])) {
       DxvkBufferCreateInfo desc = geo.historyBuffer[0]->info();
@@ -1914,6 +1943,10 @@ namespace dxvk {
       assert(false && "retainSurfaceMaterial: matIdx out of bounds");
       return;
     }
+    if (matIdx >= m_surfaceMaterialUsers.size()) {
+      m_surfaceMaterialUsers.resize(m_surfaceMaterialCache.getTotalCount(), 0);
+    }
+    ++m_surfaceMaterialUsers[matIdx];
     auto& textureManager = m_device->getCommon()->getTextureManager();
     const RtSurfaceMaterial& mat = m_surfaceMaterialCache.getObjectTable()[matIdx];
     mat.forEachTextureIndex([&](uint32_t texIdx) {
@@ -1957,6 +1990,9 @@ namespace dxvk {
     // onInstanceDestroyedCallback entirely so they never reach here.
     if (matIdx >= m_surfaceMaterialCache.getTotalCount()) {
       return;
+    }
+    if (matIdx < m_surfaceMaterialUsers.size() && m_surfaceMaterialUsers[matIdx] > 0) {
+      --m_surfaceMaterialUsers[matIdx];
     }
     auto& textureManager = m_device->getCommon()->getTextureManager();
     const RtSurfaceMaterial& mat = m_surfaceMaterialCache.getObjectTable()[matIdx];
@@ -2191,9 +2227,21 @@ namespace dxvk {
     // from the triangle mesh (area-weighted) and written into the normal buffer.
     // Only dispatch on BVH build/update - for static geometry, positions don't change so
     // the normals computed on the first pass remain valid for subsequent frames.
-    if (shouldSmoothNormals(drawCallState) &&
-        (result == ObjectCacheState::KBuildBVH || result == ObjectCacheState::kUpdateBVH)) {
-      m_device->getCommon()->metaGeometryUtils().dispatchSmoothNormals(ctx, pBlas->modifiedGeometryData);
+    const bool geometryRebuilt = result == ObjectCacheState::KBuildBVH || result == ObjectCacheState::kUpdateBVH;
+    const bool smoothNormals = shouldSmoothNormals(drawCallState) && geometryRebuilt;
+
+    // A non-zero bone count does not imply the weight buffer is defined.
+    // processSkinning derives the count from D3DRS_VERTEXBLEND and the vertex
+    // declaration, while the buffer is populated only when the stream had a
+    // valid mapped slice. A fixed-function indexed-blend draw may legally
+    // leave the weight stream unbound while still reporting a bone count.
+    const bool skinning = drawCallState.getSkinningState().numBones > 0 &&
+                          drawCallState.getGeometryData().numBonesPerVertex > 0 &&
+                          drawCallState.getGeometryData().blendWeightBuffer.defined() && geometryRebuilt;
+
+    // Skinning rewrites every normal, so the smooth normals of skinned geometry are generated after it, from the pose.
+    if (smoothNormals && !skinning) {
+      m_device->getCommon()->metaGeometryUtils().dispatchSmoothNormals(ctx, drawCallState.getGeometryData(), pBlas->modifiedGeometryData);
       pBlas->modifiedGeometryData.smoothNormalsApplied = true;
       if (drawCallState.testCategoryFlags(InstanceCategories::Terrain)) {
         ONCE(Logger::info("[RTX Terrain Blend] Terrain normal smoothing active."));
@@ -2204,17 +2252,14 @@ namespace dxvk {
       m_instanceManager.notifySceneChanged();
     }
 
-    // A non-zero bone count does not imply the weight buffer is defined.
-    // processSkinning derives the count from D3DRS_VERTEXBLEND and the vertex
-    // declaration, while the buffer is populated only when the stream had a
-    // valid mapped slice. A fixed-function indexed-blend draw may legally
-    // leave the weight stream unbound while still reporting a bone count.
-    if (drawCallState.getSkinningState().numBones > 0 &&
-        drawCallState.getGeometryData().numBonesPerVertex > 0 &&
-        drawCallState.getGeometryData().blendWeightBuffer.defined() &&
-        (result == ObjectCacheState::KBuildBVH || result == ObjectCacheState::kUpdateBVH)) {
+    if (skinning) {
       RtxGeometryUtils& geometryUtils = m_device->getCommon()->metaGeometryUtils();
       geometryUtils.dispatchSkinning(drawCallState, pBlas->modifiedGeometryData);
+      if (smoothNormals) {
+        geometryUtils.dispatchSkinnedSmoothNormals(drawCallState.getGeometryData(), pBlas->modifiedGeometryData);
+        pBlas->modifiedGeometryData.smoothNormalsApplied = true;
+        syncLinkedInstances(pBlas);
+      }
       pBlas->skinnedPose = drawCallState.getSkinningState().boneHash;
       pBlas->skinnedBatch = geometryUtils.pendingSkinningBatch();
       pBlas->frameLastUpdated = pBlas->frameLastTouched;
@@ -2345,6 +2390,25 @@ namespace dxvk {
     const bool isHairCard = draw.hairCards;
     preCreationHash = XXH64(&isHairCard, sizeof(isHairCard), preCreationHash);
 
+    // An API material has surface materials of its own, so an update can write them without reaching another material
+    // that has the same content. A copy patched for one instance has content the API material does not describe.
+    const uint64_t liveHandle = renderMaterialData.getLiveHandle();
+    const bool isLive = liveHandle != 0 && !renderMaterialData.isInstancePatched();
+    if (liveHandle != 0 && !isLive) {
+      m_liveMaterialsWithPatchedUsers.insert(liveHandle);
+    }
+    SurfaceMaterialBuild build;
+    build.samplerIndex = samplerIndex;
+    build.samplerIndex2 = samplerIndex2;
+    build.hasTexcoords = hasTexcoords;
+    build.raytracedRenderTarget = draw.raytracedRenderTarget;
+    build.hairCards = isHairCard;
+    if (isLive) {
+      const XXH64_hash_t inputs = XXH64(&liveHandle, sizeof(liveHandle), preCreationHash ^ renderMaterialData.getHash());
+      build.liveKey = inputs | 1ull;
+      preCreationHash = XXH64(&build.liveKey, sizeof(build.liveKey), preCreationHash);
+    }
+
     // For Opaque materials, fold in a bitmask of which texture slots are populated. MaterialData::getHash()
     // sums TextureRef::getImageHash() across slots, but render-target-backed TextureRefs (notably
     // TerrainBaker cascades) have a zero image hash, so two materials that differ only in cascade
@@ -2395,9 +2459,44 @@ namespace dxvk {
       return m_surfaceMaterialCache.at(iter->second);
     }
 
+    const RtSurfaceMaterial surfaceMaterial = buildSurfaceMaterial(renderMaterialData, build, nullptr);
+
+    // Cache this
+    const uint32_t index = m_surfaceMaterialCache.track(surfaceMaterial);
+    m_preCreationSurfaceMaterialMap[preCreationHash] = index;
+    if (isLive) {
+      noteLiveMaterialSlot(liveHandle, index, renderMaterialData.getHash(), build, surfaceMaterial);
+    }
+    if (out_indexInCache) {
+      *out_indexInCache = index;
+    }
+    return m_surfaceMaterialCache.at(index);
+  }
+
+  uint32_t SceneManager::trackSurfaceExtension(RtSurfaceMaterial extension, uint64_t liveKey, SurfaceExtensionPatch* patch) {
+    extension.setLiveKey(liveKey);
+    if (patch != nullptr && patch->slot != SURFACE_INDEX_INVALID) {
+      patch->pending.emplace(extension);
+      return patch->slot;
+    }
+    const uint32_t slot = m_surfaceMaterialExtensionCache.track(extension);
+    if (patch != nullptr) {
+      patch->slot = slot;
+    }
+    return slot;
+  }
+
+  RtSurfaceMaterial SceneManager::buildSurfaceMaterial(const MaterialData& renderMaterialData, const SurfaceMaterialBuild& build,
+                                                       SurfaceExtensionPatch* extensionPatch) {
+    const bool hasTexcoords = build.hasTexcoords;
+    const bool isHairCard = build.hairCards;
+    const uint32_t samplerIndex = build.samplerIndex;
+    const uint32_t samplerIndex2 = build.samplerIndex2;
+    const auto renderMaterialDataType = renderMaterialData.getType();
+
     std::optional<RtSurfaceMaterial> surfaceMaterial;
 
-    if (renderMaterialDataType == MaterialDataType::Opaque || draw.raytracedRenderTarget) {
+    if (renderMaterialDataType == MaterialDataType::Opaque || build.raytracedRenderTarget) {
       uint32_t albedoOpacityTextureIndex = kSurfaceMaterialInvalidTextureIndex;
       uint32_t secondaryTextureIndex = kSurfaceMaterialInvalidTextureIndex;
       uint32_t normalTextureIndex = kSurfaceMaterialInvalidTextureIndex;
@@ -2423,7 +2522,7 @@ namespace dxvk {
       float thinFilmThicknessConstant = 0.0f;
       float displaceIn = 0.0f;
       float displaceOut = 0.0f;
-      bool isUsingRaytracedRenderTarget = draw.raytracedRenderTarget;
+      bool isUsingRaytracedRenderTarget = build.raytracedRenderTarget;
       uint16_t samplerFeedbackStamp = SAMPLER_FEEDBACK_INVALID;
 
       Vector3 subsurfaceTransmittanceColor(0.0f, 0.0f, 0.0f);
@@ -2489,6 +2588,73 @@ namespace dxvk {
       const bool hasAlbedoTint = RtxOptions::HostImport::enableMaterialAlbedoTint()
         && albedoOpacityTextureIndex != kSurfaceMaterialInvalidTextureIndex
         && (albedoTint.x != 1.f || albedoTint.y != 1.f || albedoTint.z != 1.f);
+
+      // The layers (remixapi_MaterialInfoOpaqueDetailLayersEXT, remixapi_MaterialInfoOpaqueDetailLayerWeightsEXT,
+      // remixapi_MaterialInfoOpaqueClearCoatEXT), carried by the surface material extension entry.
+      // White mode drops them with the other textures.
+      RtSurfaceMaterialLayers materialLayers;
+      const OpaqueMaterialLayers& layers = opaqueMaterialData.getLayers();
+      if (layers.isSet() && !RtxOptions::useWhiteMaterialMode()) {
+        const auto unorm = [](float v, float maxCode) {
+          return uint16_t(std::clamp(v, 0.0f, 1.0f) * maxCode + 0.5f);
+        };
+        uint16_t* words = materialLayers.words;
+
+        if (layers.hasDetailNormal()) {
+          uint32_t detailNormalTextureIndex = kSurfaceMaterialInvalidTextureIndex;
+          trackTexture(layers.detailNormalTexture, detailNormalTextureIndex, hasTexcoords, true, &samplerFeedbackStamp);
+          if (detailNormalTextureIndex != kSurfaceMaterialInvalidTextureIndex) {
+            materialLayers.flags |= SURFACE_MATERIAL_EXTENSION_FLAG_DETAIL_NORMAL;
+            if (layers.detailNormalTexture.getHostEncoding() == HostTextureEncoding::NormalTangentXY) {
+              materialLayers.flags |= SURFACE_MATERIAL_EXTENSION_FLAG_DETAIL_NORMAL_TANGENT_XY;
+            }
+            words[RtSurfaceMaterialLayers::kDetailNormalTextureIndex] = uint16_t(detailNormalTextureIndex);
+            words[RtSurfaceMaterialLayers::kDetailNormalStrength] = glm::packHalf1x16(layers.detailNormalStrength);
+            words[RtSurfaceMaterialLayers::kDetailNormalTexcoordScale + 0] = glm::packHalf1x16(layers.detailNormalTexcoordScale.x);
+            words[RtSurfaceMaterialLayers::kDetailNormalTexcoordScale + 1] = glm::packHalf1x16(layers.detailNormalTexcoordScale.y);
+            if (layers.hasDetailNormalVertexWeight()) {
+              materialLayers.flags |= SURFACE_MATERIAL_EXTENSION_FLAG_DETAIL_NORMAL_VERTEX_WEIGHT;
+              words[RtSurfaceMaterialLayers::kVertexWeightChannels] |= uint16_t(layers.detailNormalWeightChannel);
+            }
+          }
+        }
+
+        if (layers.hasMaskedLayer()) {
+          // Without a mask texture the mask is the strength everywhere.
+          uint32_t layerMaskTextureIndex = kSurfaceMaterialInvalidTextureIndex;
+          trackTexture(layers.layerMaskTexture, layerMaskTextureIndex, hasTexcoords, true, &samplerFeedbackStamp);
+          materialLayers.flags |= SURFACE_MATERIAL_EXTENSION_FLAG_MASKED_LAYER |
+                                  (layers.layerMaskChannel << SURFACE_MATERIAL_EXTENSION_LAYER_MASK_CHANNEL_SHIFT);
+          words[RtSurfaceMaterialLayers::kLayerMaskTextureIndex] = uint16_t(layerMaskTextureIndex);
+          words[RtSurfaceMaterialLayers::kLayerMaskStrength] = glm::packHalf1x16(layers.layerMaskStrength);
+          words[RtSurfaceMaterialLayers::kLayerAlbedo] = uint16_t(
+            unorm(layers.layerAlbedo.x, 31.0f) | (unorm(layers.layerAlbedo.y, 63.0f) << 5) | (unorm(layers.layerAlbedo.z, 31.0f) << 11));
+          words[RtSurfaceMaterialLayers::kLayerRoughnessMetallic] = uint16_t(
+            unorm(layers.layerRoughness, 255.0f) | (unorm(layers.layerMetallic, 255.0f) << 8));
+          words[RtSurfaceMaterialLayers::kLayerTexcoordScale + 0] = glm::packHalf1x16(layers.layerTexcoordScale.x);
+          words[RtSurfaceMaterialLayers::kLayerTexcoordScale + 1] = glm::packHalf1x16(layers.layerTexcoordScale.y);
+          if (layers.hasLayerMaskVertexThreshold()) {
+            materialLayers.flags |= SURFACE_MATERIAL_EXTENSION_FLAG_LAYER_MASK_VERTEX_THRESHOLD;
+            words[RtSurfaceMaterialLayers::kLayerMaskEdgeWidth] = glm::packHalf1x16(layers.layerMaskEdgeWidth);
+            words[RtSurfaceMaterialLayers::kVertexWeightChannels] |= uint16_t(layers.layerMaskWeightChannel << 2);
+          }
+        }
+
+        if (layers.hasClearCoat()) {
+          materialLayers.flags |= SURFACE_MATERIAL_EXTENSION_FLAG_CLEAR_COAT;
+          words[RtSurfaceMaterialLayers::kClearCoat] = uint16_t(
+            unorm(layers.clearCoatWeight, 255.0f) | (unorm(layers.clearCoatRoughness, 255.0f) << 8));
+        }
+
+        if (layers.hasPearlescent()) {
+          materialLayers.flags |= SURFACE_MATERIAL_EXTENSION_FLAG_GRAZING_TINT;
+          words[RtSurfaceMaterialLayers::kPearlescentColor] = uint16_t(
+            unorm(layers.pearlescentColor.x, 31.0f) | (unorm(layers.pearlescentColor.y, 63.0f) << 5) |
+            (unorm(layers.pearlescentColor.z, 31.0f) << 11));
+          words[RtSurfaceMaterialLayers::kPearlescentWeight] = glm::packHalf1x16(layers.pearlescentWeight);
+          words[RtSurfaceMaterialLayers::kPearlescentExponent] = glm::packHalf1x16(layers.pearlescentExponent);
+        }
+      }
 
       subsurfaceMeasurementDistance = opaqueMaterialData.getSubsurfaceMeasurementDistance() * RtxOptions::SubsurfaceScattering::surfaceThicknessScale();
 
@@ -2564,10 +2730,11 @@ namespace dxvk {
           hasAlbedoTint,
           albedoTint,
           transmittanceFlags,
+          materialLayers,
         };
-        subsurfaceMaterialIndex = m_surfaceMaterialExtensionCache.track(subsurfaceMaterial);
-      } else if (hasAlbedoTint) {
-        // An extension entry that carries only the albedo tint.
+        subsurfaceMaterialIndex = trackSurfaceExtension(subsurfaceMaterial, build.liveKey, extensionPatch);
+      } else if (hasAlbedoTint || materialLayers.isSet()) {
+        // An extension entry that carries only the albedo tint or the layers.
         const auto tintOnlyMaterial = RtSubsurfaceMaterial{
           kSurfaceMaterialInvalidTextureIndex,
           kSurfaceMaterialInvalidTextureIndex,
@@ -2576,10 +2743,12 @@ namespace dxvk {
           0.f, // radius scale 0: counted as neither SSS nor thin opaque
           0.f,
           false, // hasSubsurface
-          true,
+          hasAlbedoTint,
           albedoTint,
+          0,
+          materialLayers,
         };
-        subsurfaceMaterialIndex = m_surfaceMaterialExtensionCache.track(tintOnlyMaterial);
+        subsurfaceMaterialIndex = trackSurfaceExtension(tintOnlyMaterial, build.liveKey, extensionPatch);
       }
 
       // Detect whether the albedo/emissive source textures use an sRGB VkFormat. If so, the sampler hardware
@@ -2710,14 +2879,177 @@ namespace dxvk {
 
     assert(surfaceMaterial.has_value());
     assert(surfaceMaterial->validate());
+    surfaceMaterial->setLiveKey(build.liveKey);
+    return *surfaceMaterial;
+  }
 
-    // Cache this
-    const uint32_t index = m_surfaceMaterialCache.track(*surfaceMaterial);
-    m_preCreationSurfaceMaterialMap[preCreationHash] = index;
-    if (out_indexInCache) {
-      *out_indexInCache = index;
+  void SceneManager::noteLiveMaterialSlot(uint64_t handle, uint32_t slot, XXH64_hash_t materialHash, const SurfaceMaterialBuild& build,
+                                          const RtSurfaceMaterial& material) {
+    std::vector<LiveMaterialSlot>& slots = m_liveMaterialSlots[handle];
+    for (LiveMaterialSlot& live : slots) {
+      if (live.slot == slot) {
+        live.materialHash = materialHash;
+        return;
+      }
     }
-    return m_surfaceMaterialCache.at(index);
+    LiveMaterialSlot live;
+    live.slot = slot;
+    live.materialHash = materialHash;
+    live.build = build;
+    if (material.getType() == RtSurfaceMaterialType::Opaque) {
+      live.extensionSlot = material.getOpaqueSurfaceMaterial().getSubsurfaceMaterialIndex();
+    }
+    slots.push_back(live);
+  }
+
+  namespace {
+    // What a surface material holds references to, and the live counts it adds to (retainSurfaceMaterial).
+    struct SurfaceMaterialRefs {
+      static constexpr uint32_t kMaxTextures = 16;
+      std::array<uint32_t, kMaxTextures> textures {};
+      uint32_t textureCount = 0;
+      RtSurfaceMaterialType type = RtSurfaceMaterialType::Opaque;
+      bool thinFilm = false;
+      bool raytracedRenderTarget = false;
+      int radiusSign = 0;
+
+      void add(const RtSurfaceMaterial& material) {
+        material.forEachTextureIndex([this](uint32_t index) {
+          if (textureCount < kMaxTextures) {
+            textures[textureCount] = index;
+          }
+          ++textureCount;
+        });
+      }
+
+      bool operator==(const SurfaceMaterialRefs& o) const {
+        return textures == o.textures && textureCount == o.textureCount && type == o.type && thinFilm == o.thinFilm &&
+               raytracedRenderTarget == o.raytracedRenderTarget && radiusSign == o.radiusSign;
+      }
+    };
+
+    SurfaceMaterialRefs surfaceMaterialRefs(const RtSurfaceMaterial& material, const RtSurfaceMaterial* extension) {
+      SurfaceMaterialRefs refs;
+      refs.type = material.getType();
+      refs.add(material);
+      if (material.getType() == RtSurfaceMaterialType::Opaque) {
+        refs.thinFilm = material.getOpaqueSurfaceMaterial().getEnableThinFilm();
+        refs.raytracedRenderTarget = material.getOpaqueSurfaceMaterial().getIsRaytracedRenderTarget();
+      }
+      if (extension != nullptr) {
+        refs.add(*extension);
+        if (extension->getType() == RtSurfaceMaterialType::Subsurface) {
+          const float radiusScale = extension->getSubsurfaceMaterial().getSubsurfaceRadiusScale();
+          refs.radiusSign = radiusScale > 0.0f ? 1 : (radiusScale < 0.0f ? -1 : 0);
+        }
+      }
+      return refs;
+    }
+  }
+
+  bool SceneManager::patchLiveMaterialSlots(uint64_t handle, const MaterialData& material) {
+    auto found = m_liveMaterialSlots.find(handle);
+    if (found == m_liveMaterialSlots.end()) {
+      return true;
+    }
+    const auto extensionOf = [this](const RtSurfaceMaterial& surfaceMaterial, const std::optional<RtSurfaceMaterial>& pending) -> const RtSurfaceMaterial* {
+      if (surfaceMaterial.getType() != RtSurfaceMaterialType::Opaque) {
+        return nullptr;
+      }
+      if (pending.has_value()) {
+        return &*pending;
+      }
+      const uint32_t index = surfaceMaterial.getOpaqueSurfaceMaterial().getSubsurfaceMaterialIndex();
+      return index < m_surfaceMaterialExtensionCache.getTotalCount() ? &m_surfaceMaterialExtensionCache.getObjectTable()[index] : nullptr;
+    };
+
+    const auto usersOf = [this](uint32_t slot) {
+      return slot < m_surfaceMaterialUsers.size() ? m_surfaceMaterialUsers[slot] : 0u;
+    };
+
+    // A slot without users is written too, since a draw can bind it again by its content or within the frame.
+    // Slots with users go first, so a conflict below can only retire a slot without users.
+    std::vector<LiveMaterialSlot>& slots = found->second;
+    std::stable_partition(slots.begin(), slots.end(), [&](const LiveMaterialSlot& live) { return usersOf(live.slot) != 0; });
+    for (auto it = slots.begin(); it != slots.end();) {
+      LiveMaterialSlot& live = *it;
+      const uint32_t users = usersOf(live.slot);
+
+      // A slot of an older hash has no draw that builds its key again, so once it has no users it is only found by
+      // a content that is correct for it.
+      if (users == 0 && live.materialHash != material.getHash()) {
+        it = slots.erase(it);
+        continue;
+      }
+      SurfaceExtensionPatch extension;
+      extension.slot = live.extensionSlot;
+      const RtSurfaceMaterial next = buildSurfaceMaterial(material, live.build, &extension);
+      live.extensionSlot = extension.slot;
+
+      // Two slots of one material can end up equal after an option changed, and only one slot can hold that content.
+      // A slot without users gives way. Its old content stays correct for the inputs it was built from, and the
+      // per-frame lookup, which may still name it, is cleared.
+      uint32_t other = 0;
+      const bool conflict = (m_surfaceMaterialCache.find(next, other) && other != live.slot) ||
+        (extension.pending.has_value() && m_surfaceMaterialExtensionCache.find(*extension.pending, other) && other != extension.slot);
+      if (conflict) {
+        if (users != 0) {
+          return false;
+        }
+        m_preCreationSurfaceMaterialMap.clear();
+        it = slots.erase(it);
+        continue;
+      }
+
+      // The users hold references to what the slot names, so those move with the content. A plain parameter moves none.
+      const RtSurfaceMaterial& current = m_surfaceMaterialCache.at(live.slot);
+      const bool refsChange = !(surfaceMaterialRefs(current, extensionOf(current, std::nullopt)) ==
+                                surfaceMaterialRefs(next, extensionOf(next, extension.pending)));
+      if (refsChange) {
+        for (uint32_t i = 0; i < users; ++i) {
+          releaseSurfaceMaterial(live.slot);
+        }
+      }
+      if (extension.pending.has_value()) {
+        m_surfaceMaterialExtensionCache.overwrite(extension.slot, *extension.pending);
+      }
+      m_surfaceMaterialCache.overwrite(live.slot, next);
+      if (refsChange) {
+        for (uint32_t i = 0; i < users; ++i) {
+          retainSurfaceMaterial(live.slot);
+        }
+      }
+      m_liveMaterialUploadPending = true;
+      ++m_materialUpdateStats.slotsPatched;
+      ++it;
+    }
+    return true;
+  }
+
+  void SceneManager::updateExternalMaterial(DxvkContext& ctx, remixapi_MaterialHandle handle, MaterialData&& material, bool rebuildUsers) {
+    const uint64_t liveHandle = reinterpret_cast<uint64_t>(handle);
+    const MaterialData* current = m_pReplacer->accessExternalMaterial(handle);
+    bool inPlace = !rebuildUsers && current != nullptr &&
+      m_liveMaterialsWithPatchedUsers.find(liveHandle) == m_liveMaterialsWithPatchedUsers.end();
+    if (inPlace) {
+      material.setLiveHandle(liveHandle);
+      material.setStableHash(current->getHash());
+      inPlace = patchLiveMaterialSlots(liveHandle, material);
+    }
+    m_materialUpdateStats.dirty = true;
+    if (inPlace) {
+      m_pReplacer->replaceExternalMaterialInPlace(handle, std::move(material));
+      ++m_materialUpdateStats.inPlace;
+      return;
+    }
+    material.setStableHash(kEmptyHash);
+    m_pReplacer->makeMaterialWithTexturePreload(ctx, handle, std::move(material));
+    ++m_materialUpdateStats.rebuilt;
+  }
+
+  void SceneManager::forgetLiveMaterial(remixapi_MaterialHandle handle) {
+    m_liveMaterialSlots.erase(reinterpret_cast<uint64_t>(handle));
+    m_liveMaterialsWithPatchedUsers.erase(reinterpret_cast<uint64_t>(handle));
   }
 
 
@@ -3000,6 +3332,8 @@ namespace dxvk {
 
   void SceneManager::prepareSceneData(Rc<RtxContext> ctx, DxvkBarrierSet& execBarriers) {
     ScopedGpuProfileZone(ctx, "Build Scene");
+    // Everything below may read the geometry buffers on the GPU.
+    m_device->getCommon()->metaGeometryUtils().flushVertexDataUploads(ctx);
     // [Perf] CPU breakdown of this function (see takeScenePrepPhases).
     auto prepPhaseStart = std::chrono::steady_clock::now();
     const auto prepPhase = [&](uint32_t phase) {
@@ -3094,7 +3428,11 @@ namespace dxvk {
     auto& textureManager = m_device->getCommon()->getTextureManager();
     {
       const auto bindlessStart = std::chrono::steady_clock::now();
-      m_bindlessResourceManager.prepareSceneData(ctx, textureManager.getTextureTable(), getBufferTable(), getSamplerTable());
+      if (m_bindlessResourceManager.prepareSceneData(
+            ctx, textureManager.getTextureTable(), getBufferTable(),
+            m_bufferCache.getUpdatedSlots(), getSamplerTable())) {
+        m_bufferCache.clearUpdatedSlots();
+      }
       addPrepNestedMs(kPrepNestedBindless,
         std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - bindlessStart).count());
     }
@@ -3248,6 +3586,8 @@ namespace dxvk {
 
     prepPhase(2);
     ctx->recordGpuStageTiming("SceneSetup");
+    // Uploads queued while the scene was prepared, before the BLAS builds read them.
+    m_device->getCommon()->metaGeometryUtils().flushVertexDataUploads(ctx);
     m_accelManager.mergeInstancesIntoBlas(ctx, execBarriers, textureManager.getTextureTable(), m_cameraManager, m_instanceManager, m_opacityMicromapManager.get());
     // The OmmBakeAndBuild marker inside mergeInstancesIntoBlas splits OMM work from the BLAS builds.
     ctx->recordGpuStageTiming("BlasBuild");
@@ -3288,10 +3628,16 @@ namespace dxvk {
     // scene generation, so keep their surface-material upload live.
     const bool startInMediumStateChanged = m_startInMediumMaterialIndex_inCache != m_lastUploadedStartInMediumMaterialIndexInCache;
     bool materialSlotFlagsThisFrame = false; // [PointInstancerCheck]
+    // A live material written in place changes the tables without a scene change (patchLiveMaterialSlots).
     const bool updateSurfaceMaterials =
       !m_accelManager.wasSceneUnchangedThisFrame() ||
       TerrainBaker::needsTerrainBaking() ||
-      startInMediumStateChanged;
+      startInMediumStateChanged ||
+      m_liveMaterialUploadPending;
+    if (m_liveMaterialUploadPending && m_accelManager.wasSceneUnchangedThisFrame()) {
+      ++m_materialUpdateStats.staticUploads;
+      m_materialUpdateStats.dirty = true;
+    }
     if (updateSurfaceMaterials) {
       DxvkBufferCreateInfo matInfo;
       matInfo.usage = VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT
@@ -3411,7 +3757,10 @@ namespace dxvk {
     // Todo: These updates require a lot of temporary buffer allocations and memcopies, ideally we should memcpy directly into a mapped pointer provided by Vulkan,
     // but we have to create a buffer to pass to DXVK's updateBuffer for now.
     // Skip when scene is unchanged - buffers from last frame are still valid.
-    if (!m_accelManager.wasSceneUnchangedThisFrame()) {
+    // The extension buffer holds live material data too (patchLiveMaterialSlots).
+    const bool liveMaterialUpload = m_liveMaterialUploadPending;
+    m_liveMaterialUploadPending = false;
+    if (!m_accelManager.wasSceneUnchangedThisFrame() || liveMaterialUpload) {
       // Allocate the instance buffer and copy its contents from host to device memory
       DxvkBufferCreateInfo info;
       info.usage = VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR;
@@ -3801,7 +4150,8 @@ namespace dxvk {
       }
       const MaterialData* material = resolveExternalDrawMaterial(state, (*submeshes)[0]);
       const XXH64_hash_t materialHash = material != nullptr ? material->getHash() : kEmptyHash;
-      if (materialHash != entry.replayedMaterialHash ||
+      const uint64_t materialHandle = material != nullptr ? material->getLiveHandle() : 0;
+      if (materialHash != entry.replayedMaterialHash || materialHandle != entry.replayedMaterialHandle ||
           (material != nullptr && material->getParticleSystemDesc() != nullptr) ||
           RtxOptions::shouldConvertToLight(materialHash)) {
         if (steady) {
@@ -4063,6 +4413,7 @@ namespace dxvk {
       const MaterialData* material = (submeshes != nullptr && !submeshes->empty())
         ? resolveExternalDrawMaterial(entry.state, (*submeshes)[0]) : nullptr;
       entry.replayedMaterialHash = material != nullptr ? material->getHash() : kEmptyHash;
+      entry.replayedMaterialHandle = material != nullptr ? material->getLiveHandle() : 0;
       if (stats) {
         stats->full++;
         stats->fullMs += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - fullStart).count();
@@ -4290,6 +4641,7 @@ namespace dxvk {
         std::make_shared<const std::vector<Matrix4>>(std::move(state.gpuInstancingTransforms));
       state.drawCall.modifyTransformData().instancesFromHost = true;
     }
+    state.drawCall.decalSortOrder = state.sortOrder;
   }
 
   bool ExternalDrawState::submeshIsDeforming(size_t index) const {

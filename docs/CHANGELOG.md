@@ -28,6 +28,103 @@ Entry format:
 - Docs: [RemixApi.md](RemixApi.md)   (only if a public doc covers it)
 ```
 
+## 2026-11-18
+
+### JPOG integration: Remix Plus dev through ffcf5b723
+Integrate 20 upstream dev commits while preserving Terrain Blend, session texture tags and bridge resource ownership. Pack the second UV offset above the terrain and opacity flags, retain terrain-aware SHARC variants, and smooth post-skinning geometry in the same converted triangle domain as terrain. Terrain Blend continues to trace primary hits because the raster visibility kernels do not support it.
+- Options: upstream defaults are retained. Terrain Blend uses the traced primary hit when enabled.
+- Upstream: ffcf5b723.
+
+### Remix API: second texture coordinate set and detail layers
+API meshes can carry a second texture coordinate set (`remixapi_MeshInfoSecondaryTexcoordEXT`), and opaque materials can read a detail normal map and a masked albedo, roughness and metallic layer with it (`remixapi_MaterialInfoOpaqueDetailLayersEXT`), for surface detail that is mapped apart from the base material, such as tiled detail normals, wear or grime. A vertex colour channel can weight the layers per vertex (`remixapi_MaterialInfoOpaqueDetailLayerWeightsEXT`): it scales the detail normal, and it sets a per-vertex threshold that reveals the layer mask with an adjustable soft edge, `smoothstep(t - e, t + e, m)` with `t = (1 - w)(1 + 2e) - e` and `e = layerMaskEdgeWidth / 2`, so a weight of 0 shows none of the layer and 1 shows all of it. The set rides in the vertex padding, so meshes and materials without it read no extra data and keep their hashes.
+- Options: none. The named export `remixapi_GetSecondaryTexcoordVersion` returns 2.
+- Commits: the commit that adds this entry.
+- Docs: [SecondaryTexcoordLayers.md](../documentation/SecondaryTexcoordLayers.md), [RemixApi.md](RemixApi.md)
+
+### Remix API: clear coat and pearlescent materials
+Opaque API materials can have a clear coat, a second dielectric GGX specular lobe over the base that every lighting path samples and evaluates, and a pearlescent albedo shift towards grazing angles (`remixapi_MaterialInfoOpaqueClearCoatEXT`), for layered materials such as lacquered or coated surfaces. The coat's reflection is part of the specular signal, and the denoisers' roughness blends towards the coat's. Materials without the struct render as before: every coat path is a branch on a coat weight of exactly 0.
+- Options: none. The named export `remixapi_GetClearCoatMaterialVersion` returns 1.
+- Commits: the commit that adds this entry.
+- Docs: [ClearCoatMaterial.md](../documentation/ClearCoatMaterial.md), [RemixApi.md](RemixApi.md)
+
+## 2026-11-15
+
+### Cheaper NUMOS clouds
+The cloud screen pass splits the quarter march into a march-only pass, a rebuild with no march compiled in, and a fallback that marches only the silhouette pixels no fresh sample covers, so the march's registers no longer set the occupancy of every resolved pixel. Empty pixels skip the history reprojection, rays with no cloud span skip the per-ray setup, the detail noise reads mips by footprint, and the lighting LOD threshold grows with distance past 20 km. Moves NUMOS to 079c035, which also brings the magnifier-lens clouds (inactive without a host that sends lenses).
+- Options: added `rtx.atmosphere.cloudQuarterMarchSchedule` (default 2, the split path; its image matches the one-pass path exactly), `rtx.atmosphere.cloudEmptyPixelSkip` (default on), `rtx.atmosphere.cloudLightingLodByDistance` (default on), `rtx.atmosphere.cloudMarchRayBudgetMillions` (default 0, off) and `rtx.atmosphere.cloudMarchEarlyExit` (default off); default flipped `rtx.atmosphere.cloudDetailLodMode` → 2.
+- Measured: NUMOS viewer at 2560x1600, cloud pass 12-30% cheaper across clear, storm, overcast, layer 2, under-deck, in-deck, lens and flying views; confirmed in New Vegas.
+- Commits: the commit that adds this entry.
+
+## 2026-11-14
+
+### Fix: texture grid thumbnails that open no menu
+A texture thumbnail's button took its ImGui ID from the texture's image view alone, so thumbnails that share an image view were one widget, and clicking one of them could open no texture menu. Each button is now scoped by its texture hash.
+- Options: none.
+- Commits: the commit that adds this entry.
+
+### Fix: small particles in large world units are no longer dropped
+The particle geometry pass dropped every particle under 0.1 authored units, assuming the authored unit is a centimetre. With `rtx.sceneScale` 1 in a game whose unit is a metre that is 10 cm, so snowflakes and raindrops never showed. The guard now drops only degenerate sizes, and the existing screen-space test decides visibility.
+- Options: none.
+- Commits: the commit that adds this entry.
+
+### Particle screen-size cull as an option
+Particles under a fixed 2 pixels of the render resolution were not drawn. An upscaler halves that resolution in its performance modes, so small particles such as snowflakes vanished within a few metres. The threshold is now an option with a menu control.
+- Options: added `rtx.particles.minScreenSize` (default 2, the previous fixed value). Preset-independent: the right value depends on a game's particle sizes rather than on the GPU, and the default keeps the previous behaviour.
+- Commits: the commit that adds this entry.
+
+## 2026-11-11
+
+### Weather Presets window easier to read
+The preset settings are laid out as a table of override tick, label and control, with the label column as wide as the longest label, so no label is cut off. Settings a preset does not override show their value at full opacity in a secondary text color on a faint field instead of at half opacity, hints and status lines use that secondary color instead of the disabled one, the preset list sizes to its names with the share percentage in its own right-aligned column, and the color rows are spelled "color". Presentation only: the same controls, behavior and preset file format.
+- Options: none.
+- Commits: the commit that adds this entry.
+
+## 2026-11-10
+
+### Performance log: the present-wait gap is idle time, pauses close the window, present options apply from the first present
+- `PresentGateGap`, the GPU idle time between the early pre-gate submit and the rest of the frame while `rtx.present.presentWaitPacing` waits for the previous present, was sorted in among the GPU stages of the `[PerfGpu]` line, so it read as Remix GPU work. It now follows the stage list as `| GPU idle, not in gpuRemixMs (p50/p95/max/avg ms): PresentGateGap=...`.
+- With `rtx.profile.detailedLogging`, a gap of more than 5 s between two ray traced frames (an unfocused window, a dialog, a debugger) was booked as one frame, which turned a window's average into a few fps. Such a gap now logs `[PerfFrame] no frame for N s before frame F ...`, logs the frames before it as a short window, and starts a new window without the pause.
+- The `rtx.present.*` values (pacing, queue limit, gate wait, trace CSV) and the option-read globals were copied to the present path and the submission thread only inside a ray traced frame, so menus and loading screens ran without them. The copy now runs on every Remix present.
+- Options: none. The `rtx.present.presentWaitPreGateFlush` description says where the gap is reported.
+- Commits: the commit that adds this entry.
+
+### Fix: the startup prewarm compiles the SHARC pipelines the frames use
+The prewarm ran before the opacity micromap support was recorded, so it registered every SHARC update and query pipeline without the micromap flag while the frames bind them with it. On a cold pipeline cache the first 3D frames then waited for some of them and compiled the rest in the background. Micromap support is now recorded before the prewarm, and the integrate indirect prewarm reads the micromap state through the same getter as the frame. A thread that loses the race to create a shader now returns the winner's object, so pipelines registered for it still match. Ray tracing pipeline creation lines name every distinct shader of the pipeline and mark micromap pipelines, and the first-frames report adds `[ShaderPrewarm] missed by the prewarm:` with the first 64 late compiles and whether the frame waited for each.
+- Options: none.
+- Commits: the commit that adds this entry.
+
+### Path Tracing: Performance
+A new mode, Path Tracing: Performance (`rtx.ptPerformance.enable`), runs path tracing at a lower cost: indirect paths take one bounce that ends in the SHARC radiance cache, with one more bounce on a cache miss, the first hit is traced or rasterized, whichever measures cheaper, and with DLSS Ray Reconstruction only part of the pixels are shaded each frame. Rays still trace shadows, reflections and indirect light. The mode resolves everything in code and writes no other option, so turning it off restores the preset's settings. It also turns the NEE cache off and runs lean indirect kernels (a new LeanLightSampler level for frames without the NEE cache, as ray tracing pipelines and as Ray Query compute shaders), samples direct light with fewer candidates and a local shadow cull under the sun, updates the SHARC cache at an adaptive interval, and denoises direct and indirect light with one NRD instance.
+- Presets: Ultra and High switch the mode off, Medium, Low and a new Very Low preset (Low's values) switch it on, on every GPU vendor and with or without Ray Reconstruction. No preset writes the mode's tuning options. Auto selects Medium, or Low on NVIDIA GPUs older than Ampere, on other vendors' GPUs and on Ampere GPUs with 8 GB of video memory or less, so it no longer selects High. Very Low biases the DLSS Auto profile two steps toward performance, as Low does.
+- Options: added `rtx.ptPerformance.enable` (default off, set by the presets, also in the user menu), `firstHit` (0 Trace, 1 Raster, 2 Auto, default 2), `samplingRate` (0.228) and `samplingRateResolutionExponent` (0.83), `indirectBounces` (1), `cacheMissExtraBounce` (on), `cacheUpdateInterval` (1), `cacheUpdateAdaptive` (on), `cacheUpdateRelaxHitRatio` (0.9), `indirectAlphaAsOpaque` (off), `indirectAlphaOpaqueDistance` (4 m, off NVIDIA only), `indirectSimpleShading` (off), `indirectRayMaxDistance` (0, off), `secondaryMipBias` (2), `lightCandidates` (2), `localShadowCullRatio` (0.02), `reducedDirectLight` (on), `reducedVolumetrics` (off), `combinedDenoiser` (on), `reducedDenoiser` (off), `rasterAlphaTest` (on), `rasterBlendedAsCutout` (on), `rasterOcclusionCulling` (on) and `rasterLogIntervalFrames` (0), all `rtx.ptPerformance.*`, and `rtx.lightSampling.bvhLocalShadowCullRatio` (default 0, off) for the shadow cull outside the mode. `rtx.graphicsPreset` gains 6: Very Low.
+- Logs and debug views: `[PtPerformance]` lines for the indirect path, first hit Auto's choice and cache update interval changes. The `[SceneStats]` line gains the mode's state, the first hit path, the sparse rate, the bounce limits, and the cache hit, extra bounce and miss reason shares. Debug views 915 and 916 show the raster first hit's coverage and its validation against a traced camera ray.
+- Commits: the commit that adds this entry.
+- Docs: [PtPerformance.md](../documentation/PtPerformance.md)
+
+### SHARC on every GPU vendor by default
+Every graphics preset now selects the SHARC radiance cache on any GPU with its device features (`shaderInt64`, `shaderBufferInt64Atomics`, `shaderFloat16`, 16-bit storage, `rayQuery`), as upstream does, instead of on NVIDIA only. GPUs without them keep ReSTIR GI. Off NVIDIA, the SHARC update and query always run as compute kernels with inline ray queries, whatever `rtx.renderPassIntegrateIndirectRaytraceMode` says, so no ray tracing pipeline runs the cache there. On NVIDIA, Ray Query mode runs them through their ray tracing pipelines, as it already does for the indirect integration. `rtx.sharc.indirectFromCache` integrates indirect light with SHARC whatever `rtx.integrateIndirectMode` says, without writing that option, so presets and user settings keep their values.
+- Options: added `rtx.sharc.indirectFromCache` (default off, "Indirect Light From Radiance Cache" in the developer menu). Default changed: the graphics presets set `rtx.integrateIndirectMode` to SHARC on AMD, Intel and other GPUs with the features. `rtx.integrateIndirect.rayQueryComputeKernel` also covers the SHARC kernels.
+- Logs: the device feature dump lists `shaderBufferInt64Atomics`, `shaderFloat16`, `storageBuffer16BitAccess` and `uniformAndStorageBuffer16BitAccess`. `[RTX] SHARC is not supported: the device lacks <feature>.` names the missing feature, and `[RTX] Graphics preset indirect lighting:` names the path.
+- Not covered: a 64-bit atomics fallback for GPUs without `shaderBufferInt64Atomics`. Not yet run on AMD or Intel GPUs.
+- Commits: the commit that adds this entry.
+- Docs: [SharcRadianceCache.md](../documentation/SharcRadianceCache.md)
+
+### Deferred uploads for deforming geometry
+Updated vertex-captured and rewritten meshes queued their vertex copy or interleave dispatch in the middle of the game's draws, and each one ended the game's render pass, so the next draw started it again. With the option on, those writes are recorded together at the start of scene preparation and again before the BLAS builds, which is before anything reads the buffers on the GPU. Smooth-normal, Remix-skinned and history-invalidating updates still write at once.
+- Options: added `rtx.deferVertexUploads` (default off). Preset-independent: the traced result is the same.
+- Measured: Cry of Fear (D3D9, vertex-shader skinning, ~415 updated meshes per frame) on an RTX 3080 and Ryzen 7 7700X, in-run A/B over 30 s windows: 52.7 → 82.1 fps, GPU busy 19.0 → 12.2 ms per frame, render thread 10.1 → 8.6 ms, frame time p99 22.4 → 15.9 ms.
+- Commits: the commit that adds this entry.
+
+### Cached legacy default material
+`LegacyMaterialData::createDefault` ran once per legacy draw and called eleven setters, each of which re-sanitizes and rehashes the whole material. It now keeps the built material per thread and rebuilds it only when one of the `rtx.legacyMaterial.*` options it reads changes.
+- Options: none.
+- Measured: Cry of Fear on an RTX 3080 and Ryzen 7 7700X, separate runs in the same scene: render thread 11.8 → 11.4 ms per frame (the function held 6.3% of render-thread samples before).
+- Commits: the commit that adds this entry.
+
+### Smooth normals on skinned geometry
+Geometry in the smooth-normals texture category that Remix skins itself lost its smoothing: the smooth normals were generated from the bind pose, and the skinning pass then overwrote every normal. They are now generated after skinning, on the skinning context and from the skinned positions, so they follow each new pose. Unskinned geometry is unchanged.
+- Options: none.
+- Commits: the commit that adds this entry.
 ## 2026-11-11
 
 ### JPOG integration: latest Remix Plus dev
@@ -126,6 +223,104 @@ With sparse rendering on and `rtx.sparseRendering.enableRtxdiReuseForInactivePix
 - Options: none. Frames without sparse rendering, or with RTXDI reuse for inactive pixels on, are unchanged.
 - Commits: the commit that adds this entry.
 
+## 2026-11-03
+
+### VRAM: allocator chunk figures per chunk class in the log and the dev menu
+The `[VramBudget]` log line and a new "Allocator Chunks" view under VRAM Budget show how much of the allocator's chunk memory each chunk class (other, accel, OMM, app, geometry) uses and leaves free, so a long session shows where free space inside chunks builds up. This change only adds diagnostics. Allocation behavior is unchanged.
+- Log: new `key=value` fields after the vkAllocateMemory figures. `alloc totals:` has `calls`, `totalMs`, `longestMs`, `chunksMade` and `chunksFreed` since start. `chunks:` has `chunkMiB`, `usedMiB`, `freeMiB` and `freePctOfUsed` over device-local heaps, then `<class>.chunks`, `.empty`, `.draining`, `.chunkMiB`, `.usedMiB`, `.freeMiB` and `.largestFreeMiB` for each class.
+- Dev menu: Rendering, VRAM Budget, Allocator Chunks shows one table row per memory type and chunk class, with the same counters.
+- Options: none.
+- Commits: the commit that adds this entry.
+
+### D3D9: fixes ported from upstream DXVK
+Self-contained D3D9 correctness and compatibility fixes and game config entries from upstream DXVK, which this tree forked at upstream 6a3de28f (v1.9.4, 76 commits before v1.10). The triage of all upstream D3D9 commits since then is in [dxvk-upstream-d3d9-triage.md](dxvk-upstream-d3d9-triage.md).
+- Options (dxvk.conf): renamed `d3d9.apitraceMode` to `d3d9.cachedDynamicBuffers`; added `d3d9.allowDirectBufferMapping` (default on).
+- Fixes, one line per Remix Plus commit, each naming its upstream commit:
+  - `UpdateTexture` copies between textures with different mip counts, matching the top or the bottom mips, and handles automatic mip generation (c12cd195, b2f22d57, bfd47ec8).
+  - A 5551 back buffer no longer also offers 565 swap chain formats (b2d96ee0).
+  - D3DFMT_D32 is reported as unsupported, as on Windows drivers, so games pick a format they also use on real hardware (1f88ee59).
+  - An invalid D3DRS_CULLMODE value disables culling instead of culling back faces (4e34c29c).
+  - StretchRect returns D3DERR_INVALIDCALL instead of crashing when a surface has no image (5b7406fe).
+  - Multisampled depth-stencil resolves write sample zero for stencil, since averaging stencil is invalid (e406484b).
+  - CheckDeviceType accepts D3DFMT_UNKNOWN as a windowed back buffer format, and CheckDeviceFormatConversion still rejects it as a source (95995041, 64d22606).
+  - GetFrontBufferData accepts a D3DPOOL_SCRATCH destination (ce48b57f).
+  - Multisample counts the GPU does not support are lowered to a supported one, and CheckDeviceMultiSampleType reports the same set (9e110cd3, 5ae5476d).
+  - Vertex state blocks capture the integer and bool vertex shader constants too (0462454d).
+  - Restarting an occlusion query that is still running no longer underflows its reset counter, which could make GetData wait forever (ecc23023).
+  - The highest constant a shader defines with def is copied to the constant buffer too, instead of being dropped by an off-by-one (9cde0b57).
+  - A vertex or index buffer bound at an offset past its end binds an empty slice instead of an out-of-range one, which could fault the GPU (ea314980).
+  - A light enabled without SetLight gets the D3D9 default: white diffuse with zero alpha, pointing down +Z (9e422a2b).
+  - Fixed-function specular highlights no longer appear on surfaces facing away from the light (da814668).
+  - IDirect3DStateBlock9::Capture leaves a captured stream's offset as recorded, as Windows does (dc3dd0f8).
+  - With strict float emulation, the lrp shader instruction follows D3D9's zero-wins multiply rule (630fee59, 18a801de).
+  - Pixel shader inputs load all four components regardless of the dcl mask, which upstream reports fixes shadows in Test Drive Unlimited 2 (c585ea25).
+  - Shader Model 1 pixel shaders report render target 0 as written, so it is not unbound as unused (4b108460).
+  - The crs instruction with a single-component destination no longer emits invalid SPIR-V (82ebc29e).
+  - Color inputs of Shader Model 3 pixel shaders are interpolated at the centroid, as for earlier models (5962be44).
+  - Shaders that use more than 32 temporary registers no longer throw out of range during translation (037669f7).
+  - A shader without def constants reports zero defined constants instead of an uninitialized value (fed51e6c).
+  - The ps_1_4 bem instruction is translated instead of being dropped (404c984f).
+  - Clears with an empty viewport, scissor or rectangle are skipped instead of issuing zero-sized Vulkan clears (860237e7).
+  - GetRenderTargetData fails when the source and destination sizes differ, which upstream reports fixes mouse picking in MySims (ab359318).
+  - Fetch4 is turned off again when a sampler that used it gets a texture that does not support it, which upstream reports fixes lighting in Spider-Man: Shattered Dimensions (9e1ecec7).
+  - INTZ is reported as unsupported for multisampled surfaces, as on Windows drivers (0fc5c84e).
+  - YUV video texture conversion uses float coefficients instead of integer divisions that rounded them to 0 or 1 (9c5551cb).
+  - SetLOD only affects D3DPOOL_MANAGED textures, as on Windows (098e41a3).
+  - `d3d9.cachedDynamicBuffers` (formerly `d3d9.apitraceMode`) puts host-visible buffers in cached system memory, where it could fall back to uncached memory before (5fd025c5, d2759c20).
+  - The Sims 2 profile enables `d3d9.cachedDynamicBuffers` and also matches The Sims 2 Content Manager and HomeCrafter Plus (fe9c875f, fb8f79e4).
+  - `d3d9.allowDirectBufferMapping` off routes DEFAULT-pool dynamic buffers through a staging buffer, for game profiles that need it (6d71eea5, cf4c5c34).
+  - Profiles with strict float emulation: Borderlands 2 (split from The Pre-Sequel), Sonic Adventure 2, Supreme Commander, UK Truck Simulator 1, Operation Flashpoint: Red River, Max Payne 3, Thumper, Halo Online (4f56e72d, 43b79bcb, a78c1bd6 and others in the commit message).
+  - Profiles with memory tracking: The Ship, SiN Episodes: Emergence, Secret World Legends, Star Wars: Empire at War, Pirate Hunter, Alone in the Dark (2008), Blitzkrieg 2, and the Dragon Nest profile, whose key had a trailing space and never applied (fe9a24d1, 2b16134b and others in the commit message).
+  - Profiles that report a specific GPU: Alien Rage, CivCity: Rome, Battle Engine Aquila, The Sims 3 (cc9266ed, d8eb4d0d, f27e3c9f, c27ef1c4).
+  - Profiles with cached dynamic buffers: Tomb Raider: Anniversary and Underworld (with Legend, plus longMad), Battlestations: Midway, Codename: Panzers, Delta Force: Xtreme 1 and 2, Dragonshard, The Battle for Middle-earth II, APB: Reloaded, Battle Mages, Far Cry 2, LEGO Indiana Jones, LEGO Batman, Hammer World Editor, Sonic & All-Stars Racing Transformed (1a2e724c, a63a5753 and others in the commit message).
+  - Profiles for Injustice, Drakensang, 9th Dawn II, Time Leap Paradise SUPER LIVE, Star Wars: The Force Unleashed II, Scarface, Ys Origin, Age of Empires II HD, Prince of Persia (2008), The Incredibles (9d6804e4, 5c56fa0d and others in the commit message).
+  - Fixed-function draws treat a texture on the eighth stage as used (395ac388).
+  - With fast float emulation, exp and expp clamp to FLT_MAX so a later multiply by zero gives zero instead of NaN (e9a0fec5).
+  - SetTextureStageState and GetTextureStageState clamp an out-of-range stage or type instead of failing, as the NVIDIA driver does (1c6fc7b5).
+  - Shader constant Set and Get calls whose start register plus count overflows fail instead of writing out of bounds (92523fc0).
+  - MultiplyTransform during state block recording no longer writes past the state block's transform array, and applies to the device as on Windows (4f0c2176, 9c012c8e).
+  - State blocks record SetLight and LightEnable and capture lights, so lights set through a state block reach both fixed function and Remix's light conversion (1a3b576d, 4796eb0b, 0d28be4a).
+  - A buffer's last lock flags start at zero instead of uninitialized memory (a7977232).
+- Commits: the commit that adds each fix line.
+
+### Remix API: decal draw order for API instances
+`remixapi_InstanceInfoDecalOrderEXT` (sType 0x4E560007) lets a host set a decal instance's draw order (0-255, higher on top) on `DrawInstance`, `CreateRetainedInstance(s)` and `UpdateRetainedInstance`, so overlapping API decals stack as the host intends instead of by creation or draw order, which wraps at 256. A value past 255 is rejected with `INVALID_ARGUMENTS`. The docs also note that a light's `volumetricRadianceScale` of 0 keeps it out of the volumetrics without changing its direct lighting.
+- Options: none.
+- Commits: the commit that adds this entry.
+- Docs: [RemixApi.md](RemixApi.md)
+
+## 2026-11-02
+
+### Bindless buffer table: updates follow the changed slots
+The bindless buffer table no longer compares every slot with the descriptor sets each frame. The buffer table records the slots it changes, a CPU mirror holds the descriptors and buffer references, and each frame in flight's descriptor set receives only the slots it has not seen yet. A descriptor is now written only when its slot changes, so a registered buffer's backing is pinned: a full-buffer write through the context no longer renames it, and a rename of a pinned buffer logs an error. A material or micromap table written whole therefore reaches the current frame's bindless reads at once. Texture and sampler tables keep their comparison.
+- Options: none. `rtx.trackBindlessResourcesOnChange` off still tracks every registered buffer each frame. `rtx.parallelBindlessUpdate` now covers only the texture and sampler tables.
+- Measured: pending.
+- Commits: the commit that adds this entry.
+
+### Material texture scale, offset, rotation and scroll
+Opaque and translucent materials can scale, mirror, rotate, offset and scroll all of their textures through the MDL parameters `texture_scale`, `texture_offset`, `texture_rotation`, `texture_scroll_rate` and `texture_scroll_angle`, with upstream's names, so mods authored for upstream work. The math runs on the CPU and ends up in the existing per-surface texture matrix, so no GPU struct changes, and a material without these parameters writes the same records and keeps its material key. A scrolling surface never gets an opacity micromap, because a micromap holds one texture position. Baked terrain, eyes, sky, animated water, ray portals and view-normal texgen ignore the parameters.
+- Options: none. The parameters are authored on materials, and their defaults change nothing.
+- API: new chained `remixapi_MaterialInfoTextureTransformEXT` (0x4E560006). Existing structs are unchanged. The 32-bit bridge does not forward it.
+- Commits: the commit that adds this entry.
+- Docs: [TextureTransforms.md](../documentation/TextureTransforms.md)
+
+### Remix API: partial texture updates
+`remixapi_UpdateTexture` writes rectangles of a `CreateTexture` texture in place and regenerates the lower mips of only the changed area, so cost follows changed pixels rather than texture size. Materials, meshes and BLASes are untouched. A patch drops the opacity micromaps baked from that texture under `rtx.opacityMicromap.rebakeOnTextureChange`.
+- Options: none.
+- Commits: the commit that adds this entry.
+- Docs: [RemixApi.md](RemixApi.md)
+
+### Remix API: in-place material updates
+`remixapi_UpdateMaterial` changes a live material and keeps its handle. Parameters and textures other than the albedo write the material's GPU data and rebuild nothing, so a host can drive wetness, emissive changes and tints per frame. Changes that BLAS flags or opacity micromaps depend on fall back to rebuilding the users. API materials now hold surface material slots of their own instead of sharing them by content, and the `[MaterialUpdate]` log line counts both paths. A material is written in place while it has no users too, and a write is uploaded even in a frame whose scene is unchanged.
+- Options: none.
+- Commits: the commit that adds this entry.
+- Docs: [RemixApi.md](RemixApi.md)
+
+### Remix API: config layers
+A host can load a sparse `.conf`, or key and value pairs from memory under a name of its own, as an option layer and fade it, for authored looks such as weather and interiors, with `remixapi_CreateConfigLayer`, `remixapi_SetConfigLayerBlends` and `remixapi_DestroyConfigLayer`. Blends persist until the host changes them, and a player's settings always win. `remixapi_GetConfigValue` reads a resolved value, and `SetConfigVariable` now writes `NoSave` options to the Derived layer, so the runtime's menus can still change them.
+- Options: none.
+- Commits: the commit that adds this entry.
+- Docs: [RemixApi.md](RemixApi.md)
 ## 2026-11-05
 
 ### Quadtree-only terrain relief and startup shader compilation

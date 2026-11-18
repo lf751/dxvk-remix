@@ -14,6 +14,11 @@
 #include "rtx_fork_d3d9_alpha.h"
 #include "rtx_light_manager.h"
 #include "rtx_rtxdi_rayquery.h"
+#include "rtx_sharc.h"
+#include "rtx_pt_performance.h"
+#include "rtx_raster_first_hit.h"
+#include "rtx_sparse_rendering.h"
+#include "rtx_pathtracer_integrate_indirect.h"
 #include "rtx_options.h"
 #include "../dxvk_device.h"
 #include "../dxvk_cs.h"
@@ -50,6 +55,12 @@ namespace dxvk {
     std::string f2(double v) {
       char buf[32];
       std::snprintf(buf, sizeof(buf), "%.2f", v);
+      return buf;
+    }
+
+    std::string f3(double v) {
+      char buf[32];
+      std::snprintf(buf, sizeof(buf), "%.3f", v);
       return buf;
     }
 
@@ -218,6 +229,22 @@ namespace dxvk {
       return;
     }
     m_lastFrameId = frameId;
+
+    // A frame this long is the game not presenting at all (an unfocused window, a modal dialog, a debugger):
+    // the window so far is logged and a new one starts, so the pause does not stand for the play around it.
+    const double gapMs = double(nowNs - m_lastFrameNs) / 1e6;
+    if (m_started && gapMs > kPauseMs) {
+      Logger::info(str::format("[PerfFrame] no frame for ", uint32_t(gapMs / 1000.0), " s before frame ", frameId,
+        ": the pause is left out, and the ", m_w.frames, " frames before it are logged as a short window"));
+      if (m_w.frames > 0) {
+        logInterval(ctx);
+      }
+      Changes discard;
+      readChanges(ctx, discard);
+      snapshot();
+      startWindow();
+      return;
+    }
 
     if (!m_started) {
       m_started = true;
@@ -417,15 +444,22 @@ namespace dxvk {
       " | spikes=", w.spikes, " logged=", w.spikesLogged,
       " | gpuStalls=", stalls, " longestFenceWaitMs=", perf::g_gpuStallMaxWaitMs.load(std::memory_order_relaxed)));
 
-    // GPU stages sorted by p50, all stages with p95 >= 0.05 ms.
+    // GPU stages sorted by avg, all stages with p95 >= 0.05 ms.
+    // PresentGateGap is GPU idle time behind the present wait, not GPU work, so it follows the stages on its own.
     if (w.gpuSamples > 0) {
       struct Row { size_t idx; Pct p; };
       std::vector<Row> rows;
+      std::string idle;
       for (size_t i = 0; i < w.gpuStageMs.size() && i < m_labels.size(); ++i) {
         if (w.gpuStageMs[i].empty()) {
           continue;
         }
         Row row { i, percentiles(w.gpuStageMs[i]) };
+        if (std::strcmp(m_labels[i], "PresentGateGap") == 0) {
+          idle = str::format(" | GPU idle, not in gpuRemixMs (p50/p95/max/avg ms): PresentGateGap=", f2(row.p.p50), "/",
+                             f2(row.p.p95), "/", f2(row.p.max), "/", f2(row.p.avg));
+          continue;
+        }
         if (row.p.p95 >= 0.05f) {
           rows.push_back(row);
         }
@@ -435,7 +469,7 @@ namespace dxvk {
       for (const Row& row : rows) {
         s += str::format(" ", m_labels[row.idx], "=", f2(row.p.p50), "/", f2(row.p.p95), "/", f2(row.p.max));
       }
-      Logger::info(s);
+      Logger::info(s + idle);
     }
 
     // CPU (Remix CS thread; injectRTX runs there together with the game's D3D11 command stream).
@@ -603,6 +637,27 @@ namespace dxvk {
     // Render/output resolution from the most recent frame in the ring.
     const FrameRec& last = m_ring[(ctx.getDevice()->getCurrentFrameId()) % kRing];
 
+    // Performance mode's cache counters since the last line, in percent, or "-" where nothing was counted.
+    const DxvkPathtracerIntegrateIndirect::PtPerformanceCounters ptPerformanceCounters =
+      ctx.getCommonObjects()->metaPathtracerIntegrateIndirect().takePtPerformanceCounters();
+    const auto& rc = ptPerformanceCounters.counts;
+
+    // The sampling rate sparse rendering applies this frame, 0 while it does not run.
+    const SparseRendering& sparseRendering = ctx.getCommonObjects()->metaSparseRendering();
+    const float sparseRate = sparseRendering.isActive() ? sparseRendering.getSamplingRate() : 0.0f;
+
+    // The distance in meters from which indirect rays treat alpha-tested surfaces as solid, negative while none do.
+    const bool nvidiaGpu = ctx.getDevice()->adapter()->deviceProperties().vendorID == static_cast<uint32_t>(DxvkGpuVendor::Nvidia);
+    const float alphaOpaqueDistance = PtPerformance::active() ? PtPerformance::resolvedIndirectAlphaOpaqueDistance(nvidiaGpu) : -1.0f;
+
+    const auto pctOrDash = [](uint64_t a, uint64_t b) { return b ? f2(100.0 * double(a) / double(b)) : std::string("-"); };
+    // The first queries the adaptive cache update interval counts (RtxSharc::onPtPerformanceCounters).
+    const uint64_t unresolvableQueries = rc[PT_PERFORMANCE_COUNTER_MISS_REJECTED] + rc[PT_PERFORMANCE_COUNTER_MISS_TOO_CLOSE] +
+                                         rc[PT_PERFORMANCE_COUNTER_MISS_FOOTPRINT];
+    const uint64_t resolvableQueries = rc[PT_PERFORMANCE_COUNTER_CACHE_QUERIES] > unresolvableQueries
+      ? rc[PT_PERFORMANCE_COUNTER_CACHE_QUERIES] - unresolvableQueries
+      : 0;
+
     Logger::info(str::format("[SceneStats] tlasInstances=", accel.getTlasInstanceCount(),
       " piSlots=", accel.getPointInstancerSlotCount(), " piBatches=", accel.getPointInstancerBatchCount(),
       " surfaces=", instances, " hidden=", hidden,
@@ -620,11 +675,32 @@ namespace dxvk {
       " sphere=", lightsByType[uint32_t(RtLightType::Sphere)], " rect=", lightsByType[uint32_t(RtLightType::Rect)],
       " disk=", lightsByType[uint32_t(RtLightType::Disk)], " cylinder=", lightsByType[uint32_t(RtLightType::Cylinder)],
       " distant=", lightsByType[uint32_t(RtLightType::Distant)],
-      " rtxdiInitialSamples=", DxvkRtxdiRayQuery::initialSampleCount(), " risLightSamples=", RtxOptions::risLightSampleCount(),
+      " rtxdiInitialSamples=", DxvkRtxdiRayQuery::effectiveInitialSampleCount(), " risLightSamples=", RtxOptions::risLightSampleCount(),
       " | portals=", scene.getRayPortalManager().getRayPortalInfoSceneData().numActiveRayPortals,
       " portalDuplicatesHidden=", scene.getRayPortalManager().getDuplicatesHidden(),
-      " | bounces=", uint32_t(RtxOptions::pathMinBounces()), "-", uint32_t(RtxOptions::pathMaxBounces()),
-      " indirectMode=", int(RtxOptions::integrateIndirectMode()), " (0 IS,1 ReSTIR-GI,2 NRC,3 SHaRC)",
+      " | bounces=", uint32_t(RtxOptions::resolvedPathMinBounces()), "-", uint32_t(RtxOptions::resolvedPathMaxBounces()),
+      " indirectMode=", int(RtxOptions::resolvedIntegrateIndirectMode()), " (0 IS,1 ReSTIR-GI,2 NRC,3 SHaRC)",
+      " indirectFromCache=", RtxSharc::indirectFromCache() ? 1 : 0,
+      " ptPerformance=", PtPerformance::active() ? 1 : 0, " neeCache=", ctx.getCommonObjects()->metaNeeCache().isActive() ? 1 : 0,
+      " firstHit=", ctx.getCommonObjects()->metaRasterFirstHit().isActive() ? 1 : 0,
+      " firstHitAuto=", !PtPerformance::active() || PtPerformance::firstHit() != PtPerformanceFirstHit::Auto ? "-" : PtPerformance::firstHitRaster() ? "raster" : "trace",
+      " sparseRate=", f3(sparseRate),
+      " separateDenoisers=", RtxOptions::resolvedDenoiseDirectAndIndirectLightingSeparately() ? 1 : 0,
+      " reducedDenoiser=", PtPerformance::reducesDenoiser() ? 1 : 0,
+      " indirectAlphaOpaqueFrom=", alphaOpaqueDistance < 0.0f ? std::string("-") : f2(alphaOpaqueDistance),
+      " cacheHit=", pctOrDash(rc[PT_PERFORMANCE_COUNTER_CACHE_HITS], rc[PT_PERFORMANCE_COUNTER_CACHE_QUERIES]),
+      " cacheHitResolvable=", pctOrDash(rc[PT_PERFORMANCE_COUNTER_CACHE_HITS], resolvableQueries),
+      " extraBounce=", pctOrDash(rc[PT_PERFORMANCE_COUNTER_EXTRA_QUERIES], rc[PT_PERFORMANCE_COUNTER_CACHE_QUERIES]),
+      " extraCacheHit=", pctOrDash(rc[PT_PERFORMANCE_COUNTER_EXTRA_HITS], rc[PT_PERFORMANCE_COUNTER_EXTRA_QUERIES]),
+      " missReject=", pctOrDash(rc[PT_PERFORMANCE_COUNTER_MISS_REJECTED], rc[PT_PERFORMANCE_COUNTER_CACHE_QUERIES]),
+      " missClose=", pctOrDash(rc[PT_PERFORMANCE_COUNTER_MISS_TOO_CLOSE], rc[PT_PERFORMANCE_COUNTER_CACHE_QUERIES]),
+      " missFootprint=", pctOrDash(rc[PT_PERFORMANCE_COUNTER_MISS_FOOTPRINT], rc[PT_PERFORMANCE_COUNTER_CACHE_QUERIES]),
+      " missNoEntry=", pctOrDash(rc[PT_PERFORMANCE_COUNTER_MISS_NO_ENTRY], rc[PT_PERFORMANCE_COUNTER_CACHE_QUERIES]),
+      " missUnfilled=", pctOrDash(rc[PT_PERFORMANCE_COUNTER_MISS_UNFILLED], rc[PT_PERFORMANCE_COUNTER_CACHE_QUERIES]),
+      " sky=", pctOrDash(rc[PT_PERFORMANCE_COUNTER_SKY], rc[PT_PERFORMANCE_COUNTER_CACHE_QUERIES] + rc[PT_PERFORMANCE_COUNTER_SKY]),
+      " cacheUpdate=", ctx.getCommonObjects()->metaSharc().getUpdateTileSize(), "/",
+      ctx.getCommonObjects()->metaSharc().getUpdateInterval(),
+      " countedFrames=", ptPerformanceCounters.frames,
       " | render=", last.cpu.renderW, "x", last.cpu.renderH, " output=", last.cpu.outputW, "x", last.cpu.outputH,
       " upscaler=", int(RtxOptions::upscalerType()), " rayReconstruction=", RtxOptions::isRayReconstructionEnabled() ? 1 : 0,
       " dlssProfile=", int(RtxOptions::qualityDLSS()), " dlssNR=", last.cpu.dlssNr ? 1 : 0,

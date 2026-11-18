@@ -203,6 +203,7 @@ namespace dxvk {
       ImGui::BeginDisabled(!enable());
       RemixGui::Checkbox("Enable Spawning", &enableSpawningObject());
       RemixGui::DragFloat("Time Scale", &timeScaleObject(), 0.01f, 0.f, 1.f, "%.2f");
+      RemixGui::DragFloat("Min Screen Size", &minScreenSizeObject(), 0.05f, 0.f, 16.f, "%.2f px");
 
       if (RemixGui::CollapsingHeader("Emitter Discontinuity Lerp Guard", ImGuiTreeNodeFlags_CollapsingHeader)) {
         ImGui::Indent();
@@ -382,7 +383,7 @@ namespace dxvk {
     constants.absoluteTimeSecs = GlobalTime::get().absoluteTimeMs() * 0.001f * timeScale();
 
     constants.resolveTransparencyThreshold = RtxOptions::resolveTransparencyThreshold();
-    constants.minParticleSize = 2.f; // NOTE: In pixels
+    constants.minParticleSize = minScreenSize(); // In pixels of the render resolution
     constants.sceneScale = RtxOptions::sceneScale();
 
     // Whether the spawn kernel has a TLAS to trace. Simulation runs before AccelManager::prepareSceneData builds
@@ -481,10 +482,15 @@ namespace dxvk {
       // Strip out any custom particle defined in the target material to avoid creating duplicated, nested systems.
       MaterialData particleRenderMaterial(renderMaterialData);
       particleRenderMaterial.m_particleSystem = std::nullopt;
+      // The system keeps this copy, which an in-place update of an API material cannot reach. That material's updates rebuild.
+      particleRenderMaterial.markInstancePatched();
 
       if(disableMaterialSpriteSheet) {
         // Disable the material spritesheet
         particleRenderMaterial.setSpriteSheetData(1, 1, 0);
+
+        // The particle UVs already select a sprite, so a material texture transform would sample the wrong part of the atlas.
+        particleRenderMaterial.resetTextureTransform();
       }
 
       auto pNewParticleSystem = std::make_shared<ParticleSystem>(desc, particleRenderMaterial, drawCallState.getMaterialData(), drawCallState.getCategoryFlags(), m_particleSystemCounter++);

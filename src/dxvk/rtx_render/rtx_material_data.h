@@ -21,6 +21,10 @@
 */
 #pragma once
 
+#include <algorithm>
+#include <cmath>
+#include <string_view>
+
 #include "../../lssusd/mdl_helpers.h"
 
 #include "../../lssusd/usd_include_begin.h"
@@ -32,6 +36,13 @@
 // Note: These material ranges and defaults should be kept in sync with the MDL ranges to prevent mismatching between how data is clamped.
 
 // clang-format off
+#define LIST_TEXTURE_TRANSFORM_CONSTANTS(X) \
+  X(TextureScrollRate,  texture_scroll_rate,  float,   -65504.f,         65504.f,         0.f) \
+  X(TextureScrollAngle, texture_scroll_angle, float,   -65504.f,         65504.f,         0.f) \
+  X(TextureScale,       texture_scale,        Vector2, Vector2(-65504.f), Vector2(65504.f), Vector2(1.f)) \
+  X(TextureOffset,      texture_offset,       Vector2, Vector2(-65504.f), Vector2(65504.f), Vector2(0.f)) \
+  X(TextureRotation,    texture_rotation,     float,   -65504.f,         65504.f,         0.f)
+
 #define LIST_OPAQUE_MATERIAL_TEXTURES(X) \
   /*Parameter Name,                          USD Token String,                     Type,       UNUSED...   Default Value */ \
   X(AlbedoOpacityTexture,                    diffuse_texture,                      TextureRef, void, void, {}) \
@@ -101,7 +112,8 @@
   X(SpecularMetalParams,              specular_metal_params,                  Vector3,        Vector3(0.f),               Vector3(1.f),               Vector3(0.35f, 0.65f, 1.f)) \
   X(SpecularMetalTint,                specular_metal_tint,                    Vector3,        Vector3(0.f),               Vector3(1.f),               Vector3(0.f)) \
   /* Gamma-space RGB multiplier on the sampled albedo texture (remixapi_MaterialInfoOpaqueAlbedoTintEXT). */ \
-  X(AlbedoTint,                       albedo_tint,                            Vector3,        Vector3(0.f),               Vector3(16.f),              Vector3(1.f))
+  X(AlbedoTint,                       albedo_tint,                            Vector3,        Vector3(0.f),               Vector3(16.f),              Vector3(1.f)) \
+  LIST_TEXTURE_TRANSFORM_CONSTANTS(X)
 
 #define LIST_OPAQUE_MATERIAL_PARAMS(X)\
   LIST_OPAQUE_MATERIAL_TEXTURES(X) \
@@ -138,7 +150,8 @@
   /* Sampler State */ \
   X(FilterMode,                       filter_mode,                        uint8_t,  lss::Mdl::Filter::Nearest,  lss::Mdl::Filter::Linear,  lss::Mdl::Filter::Linear)  \
   X(WrapModeU,                        wrap_mode_u,                        uint8_t,  lss::Mdl::WrapMode::Clamp,  lss::Mdl::WrapMode::Clip,  lss::Mdl::WrapMode::Repeat) \
-  X(WrapModeV,                        wrap_mode_v,                        uint8_t,  lss::Mdl::WrapMode::Clamp,  lss::Mdl::WrapMode::Clip,  lss::Mdl::WrapMode::Repeat)
+  X(WrapModeV,                        wrap_mode_v,                        uint8_t,  lss::Mdl::WrapMode::Clamp,  lss::Mdl::WrapMode::Clip,  lss::Mdl::WrapMode::Repeat) \
+  LIST_TEXTURE_TRANSFORM_CONSTANTS(X)
 
 #define LIST_TRANSLUCENT_MATERIAL_PARAMS(X)\
   LIST_TRANSLUCENT_MATERIAL_TEXTURES(X) \
@@ -169,6 +182,13 @@
   LIST_PORTAL_MATERIAL_TEXTURES(X) \
   LIST_PORTAL_MATERIAL_CONSTANTS(X)
 // clang-format on
+
+// Texture transform constants enter a material's hash only with a non-default value.
+// The hash is the default API material key, so materials without a transform keep their keys.
+constexpr bool isHashedOnlyWhenSet(std::string_view name) {
+  return name == "TextureScrollRate" || name == "TextureScrollAngle" || name == "TextureScale" ||
+         name == "TextureOffset" || name == "TextureRotation";
+}
 
 #define WRITE_CTOR_ARGS(name, usd_attr, type, minVal, maxVal, defaultVal) \
       const type& name,
@@ -221,7 +241,9 @@
       h += m_##name.getImageHash();
 
 #define WRITE_CONSTANT_HASH(name, usd_attr, type, minVal, maxVal, defaultVal) \
-      h = XXH64(&m_##name, sizeof(m_##name), h);
+      if (!isHashedOnlyWhenSet(#name) || m_##name != defaultVal) { \
+        h = XXH64(&m_##name, sizeof(m_##name), h); \
+      }
 
 #define WRITE_PARAMETER_MEMBERS(name, usd_attr, type, minVal, maxVal, defaultVal) \
       type m_##name = defaultVal;
@@ -230,7 +252,7 @@
       k_##name,
 
 
-#define REMIX_MATERIAL(name, X_CONSTANTS, X_TEXTURES, X_PARAMS)                                      \
+#define REMIX_MATERIAL(name, X_CONSTANTS, X_TEXTURES, X_PARAMS, LAYERS)                              \
 struct name##Data {                                                                                  \
   /* Instantiates a material with all parameters set to default values */                            \
   name##Data() = default;                                                                            \
@@ -263,6 +285,23 @@ struct name##Data {                                                             
                                                                                                      \
   void merge(const name##Data& input)  {                                                             \
     X_PARAMS(WRITE_PARAMETER_MERGE)                                                                  \
+    if (!m_layers.isSet()) {                                                                         \
+      m_layers = input.m_layers;                                                                     \
+    }                                                                                                \
+    updateCachedHash();                                                                              \
+  }                                                                                                  \
+                                                                                                     \
+  const LAYERS& getLayers() const {                                                                  \
+    return m_layers;                                                                                 \
+  }                                                                                                  \
+                                                                                                     \
+  /* Gives the layers' textures to refreshes that keep the image hash. Other changes use setLayers. */ \
+  LAYERS& getLayers() {                                                                              \
+    return m_layers;                                                                                 \
+  }                                                                                                  \
+                                                                                                     \
+  void setLayers(const LAYERS& layers) {                                                             \
+    m_layers = layers;                                                                               \
     updateCachedHash();                                                                              \
   }                                                                                                  \
                                                                                                      \
@@ -307,6 +346,9 @@ private:                                                                        
     XXH64_hash_t h = 0;                                                                              \
     X_TEXTURES(WRITE_TEXTURE_HASH)                                                                   \
     X_CONSTANTS(WRITE_CONSTANT_HASH)                                                                 \
+    if (m_layers.isSet()) {                                                                          \
+      h = m_layers.hash(h);                                                                          \
+    }                                                                                                \
     m_cachedHash = h;                                                                                \
   }                                                                                                  \
                                                                                                      \
@@ -317,17 +359,164 @@ private:                                                                        
   };                                                                                                 \
                                                                                                      \
   Flags<DirtyFlags> m_dirty { 0 };                                                                   \
+  LAYERS m_layers {};                                                                                \
   XXH64_hash_t m_cachedHash { 0 };                                                                   \
   Rc<DxvkSampler> m_samplerOverride = nullptr;                                                       \
   bool m_ignoreAlphaChannelOverride = false;                                                         \
 };
 
 namespace dxvk {
-  REMIX_MATERIAL(OpaqueMaterial, LIST_OPAQUE_MATERIAL_CONSTANTS, LIST_OPAQUE_MATERIAL_TEXTURES, LIST_OPAQUE_MATERIAL_PARAMS)
-  REMIX_MATERIAL(TranslucentMaterial, LIST_TRANSLUCENT_MATERIAL_CONSTANTS, LIST_TRANSLUCENT_MATERIAL_TEXTURES, LIST_TRANSLUCENT_MATERIAL_PARAMS)
-  REMIX_MATERIAL(RayPortalMaterial, LIST_PORTAL_MATERIAL_CONSTANTS, LIST_PORTAL_MATERIAL_TEXTURES, LIST_PORTAL_MATERIAL_PARAMS)
+  // Layers of a material that only the Remix API sets. They are not USD parameters, and a material without them hashes
+  // as before. merge keeps a material's own layers and takes the input's when it has none.
+  struct NoMaterialLayers {
+    bool isSet() const {
+      return false;
+    }
+
+    XXH64_hash_t hash(XXH64_hash_t h) const {
+      return h;
+    }
+  };
+
+  // The opaque material's layers: the detail normal and the masked layer read with the second texture coordinate set
+  // (remixapi_MaterialInfoOpaqueDetailLayersEXT, documentation/SecondaryTexcoordLayers.md), and the clear coat and the
+  // pearlescent tint (remixapi_MaterialInfoOpaqueClearCoatEXT, documentation/ClearCoatMaterial.md).
+  struct OpaqueMaterialLayers {
+    TextureRef detailNormalTexture;
+    float detailNormalStrength = 0.f;
+    Vector2 detailNormalTexcoordScale = Vector2(1.f);
+
+    TextureRef layerMaskTexture;
+    // 0: red, 1: green, 2: blue, 3: alpha.
+    uint32_t layerMaskChannel = 0;
+    float layerMaskStrength = 0.f;
+    // Gamma-encoded.
+    Vector3 layerAlbedo = Vector3(0.f);
+    float layerRoughness = 0.5f;
+    float layerMetallic = 0.f;
+    Vector2 layerTexcoordScale = Vector2(1.f);
+
+    float clearCoatWeight = 0.f;
+    // Perceptual.
+    float clearCoatRoughness = 0.05f;
+    // Gamma-encoded.
+    Vector3 pearlescentColor = Vector3(0.f);
+    float pearlescentWeight = 0.f;
+    float pearlescentExponent = 3.f;
+
+    // The vertex colour weights of the detail layers (remixapi_MaterialInfoOpaqueDetailLayerWeightsEXT).
+    static constexpr uint32_t kVertexWeightDetailNormal = 1 << 0;
+    static constexpr uint32_t kVertexWeightLayerMaskThreshold = 1 << 1;
+    uint32_t vertexWeightFlags = 0;
+    // 0: red, 1: green, 2: blue, 3: alpha.
+    uint32_t detailNormalWeightChannel = 0;
+    uint32_t layerMaskWeightChannel = 0;
+    // The width of the layer mask's fade around the threshold, 0..1. 0 is a hard step.
+    float layerMaskEdgeWidth = 0.f;
+
+    bool hasDetailNormal() const {
+      return detailNormalStrength > 0.f;
+    }
+
+    bool hasMaskedLayer() const {
+      return layerMaskStrength > 0.f;
+    }
+
+    bool hasDetailNormalVertexWeight() const {
+      return hasDetailNormal() && (vertexWeightFlags & kVertexWeightDetailNormal);
+    }
+
+    bool hasLayerMaskVertexThreshold() const {
+      return hasMaskedLayer() && (vertexWeightFlags & kVertexWeightLayerMaskThreshold);
+    }
+
+    bool hasClearCoat() const {
+      return clearCoatWeight > 0.f;
+    }
+
+    bool hasPearlescent() const {
+      return pearlescentWeight > 0.f;
+    }
+
+    bool isSet() const {
+      return hasDetailNormal() || hasMaskedLayer() || hasClearCoat() || hasPearlescent();
+    }
+
+    // Clamps the values to the ranges the GPU encoding holds.
+    // A non-finite value becomes 0.
+    void sanitize() {
+      const auto unit = [](float v) {
+        return std::isfinite(v) ? std::clamp(v, 0.f, 1.f) : 0.f;
+      };
+      const auto scale = [](float v) {
+        return std::isfinite(v) ? std::clamp(v, -65504.f, 65504.f) : 0.f;
+      };
+      detailNormalStrength = unit(detailNormalStrength);
+      detailNormalTexcoordScale = Vector2(scale(detailNormalTexcoordScale.x), scale(detailNormalTexcoordScale.y));
+      layerMaskChannel = std::min(layerMaskChannel, 3u);
+      layerMaskStrength = unit(layerMaskStrength);
+      layerAlbedo = Vector3(unit(layerAlbedo.x), unit(layerAlbedo.y), unit(layerAlbedo.z));
+      layerRoughness = unit(layerRoughness);
+      layerMetallic = unit(layerMetallic);
+      layerTexcoordScale = Vector2(scale(layerTexcoordScale.x), scale(layerTexcoordScale.y));
+      clearCoatWeight = unit(clearCoatWeight);
+      clearCoatRoughness = unit(clearCoatRoughness);
+      pearlescentColor = Vector3(unit(pearlescentColor.x), unit(pearlescentColor.y), unit(pearlescentColor.z));
+      pearlescentWeight = unit(pearlescentWeight);
+      pearlescentExponent = std::isfinite(pearlescentExponent) ? std::clamp(pearlescentExponent, 0.1f, 32.f) : 3.f;
+      vertexWeightFlags &= kVertexWeightDetailNormal | kVertexWeightLayerMaskThreshold;
+      detailNormalWeightChannel = std::min(detailNormalWeightChannel, 3u);
+      layerMaskWeightChannel = std::min(layerMaskWeightChannel, 3u);
+      layerMaskEdgeWidth = unit(layerMaskEdgeWidth);
+    }
+
+    XXH64_hash_t hash(XXH64_hash_t h) const {
+      struct HashStruct {
+        float detailNormalStrength;
+        Vector2 detailNormalTexcoordScale;
+        uint32_t layerMaskChannel;
+        float layerMaskStrength;
+        Vector3 layerAlbedo;
+        float layerRoughness;
+        float layerMetallic;
+        Vector2 layerTexcoordScale;
+        float clearCoatWeight;
+        float clearCoatRoughness;
+        Vector3 pearlescentColor;
+        float pearlescentWeight;
+        float pearlescentExponent;
+      };
+      const HashStruct hashData {
+        detailNormalStrength, detailNormalTexcoordScale, layerMaskChannel, layerMaskStrength,
+        layerAlbedo, layerRoughness, layerMetallic, layerTexcoordScale,
+        clearCoatWeight, clearCoatRoughness, pearlescentColor, pearlescentWeight, pearlescentExponent
+      };
+      h = XXH64(&hashData, sizeof(hashData), h);
+
+      // A material without vertex weights hashes only the values above.
+      if (vertexWeightFlags) {
+        struct WeightHashStruct {
+          uint32_t vertexWeightFlags;
+          uint32_t detailNormalWeightChannel;
+          uint32_t layerMaskWeightChannel;
+          float layerMaskEdgeWidth;
+        };
+        const WeightHashStruct weightHashData { vertexWeightFlags, detailNormalWeightChannel, layerMaskWeightChannel, layerMaskEdgeWidth };
+        h = XXH64(&weightHashData, sizeof(weightHashData), h);
+      }
+
+      h += detailNormalTexture.getImageHash();
+      h += layerMaskTexture.getImageHash() * 3;
+      return h;
+    }
+  };
+
+  REMIX_MATERIAL(OpaqueMaterial, LIST_OPAQUE_MATERIAL_CONSTANTS, LIST_OPAQUE_MATERIAL_TEXTURES, LIST_OPAQUE_MATERIAL_PARAMS, OpaqueMaterialLayers)
+  REMIX_MATERIAL(TranslucentMaterial, LIST_TRANSLUCENT_MATERIAL_CONSTANTS, LIST_TRANSLUCENT_MATERIAL_TEXTURES, LIST_TRANSLUCENT_MATERIAL_PARAMS, NoMaterialLayers)
+  REMIX_MATERIAL(RayPortalMaterial, LIST_PORTAL_MATERIAL_CONSTANTS, LIST_PORTAL_MATERIAL_TEXTURES, LIST_PORTAL_MATERIAL_PARAMS, NoMaterialLayers)
 }
 
+#undef LIST_TEXTURE_TRANSFORM_CONSTANTS
 #undef LIST_OPAQUE_MATERIAL_TEXTURES
 #undef LIST_OPAQUE_MATERIAL_CONSTANTS
 #undef LIST_OPAQUE_MATERIAL_PARAMS

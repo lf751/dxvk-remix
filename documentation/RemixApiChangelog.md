@@ -5,6 +5,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- 2026-11-18: a second texture coordinate set for API meshes and two material layers that read it.
+  `remixapi_MeshInfoSecondaryTexcoordEXT` (`REMIXAPI_STRUCT_TYPE_MESH_INFO_SECONDARY_TEXCOORD_EXT`, `0x4E560008`)
+  chains on `remixapi_MeshInfo` with one `remixapi_MeshInfoSurfaceSecondaryTexcoord` per surface.
+  `remixapi_MaterialInfoOpaqueDetailLayersEXT` (`REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_DETAIL_LAYERS_EXT`,
+  `0x4E560009`) chains next to `remixapi_MaterialInfoOpaqueEXT` and adds a detail normal map and a masked albedo,
+  roughness and metallic layer on the second set. `remixapi_MaterialInfoOpaqueDetailLayerWeightsEXT`
+  (`REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_DETAIL_LAYER_WEIGHTS_EXT`, `0x4E56000B`) chains next to the detail layers
+  and weights them by a vertex colour channel: the detail normal's strength, and a per-vertex threshold that reveals the
+  layer mask with a smoothstep edge, `smoothstep(t - e, t + e, m)` with `t = (1 - w) * (1 + 2e) - e` and
+  `e = layerMaskEdgeWidth / 2` (`remixapi_DetailLayerWeightFlagBits`, `layerMaskEdgeWidth`). The named export
+  `remixapi_GetSecondaryTexcoordVersion` returns 2: revision 1 is the second set and the detail layers, and revision 2
+  adds the vertex colour weights. See `documentation/SecondaryTexcoordLayers.md`.
+- 2026-11-18: `remixapi_MaterialInfoOpaqueClearCoatEXT` (`REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_CLEAR_COAT_EXT`,
+  `0x4E56000A`) chains next to `remixapi_MaterialInfoOpaqueEXT` and adds a clear coat (weight, roughness; index of
+  refraction 1.5) and a pearlescent tint (colour, weight, exponent), for lacquered and coated surfaces. The named export
+  `remixapi_GetClearCoatMaterialVersion` returns 1. See `documentation/ClearCoatMaterial.md`.
+- 2026-11-02: `remixapi_UpdateTexture`, a named export that writes rectangles of a
+  `CreateTexture` texture in place and regenerates the lower mips of the changed area.
+  Adds `remixapi_TextureUpdateInfo` and `remixapi_TextureUpdateRect`.
+- 2026-11-02: `remixapi_UpdateMaterial`, a named export that changes a live
+  material and keeps its handle. Parameters and textures other than the albedo
+  rebuild nothing. Alpha, blend, opacity, the albedo texture and the sampler rebuild
+  the users. A change of material type returns `INVALID_ARGUMENTS`.
+- 2026-11-02: config layers. The named exports `remixapi_CreateConfigLayer`,
+  `remixapi_SetConfigLayerBlends` and `remixapi_DestroyConfigLayer` load a sparse
+  `.conf` or in-memory key and value pairs (`remixapi_ConfigLayerValue`) as an option
+  layer that the host fades, ranked above `rtx.conf` and below
+  user settings and quality presets. `remixapi_GetConfigValue` reads an option's
+  resolved value as `.conf` text. Adds `remixapi_ConfigLayerInfoEXT`
+  (`REMIXAPI_STRUCT_TYPE_CONFIG_LAYER_INFO_EXT`, `0x4E560005`),
+  `remixapi_ConfigLayerBlend` and `REMIXAPI_ERROR_CODE_BUFFER_TOO_SMALL` (`0x4E560002`).
+
+### Changed
+- 2026-11-02: `SetConfigVariable` writes an option flagged `NoSave` to the Derived
+  layer instead of the User layer, so the runtime's menus can change it afterwards.
+
 ### Removed
 - 2026-10-21: the named export `remixapi_fork_ReplayIdentityTrace` and its
   result struct `remixapi_fork_IdentityReplayResult`, with the D3D9 identity
@@ -64,6 +101,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `requestHostRelease` is set from level 2 (High) by default.
 
 ### Added
+- 2026-11-03: `remixapi_InstanceInfoDecalOrderEXT`
+  (`REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_DECAL_ORDER_EXT` = 0x4E560007), chained on
+  `remixapi_InstanceInfo` for `DrawInstance`, `CreateRetainedInstance(s)` and
+  `UpdateRetainedInstance`. It sets a decal instance's draw order, 0 to 255: overlapping
+  decals composite from the lowest order up. A value past 255 returns
+  `REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS`. Instances without a `DECAL_*` category ignore it,
+  and without the struct decals keep the runtime's order. The bridge does not forward it.
+  `remixapi_Interface` and `REMIXAPI_VERSION` are unchanged. docs/RemixApi.md, "Decal order".
+- 2026-11-02: `remixapi_MaterialInfoTextureTransformEXT`
+  (`REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_TEXTURE_TRANSFORM_EXT` = 0x4E560006), chained onto
+  `remixapi_MaterialInfo` to scale, rotate, offset and scroll an opaque or translucent material's
+  textures. Existing structs are unchanged, a material without it has identity controls, and a
+  runtime that predates it ignores it. The 32-bit bridge does not forward it. See
+  `documentation/TextureTransforms.md`.
 - 2026-10-30: The 32-bit D3D9 bridge now forwards `AddTextureHash` and `dxvk_GetTextureHash` through existing interface
   slots, allowing clients to classify textures using the runtime's 64-bit content hashes. The calls return the server's
   result synchronously. No interface layout or API version changes. The bridge client and server must be built together.

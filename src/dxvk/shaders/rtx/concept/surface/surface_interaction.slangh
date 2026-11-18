@@ -239,6 +239,131 @@ void calcSpritesheetValues(
   uvBias = vec2(frame % spriteSheetCols, frame / spriteSheetCols) * uvSize;
 }
 
+// Returns a vertex's texture coordinate before the texture transform. It is read from the texture coordinate buffer, or
+// generated from the vertex's world position or normal as the surface's texture coordinate generation mode says.
+// Cascaded view positions give the coordinate of the first cascade.
+// The raster first hit's vertex shader shares it, so both find the same coordinates.
+vec4 surfaceRawTextureCoordinate(Surface surface, uint vertexIndex, vec3 worldPosition)
+{
+  if (surface.texcoordGenerationMode == uint(TexGenMode::ViewPositions) ||
+      surface.texcoordGenerationMode == uint(TexGenMode::CascadedViewPositions))
+  {
+    return mul(cb.camera.worldToView, float4(worldPosition, 1.f));
+  }
+
+  if (surface.texcoordGenerationMode == uint(TexGenMode::ViewNormals))
+  {
+    const uint normalBufferIndex = surface.normalBufferIndex;
+    const uint normalElementIndex = (vertexIndex * uint(surface.normalStride) + surface.normalOffset) / 4;
+
+    float3 normal;
+    normal.x = BUFFER_ARRAY(geometries, normalBufferIndex, normalElementIndex + 0);
+    normal.y = BUFFER_ARRAY(geometries, normalBufferIndex, normalElementIndex + 1);
+    normal.z = BUFFER_ARRAY(geometries, normalBufferIndex, normalElementIndex + 2);
+
+    normal = normalize(mul(surface.normalObjectToWorld, normal));
+
+    return mul(cb.camera.worldToView, float4(normal, 0.f));
+  }
+
+  const uint texcoordBufferIndex = surface.texcoordBufferIndex;
+  const uint texcoordElementIndex = (vertexIndex * uint(surface.texcoordStride) + surface.texcoordOffset) / 4;
+
+  const vec2 loadedTextureCoordinate = vec2(
+    BUFFER_ARRAY(geometries, texcoordBufferIndex, texcoordElementIndex + 0),
+    BUFFER_ARRAY(geometries, texcoordBufferIndex, texcoordElementIndex + 1)
+  );
+
+  // Every component past the loaded two is 1. For transforms that read more than two components it should be 0 up to
+  // the transform's element count and 1 past it (see DXVK's d3d9_fixed_function.cpp).
+  return float4(loadedTextureCoordinate, 1.0f, 1.0f);
+}
+
+// Returns a vertex's color 0 (VK_FORMAT_B8G8R8A8_UNORM), or white when the surface has no vertex colors.
+// The raster first hit's vertex shader shares it.
+vec4 surfaceVertexColor(Surface surface, uint vertexIndex)
+{
+  if (surface.color0BufferIndex == BINDING_INDEX_INVALID)
+  {
+    return vec4(1.0f, 1.0f, 1.0f, 1.0f);
+  }
+
+  const uint color0BufferIndex = surface.color0BufferIndex;
+  const uint color0ElementIndex = (vertexIndex * uint(surface.color0Stride) + surface.color0Offset) / 4;
+  const uint colorBits = floatBitsToUint(BUFFER_ARRAY(geometries, color0BufferIndex, color0ElementIndex));
+
+  vec4 color;
+  color.x = unorm8ToF32(uint8_t(colorBits >> 16));
+  color.y = unorm8ToF32(uint8_t(colorBits >> 8));
+  color.z = unorm8ToF32(uint8_t(colorBits));
+  color.w = unorm8ToF32(uint8_t(colorBits >> 24));
+
+  return color;
+}
+
+// Returns true when surfaceInteractionCreate sets the second texture coordinate set of the surface's interactions.
+// The second set is read from the texcoord buffer, so a surface whose first set is generated has none.
+bool surfaceHasTextureCoordinates1(Surface surface)
+{
+  return surface.texcoord1DwordOffset != 0 && surface.texcoordBufferIndex != BINDING_INDEX_INVALID &&
+         surface.texcoordGenerationMode == uint(TexGenMode::None);
+}
+
+// Returns a vertex's second texture coordinates (Surface::texcoord1DwordOffset), which share the first set's buffer and stride.
+vec2 surfaceRawTextureCoordinate1(Surface surface, uint vertexIndex)
+{
+  const uint texcoordBufferIndex = surface.texcoordBufferIndex;
+  const uint elementIndex =
+    (vertexIndex * uint(surface.texcoordStride) + surface.texcoordOffset) / 4 + surface.texcoord1DwordOffset;
+
+  return vec2(
+    BUFFER_ARRAY(geometries, texcoordBufferIndex, elementIndex + 0),
+    BUFFER_ARRAY(geometries, texcoordBufferIndex, elementIndex + 1));
+}
+
+// Interpolates the second texture coordinate set at the hit and derives its gradients from the first set's.
+// texcoords are the first set's coordinates at the triangle's vertices, after the texture transform, and the first
+// set's gradients must be set. Over a triangle the second set is a linear function of the first, so mapping the
+// gradients through that function gives the footprint the first set's would have had.
+// See documentation/SecondaryTexcoordLayers.md.
+void surfaceInteractionCalcTextureCoordinates1(
+  Surface surface, uint idx[3], vec2 texcoords[3], vec3 bary, inout SurfaceInteraction surfaceInteraction)
+{
+  vec2 texcoords1[3];
+
+  for (uint i = 0; i < 3; i++)
+  {
+    texcoords1[i] = surfaceRawTextureCoordinate1(surface, idx[i]);
+  }
+
+  surfaceInteraction.textureCoordinates1 = sanitize(interpolateHitAttribute(texcoords1, bary), vec2(0.0f, 0.0f));
+
+  const vec2 edge01 = texcoords[1] - texcoords[0];
+  const vec2 edge02 = texcoords[2] - texcoords[0];
+  const vec2 edge01Second = texcoords1[1] - texcoords1[0];
+  const vec2 edge02Second = texcoords1[2] - texcoords1[0];
+  const float determinant = edge01.x * edge02.y - edge02.x * edge01.y;
+
+  if (abs(determinant) > 1e-20f)
+  {
+    // Expresses a first-set gradient in the triangle's edge basis, then rebuilds it from the second set's edges.
+    const float inverseDeterminant = 1.0f / determinant;
+    const vec2 gradientX = surfaceInteraction.textureGradientX;
+    const vec2 gradientY = surfaceInteraction.textureGradientY;
+    const vec2 edgeWeightsX = vec2(edge02.y * gradientX.x - edge02.x * gradientX.y, edge01.x * gradientX.y - edge01.y * gradientX.x) * inverseDeterminant;
+    const vec2 edgeWeightsY = vec2(edge02.y * gradientY.x - edge02.x * gradientY.y, edge01.x * gradientY.y - edge01.y * gradientY.x) * inverseDeterminant;
+
+    surfaceInteraction.textureGradient1X = sanitize(edge01Second * edgeWeightsX.x + edge02Second * edgeWeightsX.y, vec2(0.0f, 0.0f));
+    surfaceInteraction.textureGradient1Y = sanitize(edge01Second * edgeWeightsY.x + edge02Second * edgeWeightsY.y, vec2(0.0f, 0.0f));
+  }
+  else
+  {
+    // The first set is degenerate over this triangle, so the triangle's own extent in the second set stands in.
+    surfaceInteraction.textureGradient1X = sanitize(edge01Second / 3.0f, vec2(0.0f, 0.0f));
+    surfaceInteraction.textureGradient1Y = sanitize(edge02Second / 3.0f, vec2(0.0f, 0.0f));
+  }
+}
+
 SurfaceInteraction surfaceInteractionCreate<let GenerateTangents : bool>(
   Surface surface, RayInteraction rayInteraction, Ray ray,
   bool usePreviousPositions = false, uint footprintMode = kFootprintFromRayDirection)
@@ -532,51 +657,8 @@ SurfaceInteraction surfaceInteractionCreate<let GenerateTangents : bool>(
 
     for (uint i = 0; i < 3; i++)
     {
-      vec4 rawTextureCoordinate;
-
-      if (surface.texcoordGenerationMode == uint(TexGenMode::ViewPositions) ||
-          // For now, calculate texcoords for the first cascade. The texcoords for an appropriate cascade will get adjusted based on the interpolated texcoord later
-          surface.texcoordGenerationMode == uint(TexGenMode::CascadedViewPositions))
-      {
-        const float4 viewPos = mul(cb.camera.worldToView, float4(worldPositions[i], 1.f));
-
-        rawTextureCoordinate = viewPos;
-      }
-      else if (surface.texcoordGenerationMode == uint(TexGenMode::ViewNormals))
-      {
-        const uint currentIndex = idx[i];
-        const uint normalBufferIndex = surface.normalBufferIndex;
-        const uint normalElementIndex = (currentIndex * uint(surface.normalStride) + surface.normalOffset) / 4;
-
-        float3 normal;
-        normal.x = BUFFER_ARRAY(geometries, normalBufferIndex, normalElementIndex + 0);
-        normal.y = BUFFER_ARRAY(geometries, normalBufferIndex, normalElementIndex + 1);
-        normal.z = BUFFER_ARRAY(geometries, normalBufferIndex, normalElementIndex + 2);
-
-        normal = normalize(mul(surface.normalObjectToWorld, normal));
-
-        const float4 viewPos = mul(cb.camera.worldToView, float4(normal, 0.f));
-
-        // Todo: Use the full vec4 viewPos here if rawTextureCoordinate is ever expanded to be a vec4 (right
-        // now the other 2 components will never matter in our current implementation).
-        rawTextureCoordinate = viewPos;
-      }
-      else
-      {
-        const uint currentIndex = idx[i];
-        uint texcoordBufferIndex = surface.texcoordBufferIndex;
-        const uint texcoordElementIndex = (currentIndex * uint(surface.texcoordStride) + surface.texcoordOffset) / 4;
-
-        const vec2 loadedTextureCoordinate = vec2(
-          BUFFER_ARRAY(geometries, texcoordBufferIndex, texcoordElementIndex + 0),
-          BUFFER_ARRAY(geometries, texcoordBufferIndex, texcoordElementIndex + 1)
-        );
-
-        // Todo: This will likely need to load more than a vec2 of texture coordinates too if we ever support anything more complex.
-        // A value of 1 is added to every component beyond what is loaded, though it really should be a value of 0 up to the texture
-        // transform element count and 1 past that I think, check DXVK's d3d9_fixed_function.cpp for more info.
-        rawTextureCoordinate = float4(loadedTextureCoordinate, 1.0f, 1.0f);
-      }
+      // Cascaded view positions give the first cascade's coordinates here, and the remap below picks the cascade.
+      const vec4 rawTextureCoordinate = surfaceRawTextureCoordinate(surface, idx[i], worldPositions[i]);
 
       const vec2 transformedTextureCoordinate = mul(surface.textureTransform, rawTextureCoordinate);
 
@@ -688,6 +770,11 @@ SurfaceInteraction surfaceInteractionCreate<let GenerateTangents : bool>(
       surfaceInteraction.textureGradientX = (texcoords[1] - texcoords[0]) / 3.0f;
       surfaceInteraction.textureGradientY = (texcoords[2] - texcoords[0]) / 3.0f;
     }
+
+    if (surfaceHasTextureCoordinates1(surface))
+    {
+      surfaceInteractionCalcTextureCoordinates1(surface, idx, texcoords, bary, surfaceInteraction);
+    }
   }
   else
   {
@@ -761,18 +848,7 @@ SurfaceInteraction surfaceInteractionCreate<let GenerateTangents : bool>(
 
     for (uint i = 0; i < 3; i++)
     {
-      const uint currentIndex = idx[i];
-
-      const uint color0BufferIndex = surface.color0BufferIndex;
-      const uint color0ElementIndex = (currentIndex * uint(surface.color0Stride) + surface.color0Offset) / 4;
-
-      // VK_FORMAT_B8G8R8A8_UNORM
-      const uint colorBits = floatBitsToUint(BUFFER_ARRAY(geometries, color0BufferIndex, color0ElementIndex));
-
-      color[i].x = unorm8ToF32(uint8_t(colorBits >> 16));
-      color[i].y = unorm8ToF32(uint8_t(colorBits >> 8));
-      color[i].z = unorm8ToF32(uint8_t(colorBits));
-      color[i].w = unorm8ToF32(uint8_t(colorBits >> 24));
+      color[i] = surfaceVertexColor(surface, idx[i]);
     }
 
     surfaceInteraction.vertexColor = interpolateHitAttribute(color, bary);

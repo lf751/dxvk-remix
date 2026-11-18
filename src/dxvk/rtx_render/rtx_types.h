@@ -36,6 +36,7 @@
 
 #include <inttypes.h>
 #include <memory>
+#include <optional>
 #include <vector>
 #include <unordered_set>
 #include <future>
@@ -326,6 +327,8 @@ struct RaytraceGeometry {
   RaytraceBuffer previousPositionBuffer;
   RaytraceBuffer normalBuffer;
   RaytraceBuffer texcoordBuffer;
+  // The second texture coordinate set, in the same buffer as the first. The Surface stores its offset from the first.
+  RaytraceBuffer texcoord1Buffer;
   RaytraceBuffer color0Buffer;
   RaytraceBuffer indexBuffer;
 
@@ -540,6 +543,10 @@ struct SceneDraw {
   // materials and folds the material hash in for alpha-tested / blended ones (OMM safety).
   bool materialIndependentGeometry = false;
   XXH64_hash_t geometryShareKey = kEmptyHash;
+
+  // The frontend's decal draw order (ExternalDrawState::sortOrder).
+  // When set, it replaces the per-frame order InstanceManager gives decal instances.
+  std::optional<uint8_t> decalSortOrder;
 
   template<typename... InstanceCategories>
   bool testCategoryFlags(InstanceCategories... cat) const { return categories.any(cat...); }

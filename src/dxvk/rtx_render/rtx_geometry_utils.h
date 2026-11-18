@@ -30,6 +30,7 @@
 #include "rtx/pass/terrain_baking/decode_and_add_opacity_binding_indices.h"
 #include "rtx_types.h"
 #include "rtx_common_object.h"
+#include "rtx_option.h"
 #include "rtx_staging.h"
 
 struct SkinningArgs;
@@ -68,7 +69,20 @@ namespace dxvk {
     // The skinning constants of the last dispatch. Only the bones it used are current.
     std::unique_ptr<SkinningArgs> m_skinningArgs;
 
+    // A vertex upload queued by queueVertexDataUpload. The geometry's views already point at the target buffer.
+    struct PendingVertexUpload {
+      RasterGeometry input;
+      Rc<DxvkBuffer> target;
+      bool forceNormals;
+    };
+    std::vector<PendingVertexUpload> m_pendingVertexUploads;
+
   public:
+    RTX_OPTION("rtx", bool, deferVertexUploads, false,
+               "Records the vertex uploads of updated deforming geometry, such as vertex-captured or rewritten meshes, "
+               "together before the scene is built instead of between the game's draws. Each upload recorded between "
+               "draws ends the current render pass, so this reduces both render-thread CPU time and GPU time in "
+               "scenes with many animated meshes. The traced result is the same.");
     explicit RtxGeometryUtils(DxvkDevice* pDevice);
     ~RtxGeometryUtils();
 
@@ -88,6 +102,13 @@ namespace dxvk {
      * \brief Execute a compute shader to perform skinning
      */
     void dispatchSkinning(const SceneDraw& drawCallState, const RaytraceGeometry& geo);
+
+    /**
+     * \brief Generates smooth normals from the skinned positions of geometry skinned by dispatchSkinning.
+     * Recorded on the skinning context after the skinning dispatch, so it reads the new pose and skinning
+     * does not overwrite its normals.
+     */
+    void dispatchSkinnedSmoothNormals(const RasterGeometry& input, RaytraceGeometry& geo);
 
     /**
      * \brief The skinning batch recorded but not submitted yet, or 0 when none is pending.
@@ -188,7 +209,16 @@ namespace dxvk {
     static void processGeometryBuffers(const RasterGeometry& input, RaytraceGeometry& output);
     static size_t computeOptimalVertexStride(const RasterGeometry& input, bool forceNormals = false);
     static void cacheVertexDataOnGPU(const Rc<DxvkContext>& ctx, const RasterGeometry& input, RaytraceGeometry& output, bool forceNormals = false);
-    
+    // Fills the stride and attribute offsets that interleaveGeometry writes for the input.
+    static void describeInterleavedLayout(const RasterGeometry& input, bool forceNormals, InterleavedGeometryDescriptor& output);
+
+    /**
+     * \brief Sets the geometry's vertex views as cacheVertexDataOnGPU does, and queues the GPU write.
+     * The write is recorded by flushVertexDataUploads, which must run before anything reads the buffer on the GPU.
+     */
+    void queueVertexDataUpload(const RasterGeometry& input, RaytraceGeometry& output, bool forceNormals);
+    void flushVertexDataUploads(const Rc<DxvkContext>& ctx);
+
     // Calculate the maximum UV tile size (i.e. minimum UV density) of a draw call.
     static float computeMaxUVTileSize(const RasterGeometry& input, const Matrix4& objectToWorld);
 
@@ -252,10 +282,14 @@ namespace dxvk {
       * the geometry's normal buffer.
       *
       * Requires valid position, index, and normal buffers in the geometry.
+      * The CPU path of small meshes reads the input's positions. Set gpuOnly when the geometry's
+      * positions differ from them, such as after skinning.
       */
     void dispatchSmoothNormals(
       const Rc<DxvkContext>& ctx,
-      RaytraceGeometry& geo);
+      const RasterGeometry& input,
+      RaytraceGeometry& geo,
+      bool gpuOnly = false);
 
     inline void flushCommandList() {
       if (m_skinningContext->getCommandList() != nullptr && m_skinningCommands > 0) {

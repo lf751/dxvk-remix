@@ -20,7 +20,9 @@
 * DEALINGS IN THE SOFTWARE.
 */
 
+#include <array>
 #include <cassert>
+#include <cstdio>
 #include <ctime>
 #include <tuple>
 #include <string>
@@ -49,6 +51,7 @@
 #include "rtx_render/rtx_shader_manager.h"
 #include "rtx_render/rtx_camera.h"
 #include "rtx_render/rtx_context.h"
+#include "rtx_render/rtx_geometry_utils.h"
 #include "rtx_render/rtx_pathtracer_integrate_direct.h"
 #include "rtx_render/rtx_pathtracer_gbuffer.h"
 #include "rtx_render/rtx_hash_collision_detection.h"
@@ -100,6 +103,7 @@
 #include "rtx_render/rtx_numos_ui.h"
 #include "rtx_render/rtx_sky_ui.h"
 #include "../rtx_render/rtx_sharc.h"
+#include "../rtx_render/rtx_pt_performance.h"
 #include "../dxvk_instance.h"
 
 
@@ -253,6 +257,15 @@ namespace dxvk {
         {RenderPassIntegrateIndirectRaytraceMode::RayQuery, "RayQuery (CS)"},
         {RenderPassIntegrateIndirectRaytraceMode::RayQueryRayGen, "RayQuery (RGS)"},
         {RenderPassIntegrateIndirectRaytraceMode::TraceRay, "TraceRay (RGS)"}
+    } }
+  };
+
+  RemixGui::ComboWithKey<PtPerformanceFirstHit> ptPerformanceFirstHitCombo {
+    "First Hit",
+    RemixGui::ComboWithKey<PtPerformanceFirstHit>::ComboEntries { {
+        {PtPerformanceFirstHit::Trace, "Trace"},
+        {PtPerformanceFirstHit::Raster, "Raster"},
+        {PtPerformanceFirstHit::Auto, "Auto"}
     } }
   };
 
@@ -823,8 +836,60 @@ namespace dxvk {
     ImGui::PopStyleColor();
 
     ImGui::TextWrapped("%s dynamically uses available VRAM to maximize texture quality.", productName().c_str());
-    
+
     ImGui::Dummy(ImVec2 { 4, 0 });
+  }
+
+  void ImGUI::showAllocatorChunks() const {
+    DxvkMemoryAllocator& allocator = m_device->getCommon()->memoryManager();
+    const VkPhysicalDeviceMemoryProperties& props = allocator.getMemoryProperties();
+    const DxvkMemoryAllocator::AllocTotals totals = allocator.getAllocTotals();
+    const auto mib = [] (VkDeviceSize bytes) { return (unsigned long long) (bytes >> 20); };
+
+    ImGui::Text("vkAllocateMemory: %llu calls, %.1f ms in total, longest %.2f ms",
+                (unsigned long long) totals.calls, totals.totalMs, totals.maxMs);
+    ImGui::Text("Chunks made %llu, freed %llu", (unsigned long long) totals.chunksMade, (unsigned long long) totals.chunksFreed);
+
+    // Each row is one chunk class of one memory type. Memory outside chunks is dedicated allocations.
+    const ImGuiTableFlags flags = ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit;
+    if (!ImGui::BeginTable("##allocatorChunks", 10, flags)) {
+      return;
+    }
+    const char* kHeaders[] = { "Type", "Class", "Chunks", "Empty", "Draining", "Chunk MiB", "Used MiB", "Free MiB", "Free % of Used", "Largest Free MiB" };
+    for (const char* header : kHeaders) {
+      ImGui::TableSetupColumn(header);
+    }
+    ImGui::TableHeadersRow();
+
+    for (uint32_t typeId = 0; typeId < props.memoryTypeCount; typeId++) {
+      const DxvkMemoryAllocator::ChunkUsage usage = allocator.getChunkUsageOfType(typeId);
+      if (usage.chunkCount == 0) {
+        continue;
+      }
+      const VkMemoryPropertyFlags typeFlags = props.memoryTypes[typeId].propertyFlags;
+      const char* kind = (typeFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)
+        ? ((typeFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) ? "device, mapped" : "device")
+        : "system";
+      for (uint32_t p = 0; p < uint32_t(DxvkMemoryAllocator::ChunkPool::Count); p++) {
+        const DxvkMemoryAllocator::PoolUsage& pool = usage.pools[p];
+        if (pool.chunkCount == 0) {
+          continue;
+        }
+        const VkDeviceSize used = pool.chunkBytes - pool.freeBytes;
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn(); ImGui::Text("%u (%s)", typeId, kind);
+        ImGui::TableNextColumn(); ImGui::TextUnformatted(DxvkMemoryAllocator::chunkPoolName(DxvkMemoryAllocator::ChunkPool(p)));
+        ImGui::TableNextColumn(); ImGui::Text("%u", pool.chunkCount);
+        ImGui::TableNextColumn(); ImGui::Text("%u", pool.emptyChunkCount);
+        ImGui::TableNextColumn(); ImGui::Text("%u", pool.drainingCount);
+        ImGui::TableNextColumn(); ImGui::Text("%llu", mib(pool.chunkBytes));
+        ImGui::TableNextColumn(); ImGui::Text("%llu", mib(used));
+        ImGui::TableNextColumn(); ImGui::Text("%llu", mib(pool.freeBytes));
+        ImGui::TableNextColumn(); ImGui::Text("%.1f", used ? 100.0 * double(pool.freeBytes) / double(used) : 0.0);
+        ImGui::TableNextColumn(); ImGui::Text("%llu", mib(pool.largestFreeSlice));
+      }
+    }
+    ImGui::EndTable();
   }
 
   void ImGUI::switchMenu(UIType type, bool force) {
@@ -2153,9 +2218,9 @@ namespace dxvk {
         } else {
           resourceAliasingQueryText += "NRD, ";
         }
-        if (RtxOptions::integrateIndirectMode() == IntegrateIndirectMode::NeuralRadianceCache) {
+        if (RtxOptions::resolvedIntegrateIndirectMode() == IntegrateIndirectMode::NeuralRadianceCache) {
           resourceAliasingQueryText += "NRC)";
-        } else if (RtxOptions::integrateIndirectMode() == IntegrateIndirectMode::ReSTIRGI) {
+        } else if (RtxOptions::resolvedIntegrateIndirectMode() == IntegrateIndirectMode::ReSTIRGI) {
           resourceAliasingQueryText += "ReSTIR-GI)";
         } else {
           resourceAliasingQueryText += "ImportanceSampled)";
@@ -2249,7 +2314,8 @@ namespace dxvk {
         bool pendingEnabled = optionLayer.getPendingEnabled();
         float pendingStrength = optionLayer.getPendingBlendStrength();
         float pendingThreshold = optionLayer.getPendingBlendThreshold();
-        const bool isLayerActive = !hasSaveableConfig || (pendingEnabled && pendingStrength > pendingThreshold);
+        const bool hasBlendControls = (hasSaveableConfig && !isUserLayer) || optionLayer.hasHostBlend();
+        const bool isLayerActive = (!hasSaveableConfig && !optionLayer.hasHostBlend()) || (pendingEnabled && pendingStrength > pendingThreshold);
         
         // Apply header styling
         bool pushedStyle = false;
@@ -2315,8 +2381,8 @@ namespace dxvk {
             }
           }
           
-          // Enable/blend controls only for saveable config layers (Remix Config, User, dynamically loaded mods)
-          if (hasSaveableConfig && !isUserLayer) {
+          // Enable/blend controls only for saveable config layers (Remix Config, dynamically loaded mods) and host layers.
+          if (hasBlendControls) {
             const std::string optionLayerEnabledText = "Enabled###Enabled_" + displayName;
             const std::string optionLayerStrengthText = " Strength###Strength_" + displayName;
             const std::string optionLayerThresholdText = " Threshold###Threshold_" + displayName;
@@ -2327,12 +2393,20 @@ namespace dxvk {
 
             if (IMGUI_ADD_TOOLTIP(ImGui::SliderFloat(optionLayerStrengthText.c_str(), &pendingStrength, 0.0f, 1.0f),
                                   "Adjusts the blending strength of this option layer (0 = off, 1 = full effect).")) {
-              optionLayer.requestBlendStrength(pendingStrength);
+              if (optionLayer.hasHostBlend()) {
+                optionLayer.setHostBlend({ pendingStrength, pendingThreshold });
+              } else {
+                optionLayer.requestBlendStrength(pendingStrength);
+              }
             }
 
             if (IMGUI_ADD_TOOLTIP(ImGui::SliderFloat(optionLayerThresholdText.c_str(), &pendingThreshold, 0.0f, 1.0f),
                                   "Sets the blending strength threshold for this option layer.")) {
-              optionLayer.requestBlendThreshold(pendingThreshold);
+              if (optionLayer.hasHostBlend()) {
+                optionLayer.setHostBlend({ pendingStrength, pendingThreshold });
+              } else {
+                optionLayer.requestBlendThreshold(pendingThreshold);
+              }
             }
           }
           
@@ -2867,10 +2941,13 @@ namespace dxvk {
       ImGui::SetCursorPosX(x + startX + (thumbnailSize - extent.x) / 2.f);
       ImGui::SetCursorPosY(y + (thumbnailSize - extent.y) / 2.f);
 
+      // An ImageButton's ID is its texID alone, so thumbnails that share an image view would share one widget.
+      ImGui::PushID(reinterpret_cast<const void*>(static_cast<uintptr_t>(texHash)));
       if (ImGui::ImageButton(texImgui.texID, extent)) {
         clickedOnTextureButton = true;
         texture_popup::g_wasLeftClick = true;
       }
+      ImGui::PopID();
 
       if (!showLegacyTextureGui() || uniqueId == texture_popup::lastOpenCategoryId) {
         if (g_jumpto.load() == texHash) {
@@ -4135,7 +4212,8 @@ namespace dxvk {
       RemixGui::Checkbox("Indirect Ray Query Mode Runs the Compute Kernel on NVIDIA", &DxvkPathtracerIntegrateIndirect::rayQueryComputeKernelObject());
       RemixGui::SetTooltipToLastWidgetOnHover(
         "rtx.integrateIndirect.rayQueryComputeKernel. Off, Ray Query mode traces the ray query kernel as a ray generation shader\n"
-        "on NVIDIA GPUs, where the compute dispatch of this kernel faults the device. Other GPUs always run the compute kernel.");
+        "on NVIDIA GPUs, where the compute dispatch of this kernel faults the device, and the SHARC update and query run through\n"
+        "their ray tracing pipelines there. Other GPUs always run the compute kernels.");
       showVariantTablesImguiSettings();
       showFrameFeaturesImguiSettings();
       RemixGui::Checkbox("Log Pipeline Shader Stats (restart required)", &RtxPipelineStats::logPipelineStatsObject());
@@ -4441,6 +4519,106 @@ namespace dxvk {
       auto& rayReconstruction = common->metaRayReconstruction();
       ImGui::Indent();
 
+      RemixGui::Checkbox("Path Tracing: Performance", &PtPerformance::enableObject());
+      ImGui::Indent();
+      ImGui::BeginDisabled(!PtPerformance::active());
+      ImGui::TextSeparator("Sampling");
+      // Sparse rendering applies while DLSS Ray Reconstruction is on.
+      RemixGui::DragFloat("Sparse Sampling Rate##ptPerformance", &PtPerformance::samplingRateObject(), 0.005f, 1.0f / 16.0f, 1.0f, "%.3f");
+      RemixGui::DragFloat("Sparse Resolution Scaling Exponent##ptPerformance", &PtPerformance::samplingRateResolutionExponentObject(), 0.01f, 0.0f, 1.0f, "%.2f");
+
+      ImGui::TextSeparator("First Hit");
+      ptPerformanceFirstHitCombo.getKey(&PtPerformance::firstHitObject());
+      if (PtPerformance::active() && PtPerformance::firstHit() == PtPerformanceFirstHit::Auto) {
+        const RtxRasterFirstHit& rasterFirstHit = common->metaRasterFirstHit();
+        auto msText = [](float ms) {
+          std::array<char, 32> text = {};
+          if (ms < 0.0f) {
+            std::snprintf(text.data(), text.size(), "-");
+          } else {
+            std::snprintf(text.data(), text.size(), "%.2f ms", ms);
+          }
+          return text;
+        };
+        ImGui::Text("Auto: %s%s", PtPerformance::firstHitRaster() ? "Raster" : "Trace", rasterFirstHit.autoMeasuring() ? " (measuring)" : "");
+        ImGui::Text("Raster %s, Trace %s", msText(rasterFirstHit.autoRasterMs()).data(), msText(rasterFirstHit.autoTraceMs()).data());
+      }
+      ImGui::BeginDisabled(PtPerformance::firstHit() == PtPerformanceFirstHit::Trace);
+      RemixGui::Checkbox("Raster Alpha Test", &PtPerformance::rasterAlphaTestObject());
+      RemixGui::Checkbox("Raster Blended Surfaces as Cutouts", &PtPerformance::rasterBlendedAsCutoutObject());
+      RemixGui::Checkbox("Raster Occlusion Culling", &PtPerformance::rasterOcclusionCullingObject());
+      RemixGui::DragInt("Raster Log Interval (frames)", &PtPerformance::rasterLogIntervalFramesObject(), 1.0f, 0, 3600);
+      ImGui::EndDisabled();
+
+      ImGui::TextSeparator("Indirect");
+      RemixGui::DragInt("Indirect Bounces##ptPerformance", &PtPerformance::indirectBouncesObject(), 0.05f, 1, 2);
+      RemixGui::Checkbox("Extra Bounce on Cache Miss", &PtPerformance::cacheMissExtraBounceObject());
+      if (PtPerformance::active()) {
+        const char* missingFeature = RtxSharc::missingFeature(m_device);
+        if (RtxOptions::resolvedIntegrateIndirectMode() == IntegrateIndirectMode::Sharc) {
+          ImGui::TextUnformatted("Indirect light: SHARC radiance cache");
+        } else if (missingFeature != nullptr) {
+          ImGui::TextWrapped("Indirect light: preset mode, the device lacks %s", missingFeature);
+        } else {
+          ImGui::TextUnformatted("Indirect light: preset mode");
+        }
+      }
+      RemixGui::Checkbox("Indirect Rays Treat Alpha-Tested as Opaque", &PtPerformance::indirectAlphaAsOpaqueObject());
+      {
+        const bool nvidiaGpu = m_device->adapter()->deviceProperties().vendorID == static_cast<uint32_t>(DxvkGpuVendor::Nvidia);
+        ImGui::BeginDisabled(PtPerformance::indirectAlphaAsOpaque() || nvidiaGpu);
+        RemixGui::DragFloat("Indirect Alpha-Tested Opaque Beyond (m)", &PtPerformance::indirectAlphaOpaqueDistanceObject(), 0.1f, 0.0f, 100000.0f, "%.1f");
+        ImGui::EndDisabled();
+      }
+      RemixGui::Checkbox("Indirect Simple Shading", &PtPerformance::indirectSimpleShadingObject());
+      ImGui::BeginDisabled(!PtPerformance::indirectSimpleShading());
+      RemixGui::DragFloat("Indirect Mip Bias", &PtPerformance::secondaryMipBiasObject(), 0.1f, 0.0f, 6.0f, "%.1f");
+      ImGui::EndDisabled();
+      RemixGui::DragFloat("Indirect Ray Max Distance (m)", &PtPerformance::indirectRayMaxDistanceObject(), 1.0f, 0.0f, 100000.0f, "%.0f");
+
+      ImGui::TextSeparator("Direct");
+      RemixGui::DragFloat("Local Shadow Cull Ratio##ptPerformance", &PtPerformance::localShadowCullRatioObject(), 0.001f, 0.0f, 1.0f, "%.3f");
+      RemixGui::DragInt("Light BVH Candidates##ptPerformance", &PtPerformance::lightCandidatesObject(), 0.05f, 1, 32);
+      RemixGui::Checkbox("Reduced Direct Lighting", &PtPerformance::reducedDirectLightObject());
+
+      ImGui::TextSeparator("Volumetrics and Denoising");
+      RemixGui::Checkbox("Reduced Volumetrics", &PtPerformance::reducedVolumetricsObject());
+      RemixGui::Checkbox("Combined Denoiser", &PtPerformance::combinedDenoiserObject());
+      RemixGui::Checkbox("Reduced Denoiser", &PtPerformance::reducedDenoiserObject());
+
+      ImGui::TextSeparator("Cache");
+      RemixGui::Checkbox("Adaptive Cache Update Interval", &PtPerformance::cacheUpdateAdaptiveObject());
+      ImGui::BeginDisabled(!PtPerformance::cacheUpdateAdaptive());
+      RemixGui::DragFloat("Relax Above Resolvable Hit Ratio", &PtPerformance::cacheUpdateRelaxHitRatioObject(), 0.005f, 0.5f, 1.0f, "%.3f");
+      ImGui::EndDisabled();
+      ImGui::BeginDisabled(PtPerformance::cacheUpdateAdaptive());
+      RemixGui::DragInt("Cache Update Interval (frames)##ptPerformance", &PtPerformance::cacheUpdateIntervalObject(), 0.05f, 1, 4);
+      ImGui::EndDisabled();
+      if (PtPerformance::active()) {
+        const RtxSharc& sharc = common->metaSharc();
+        const float hitRatio = sharc.getPtPerformanceResolvableHitRatio();
+        if (hitRatio < 0.0f) {
+          ImGui::Text("Cache update interval %u, resolvable hit ratio -", sharc.getUpdateInterval());
+        } else {
+          ImGui::Text("Cache update interval %u, resolvable hit ratio %.3f", sharc.getUpdateInterval(), hitRatio);
+        }
+        RemixGui::SetTooltipToLastWidgetOnHover("The adaptive interval compares this ratio with the setting above: cache hits over the first "
+                                                "indirect hits, without the rejected, too close and footprint misses, which no update can fix.");
+        // Shares of the first indirect hits, from the recent read back frames.
+        const auto& rc = common->metaPathtracerIntegrateIndirect().getRecentPtPerformanceCounters();
+        const double queries = rc[PT_PERFORMANCE_COUNTER_CACHE_QUERIES];
+        if (queries > 0.0) {
+          ImGui::Text("Cache hit ratio over all first hits %.3f", rc[PT_PERFORMANCE_COUNTER_CACHE_HITS] / queries);
+          ImGui::Text("Misses: rejected %.3f, too close %.3f, footprint %.3f", rc[PT_PERFORMANCE_COUNTER_MISS_REJECTED] / queries,
+                      rc[PT_PERFORMANCE_COUNTER_MISS_TOO_CLOSE] / queries, rc[PT_PERFORMANCE_COUNTER_MISS_FOOTPRINT] / queries);
+          ImGui::Text("Misses: no entry %.3f, unfilled %.3f; sky %.3f", rc[PT_PERFORMANCE_COUNTER_MISS_NO_ENTRY] / queries,
+                      rc[PT_PERFORMANCE_COUNTER_MISS_UNFILLED] / queries,
+                      rc[PT_PERFORMANCE_COUNTER_SKY] / (queries + rc[PT_PERFORMANCE_COUNTER_SKY]));
+        }
+      }
+      ImGui::EndDisabled();
+      ImGui::Unindent();
+
       if (RtxOptions::showRaytracingOption()) {
         RemixGui::Checkbox("Raytracing Enabled", &RtxOptions::enableRaytracingObject());
 
@@ -4726,7 +4904,13 @@ namespace dxvk {
         ImGui::Indent();
         integrateIndirectModeCombo.getKey(&RtxOptions::integrateIndirectModeObject());
 
-        if (RtxOptions::integrateIndirectMode() == IntegrateIndirectMode::ReSTIRGI) {
+        // The cache needs device features some GPUs lack, so the control is disabled there, and performance mode
+        // selects the cache on its own, so the control is disabled while the mode is on.
+        ImGui::BeginDisabled(!RtxSharc::checkIsSupported(m_device) || PtPerformance::active());
+        RemixGui::Checkbox("Indirect Light From Radiance Cache", &RtxSharc::indirectFromCacheObject());
+        ImGui::EndDisabled();
+
+        if (RtxOptions::resolvedIntegrateIndirectMode() == IntegrateIndirectMode::ReSTIRGI) {
           if (RemixGui::CollapsingHeader("ReSTIR GI", collapsingHeaderClosedFlags)) {
             ImGui::Indent();
             ImGui::PushID("ReSTIR GI");
@@ -4735,7 +4919,7 @@ namespace dxvk {
             ImGui::PopID();
             ImGui::Unindent();
           }
-        } else if (RtxOptions::integrateIndirectMode() == IntegrateIndirectMode::NeuralRadianceCache) {
+        } else if (RtxOptions::resolvedIntegrateIndirectMode() == IntegrateIndirectMode::NeuralRadianceCache) {
           if (RemixGui::CollapsingHeader("RTX Neural Radiance Cache", collapsingHeaderClosedFlags)) {
 
             ImGui::Indent();
@@ -4745,7 +4929,7 @@ namespace dxvk {
             ImGui::PopID();
             ImGui::Unindent();
           }
-        } else if (RtxOptions::integrateIndirectMode() == IntegrateIndirectMode::Sharc) {
+        } else if (RtxOptions::resolvedIntegrateIndirectMode() == IntegrateIndirectMode::Sharc) {
           if (RemixGui::CollapsingHeader("SHARC", collapsingHeaderClosedFlags)) {
             ImGui::Indent();
             ImGui::PushID("SHARC");
@@ -4869,7 +5053,7 @@ namespace dxvk {
         common->metaComposite().showDenoiseImguiSettings();
         ImGui::Unindent();
       }
-      bool useDoubleDenoisers = RtxOptions::denoiseDirectAndIndirectLightingSeparately();
+      bool useDoubleDenoisers = RtxOptions::resolvedDenoiseDirectAndIndirectLightingSeparately();
       if (isRayReconstructionEnabled) {
         if (RemixGui::CollapsingHeader("DLSS-RR", collapsingHeaderClosedFlags)) {
           ImGui::Indent();
@@ -4952,6 +5136,7 @@ namespace dxvk {
       RemixGui::DragInt("Max Prims in Merged BLAS", &RtxOptions::maxPrimsInMergedBLASObject(), 1.f, 100, 0);
       RemixGui::Checkbox("Force Merge All Meshes", &RtxOptions::forceMergeAllMeshesObject());
       RemixGui::Checkbox("Minimize BLAS Merging", &RtxOptions::minimizeBlasMergingObject());
+      RemixGui::Checkbox("Defer Deforming Geometry Uploads", &RtxGeometryUtils::deferVertexUploadsObject());
       if (RemixGui::CollapsingHeader("Acceleration Structure Tuning", collapsingHeaderClosedFlags)) {
         ImGui::Indent();
         RemixGui::DragInt("Share Small BLAS at N Instances (0 = off)", &RtxOptions::minInstancesToShareSmallBlasObject(), 1.f, 0, 4096);
@@ -5028,6 +5213,10 @@ namespace dxvk {
         ImGui::Text("Freed so far: pooled BLAS %llu MiB, scratch %llu MiB, empty chunks %llu MiB, import mips ~%llu MiB (%u level changes)",
                     (unsigned long long) (freed.pooledBlas >> 20), (unsigned long long) (freed.scratch >> 20),
                     (unsigned long long) (freed.emptyChunks >> 20), (unsigned long long) (freed.importCapSkipped >> 20), freed.levelChanges);
+      }
+      if (ImGui::TreeNode("Allocator Chunks##vrambudget")) {
+        showAllocatorChunks();
+        ImGui::TreePop();
       }
       RemixGui::Checkbox("Enable VRAM Budget", &VramBudget::enableObject());
       if (ImGui::TreeNode("Advanced##vrambudget")) {

@@ -85,6 +85,11 @@ namespace remix_record {
     ReplaceD3D11Texture       = 39,  // u64 token, h:Texture, u32 encoding, u32 readbackId
     RequestVramCompaction     = 40,
     RequestTextureVramFree    = 41,
+    CreateConfigLayer         = 42,  // str conf text, u32 priority, f32 strength, f32 threshold, u64 outHandle [, str layer key]
+    SetConfigLayerBlends      = 43,  // u32 count, count x (h:ConfigLayer, f32 strength, f32 threshold)
+    DestroyConfigLayer        = 44,  // h:ConfigLayer
+    UpdateMaterial            = 45,  // h:Material, MaterialInfo
+    UpdateTexture             = 46,  // u32 count, count x (h:Texture, u32 rects, rects x (u32 x, y, width, height, rowPitch, blob pixels))
 
     // Markers (kFlagMarker): recorded for context, never replayed.
     PrepareD3D11Texture       = 100, // u64 texture, u32 dxgiFormat, u32 maxDimension, u64 outToken
@@ -105,6 +110,7 @@ namespace remix_record {
     SetUIState                = 115, // u32 state
     DxvkInterop               = 116, // u32 which (DxvkCall)
     SceneMarker               = 117, // u32 index (1, 2, ...), u64 frame (frames completed when it was added)
+    GetConfigValue            = 118, // str key
 
     FrameIndex                = 0xFFFF0001, // u64 frameCount, frameCount x u64 frame start offset
   };
@@ -114,7 +120,7 @@ namespace remix_record {
     GetTextureHash, GetSharedD3D11TextureHandle,
   };
 
-  enum class HandleKind : uint32_t { Material, Mesh, Light, Texture, Retained, Count };
+  enum class HandleKind : uint32_t { Material, Mesh, Light, Texture, Retained, ConfigLayer, Count };
 
   enum class BlobMode : uint8_t { Null = 0, Inline = 1, File = 2 };
 
@@ -214,6 +220,15 @@ namespace remix_record {
     }
   }
 
+  template<class IO> void ioExt(IO& io, remixapi_MaterialInfoTextureTransformEXT& s) {
+    io.pod(s.textureScrollRate);
+    io.pod(s.textureScrollAngle);
+    io.pod(s.textureScale_hasvalue);
+    io.pod(s.textureScale_value);
+    io.pod(s.textureOffset);
+    io.pod(s.textureRotation);
+  }
+
   template<class IO> void ioExt(IO& io, remixapi_MaterialInfoOpaqueSubsurfaceEXT& s) {
     io.wstr(s.subsurfaceTransmittanceTexture);
     io.wstr(s.subsurfaceThicknessTexture);
@@ -240,6 +255,34 @@ namespace remix_record {
 
   template<class IO> void ioExt(IO& io, remixapi_MaterialInfoOpaqueAlbedoTintEXT& s) {
     io.pod(s.albedoTint);
+  }
+
+  template<class IO> void ioExt(IO& io, remixapi_MaterialInfoOpaqueDetailLayersEXT& s) {
+    io.wstr(s.detailNormalTexture);
+    io.pod(s.detailNormalStrength);
+    io.pod(s.detailNormalTexcoordScale);
+    io.wstr(s.layerMaskTexture);
+    io.pod(s.layerMaskChannel);
+    io.pod(s.layerMaskStrength);
+    io.pod(s.layerAlbedo);
+    io.pod(s.layerRoughness);
+    io.pod(s.layerMetallic);
+    io.pod(s.layerTexcoordScale);
+  }
+
+  template<class IO> void ioExt(IO& io, remixapi_MaterialInfoOpaqueClearCoatEXT& s) {
+    io.pod(s.clearCoatWeight);
+    io.pod(s.clearCoatRoughness);
+    io.pod(s.pearlescentColor);
+    io.pod(s.pearlescentWeight);
+    io.pod(s.pearlescentExponent);
+  }
+
+  template<class IO> void ioExt(IO& io, remixapi_MaterialInfoOpaqueDetailLayerWeightsEXT& s) {
+    io.pod(s.flags);
+    io.pod(s.detailNormalWeightChannel);
+    io.pod(s.layerMaskWeightChannel);
+    io.pod(s.layerMaskEdgeWidth);
   }
 
   template<class IO> void ioExt(IO& io, remixapi_MaterialInfoTranslucentEXT& s) {
@@ -278,6 +321,13 @@ namespace remix_record {
   }
 
   template<class IO> void ioExt(IO&, remixapi_MeshInfoRefreshGeometryEXT&) { }
+
+  template<class IO> void ioExt(IO& io, remixapi_MeshInfoSecondaryTexcoordEXT& s) {
+    io.structArray(s.surfaces_values, s.surfaces_count,
+                   [](IO& sub, remixapi_MeshInfoSurfaceSecondaryTexcoord& surface) {
+                     sub.blobArray(surface.texcoords_values, surface.texcoords_count);
+                   });
+  }
 
   // ---- Camera ----
   template<class IO> void ioCameraInfo(IO& io, remixapi_CameraInfo& s) {
@@ -408,6 +458,10 @@ namespace remix_record {
     io.handle(HandleKind::Material, s.material);
   }
 
+  template<class IO> void ioExt(IO& io, remixapi_InstanceInfoDecalOrderEXT& s) {
+    io.pod(s.sortOrder);
+  }
+
   template<class IO> void ioRetainedUpdate(IO& io, remixapi_RetainedInstanceUpdate& s) {
     io.handle(HandleKind::Retained, s.handle);
     io.pod(s.transform);
@@ -529,6 +583,10 @@ namespace remix_record {
   X(REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_SUBSURFACE_EXT,  remixapi_MaterialInfoOpaqueSubsurfaceEXT)\
   X(REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_SPEC_GLOSS_EXT,  remixapi_MaterialInfoOpaqueSpecGlossEXT) \
   X(REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_ALBEDO_TINT_EXT, remixapi_MaterialInfoOpaqueAlbedoTintEXT)\
+  X(REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_TEXTURE_TRANSFORM_EXT,  remixapi_MaterialInfoTextureTransformEXT)\
+  X(REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_DETAIL_LAYERS_EXT, remixapi_MaterialInfoOpaqueDetailLayersEXT)\
+  X(REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_CLEAR_COAT_EXT,  remixapi_MaterialInfoOpaqueClearCoatEXT) \
+  X(REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_DETAIL_LAYER_WEIGHTS_EXT, remixapi_MaterialInfoOpaqueDetailLayerWeightsEXT)\
   X(REMIXAPI_STRUCT_TYPE_LIGHT_INFO_DISTANT_EXT,               remixapi_LightInfoDistantEXT)            \
   X(REMIXAPI_STRUCT_TYPE_LIGHT_INFO_CYLINDER_EXT,              remixapi_LightInfoCylinderEXT)           \
   X(REMIXAPI_STRUCT_TYPE_LIGHT_INFO_DISK_EXT,                  remixapi_LightInfoDiskEXT)               \
@@ -542,10 +600,12 @@ namespace remix_record {
   X(REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_PARTICLE_SYSTEM_EXT,    remixapi_InstanceInfoParticleSystemEXT)  \
   X(REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_GPU_INSTANCING_EXT,     remixapi_InstanceInfoGpuInstancingEXT)   \
   X(REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_MATERIAL_OVERRIDE_EXT,  remixapi_InstanceInfoMaterialOverrideEXT)\
+  X(REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_DECAL_ORDER_EXT,        remixapi_InstanceInfoDecalOrderEXT)      \
   X(REMIXAPI_STRUCT_TYPE_CAMERA_INFO_PARAMETERIZED_EXT,        remixapi_CameraInfoParameterizedEXT)     \
   X(REMIXAPI_STRUCT_TYPE_CAMERA_INFO_FRAME_EVENTS_EXT,         remixapi_CameraInfoFrameEventsEXT)       \
   X(REMIXAPI_STRUCT_TYPE_ASSET_KEY_EXT,                        remixapi_AssetKeyEXT)                    \
   X(REMIXAPI_STRUCT_TYPE_MESH_INFO_REFRESH_GEOMETRY_EXT,       remixapi_MeshInfoRefreshGeometryEXT)     \
+  X(REMIXAPI_STRUCT_TYPE_MESH_INFO_SECONDARY_TEXCOORD_EXT,     remixapi_MeshInfoSecondaryTexcoordEXT)   \
   X(REMIXAPI_STRUCT_TYPE_TEXTURE_INFO_HOST_IMPORT_EXT,         remixapi_TextureInfoHostImportEXT)
 
   // 0 for an sType the format does not know.

@@ -41,6 +41,7 @@
 #include "rtx_global_volumetrics.h"
 #include "rtx_scene_manager.h"
 #include "rtx_sharc.h"
+#include "rtx_pt_performance.h"
 #include "rtx_fork_sccr_shell.h"
 #include "rtx_sparse_rendering.h"
 #include "rtx_numos_settings.h"
@@ -324,6 +325,31 @@ namespace dxvk {
     return archInfo.implementation_id;
   }
 
+  IntegrateIndirectMode RtxOptions::resolvedIntegrateIndirectMode() {
+    return (RtxSharc::indirectFromCache() || PtPerformance::indirectFromCache()) ? IntegrateIndirectMode::Sharc : integrateIndirectMode();
+  }
+
+  bool RtxOptions::resolvedDenoiseDirectAndIndirectLightingSeparately() {
+    const bool performanceCombines = PtPerformance::active() && PtPerformance::combinedDenoiser() && !isRayReconstructionEnabled();
+    return denoiseDirectAndIndirectLightingSeparately() && !performanceCombines;
+  }
+
+  uint8_t RtxOptions::resolvedPathMinBounces() {
+    // A first bounce ended by Russian roulette would leave the shaded pixel without indirect light this frame,
+    // and the SHARC update would lose the path.
+    return PtPerformance::active() ? uint8_t(1) : pathMinBounces();
+  }
+
+  uint8_t RtxOptions::resolvedPathMaxBounces() {
+    if (!PtPerformance::active()) {
+      return pathMaxBounces();
+    }
+
+    // A SHARC hit ends the path whatever the limit, so the extra bounce is only taken by rays that miss the cache.
+    const bool extraBounce = PtPerformance::cacheMissExtraBounce() && resolvedIntegrateIndirectMode() == IntegrateIndirectMode::Sharc;
+    return uint8_t(PtPerformance::resolvedIndirectBounces() + (extraBounce ? 1 : 0));
+  }
+
   void RtxOptions::updatePathTracerPreset(PathTracerPreset preset) {
     // Code-driven changes for path tracer preset (automatically routes to User layer when preset is Custom)
     RtxOptionLayerTarget layerTarget(RtxOptionEditTarget::Derived);
@@ -340,7 +366,7 @@ namespace dxvk {
       DxvkRtxdiRayQuery::enableSampleStealing.setDeferred(false);
 
       // ReSTIR GI
-      if (RtxOptions::useReSTIRGI()) {
+      if (integrateIndirectMode() == IntegrateIndirectMode::ReSTIRGI) {
         DxvkReSTIRGIRayQuery::setToRayReconstructionPreset();
       }
 
@@ -373,7 +399,7 @@ namespace dxvk {
       DxvkRtxdiRayQuery::enableSampleStealingObject().resetToDefault();
 
       // ReSTIR GI
-      if (RtxOptions::useReSTIRGI()) {
+      if (integrateIndirectMode() == IntegrateIndirectMode::ReSTIRGI) {
         DxvkReSTIRGIRayQuery::setToNRDPreset();
       }
 
@@ -447,11 +473,11 @@ namespace dxvk {
           preferredDefault = GraphicsPreset::Medium;
         } else if (archId < NV_GPU_ARCHITECTURE_GB200) {
           // Ada
-          Logger::info("NVIDIA Ada architecture detected, setting default graphics settings to High");
+          Logger::info("NVIDIA Ada architecture detected, setting default graphics settings to Medium");
           preferredDefault = GraphicsPreset::High;
         } else {
           // Blackwell and beyond
-          Logger::info("NVIDIA Blackwell architecture detected, setting default graphics settings to High");
+          Logger::info("NVIDIA Blackwell architecture detected, setting default graphics settings to Medium");
           preferredDefault = GraphicsPreset::High;
         }
       } else {
@@ -489,6 +515,11 @@ namespace dxvk {
         RtxOptions::lowMemoryGpu.setDeferred(false);
       }
 
+      // Auto selects Medium at most. The High tier above only keeps 8 GB Ada and newer GPUs on Medium.
+      if (static_cast<int>(preferredDefault) < static_cast<int>(GraphicsPreset::Medium)) {
+        preferredDefault = GraphicsPreset::Medium;
+      }
+
       // graphicsPreset itself should go to User layer, not Quality layer
       // (graphicsPreset controls what goes into Quality, it's not controlled BY Quality)
       {
@@ -522,10 +553,9 @@ namespace dxvk {
 
     const uint32_t deviceVendorID = device->adapter()->devicePropertiesExt().core.properties.vendorID;
     const bool isNvidiaGpu = deviceVendorID == static_cast<uint32_t>(DxvkGpuVendor::Nvidia);
-    const bool isSharcVendor = isNvidiaGpu;
 
-    // Every preset selects SHARC on NVIDIA GPUs that support it, and ReSTIR GI everywhere else.
-    // The SHARC update is a ray tracing pipeline, and other GPUs run only Ray Query passes (see updateRaytraceModePresets).
+    // Every preset selects SHARC on GPUs that support it, and ReSTIR GI on the others.
+    // Off NVIDIA, SHARC runs as compute kernels with inline ray queries (DxvkPathtracerIntegrateIndirect::sharcUsesCompute).
     // NRC runs only on NVIDIA GPUs, so it is chosen by hand with the Custom preset. Its tier still follows the preset.
     auto setIndirectPreset = [&](RtxSharc::QualityPreset sharcPreset, NeuralRadianceCache::QualityPreset nrcPreset) {
       NeuralRadianceCache& nrc = common->metaNeuralRadianceCache();
@@ -534,14 +564,15 @@ namespace dxvk {
       }
       // TODO[REMIX-4105] a frame that uses NRC where it isn't supported crashes, and a lower layer may select NRC,
       // so this needs to be setImmediately.
-      if (isSharcVendor && RtxSharc::checkIsSupported(device)) {
+      const char* sharcMissingFeature = RtxSharc::missingFeature(device);
+      if (sharcMissingFeature == nullptr) {
         RtxOptions::integrateIndirectMode.setImmediately(IntegrateIndirectMode::Sharc);
         common->metaSharc().setQualityPreset(sharcPreset);
-        Logger::info("[RTX] Graphics preset indirect lighting: SHARC (NVIDIA GPU).");
+        Logger::info(str::format("[RTX] Graphics preset indirect lighting: SHARC (",
+                                 isNvidiaGpu ? "NVIDIA GPU" : "compute kernels", ", vendor ID 0x", std::hex, deviceVendorID, ")."));
       } else {
         RtxOptions::integrateIndirectMode.setImmediately(IntegrateIndirectMode::ReSTIRGI);
-        Logger::info(str::format("[RTX] Graphics preset indirect lighting: ReSTIR GI (",
-                                 isSharcVendor ? "SHARC is not supported" : "SHARC is off on this GPU vendor",
+        Logger::info(str::format("[RTX] Graphics preset indirect lighting: ReSTIR GI (SHARC needs ", sharcMissingFeature,
                                  ", vendor ID 0x", std::hex, deviceVendorID, ")."));
       }
     };
@@ -560,10 +591,17 @@ namespace dxvk {
 
     RtxGlobalVolumetrics& volumetrics = device->getCommon()->metaGlobalVolumetrics();
 
-    // The previous preset's frame generation preset is cleared, so only Medium and Low select the lightweight model.
+    // The previous preset's frame generation preset is cleared, so only Medium, Low and Very Low select the
+    // lightweight model.
     {
       std::lock_guard<std::mutex> lock(RtxOptionImpl::getUpdateMutex());
       DxvkDLFG::litePreset.disableLayerValue(RtxOptionLayer::getQualityLayer());
+    }
+
+    // Performance mode runs on Medium, Low and Very Low, and is off on Ultra and High. Its rtx.ptPerformance.* tuning keeps its defaults.
+    if (graphicsPreset() != GraphicsPreset::Custom) {
+      PtPerformance::enable.setDeferred(graphicsPreset() == GraphicsPreset::Medium || graphicsPreset() == GraphicsPreset::Low ||
+                                 graphicsPreset() == GraphicsPreset::VeryLow);
     }
 
     // How long idle replacement-texture mips and micromaps stay in memory. Lower presets target cards with less of it.
@@ -573,7 +611,8 @@ namespace dxvk {
     } else if (graphicsPreset() == GraphicsPreset::High) {
       VramBudget::idleMipFrames.setDeferred(3600);
       VramBudget::idleMicromapFrames.setDeferred(1800);
-    } else if (graphicsPreset() == GraphicsPreset::Medium || graphicsPreset() == GraphicsPreset::Low) {
+    } else if (graphicsPreset() == GraphicsPreset::Medium || graphicsPreset() == GraphicsPreset::Low ||
+               graphicsPreset() == GraphicsPreset::VeryLow) {
       VramBudget::idleMipFrames.setDeferred(1800);
       VramBudget::idleMicromapFrames.setDeferred(900);
     }
@@ -647,7 +686,7 @@ namespace dxvk {
       // Sparse rendering needs Ray Reconstruction to fill in the pixels it skips.
       SparseRendering::Options::enableSparseRendering.setDeferred(isRayReconstruction);
       applySparseRenderingPreset(0.228f, 0.83f, true);
-    } else if (graphicsPreset() == GraphicsPreset::Low) {
+    } else if (graphicsPreset() == GraphicsPreset::Low || graphicsPreset() == GraphicsPreset::VeryLow) {
       DxvkDLFG::litePreset.setDeferred(true);
 
       lowGraphicsPresetCommonSettings();

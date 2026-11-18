@@ -324,7 +324,48 @@ hash, not by `info->hash`, unless the material carries an
 `remixapi_MaterialInfoOpaqueEXT` has `alphaTestType` 0 (never passes), which hides
 the surface; use 7 (always) for opaque surfaces.
 
+Optional extensions chain next to the type-specific one:
+
+| Extension | When to use |
+| :-- | :-- |
+| `remixapi_MaterialInfoTextureTransformEXT` | Scale, rotate, offset or scroll all of an opaque or translucent material's textures. Not forwarded by the 32-bit bridge. See [`TextureTransforms.md`](../documentation/TextureTransforms.md). |
+| `remixapi_MaterialInfoOpaqueClearCoatEXT` | Coated and lacquered surfaces: a clear coat (a second, dielectric GGX specular lobe over the base) and a pearlescent albedo shift towards grazing angles. Opaque only. Check `remixapi_GetClearCoatMaterialVersion`. Not forwarded by the 32-bit bridge. See [`ClearCoatMaterial.md`](../documentation/ClearCoatMaterial.md). |
+| `remixapi_MaterialInfoOpaqueDetailLayersEXT` | A detail normal map and a masked layer (albedo, roughness and metallic towards constants) read with the mesh's second texture coordinate set, for example a tiled detail normal and worn edges. Opaque only. Check `remixapi_GetSecondaryTexcoordVersion`. Not forwarded by the 32-bit bridge. See [`SecondaryTexcoordLayers.md`](../documentation/SecondaryTexcoordLayers.md). |
+| `remixapi_MaterialInfoOpaqueDetailLayerWeightsEXT` | Weights the detail layers per vertex by a vertex colour channel: the detail normal's strength, and a threshold on the layer mask. Next to `remixapi_MaterialInfoOpaqueDetailLayersEXT` only. Check `remixapi_GetSecondaryTexcoordVersion` >= 2. Not forwarded by the 32-bit bridge. See [`SecondaryTexcoordLayers.md`](../documentation/SecondaryTexcoordLayers.md#vertex-colour-weights). |
+
 ---
+
+### `remixapi_UpdateMaterial` (named export)
+
+```c
+remixapi_ErrorCode remixapi_UpdateMaterial(remixapi_MaterialHandle handle, const remixapi_MaterialInfo* info);
+```
+
+Changes a live material and keeps its handle. It takes the same description as `CreateMaterial`, with `hash` 0 or
+equal to the handle. Use it for wetness, emissive changes and tints. Applied in command-stream order, from any thread.
+
+| The description changes | Result |
+| :-- | :-- |
+| Nothing | `SUCCESS`, no work. |
+| Plain parameters (roughness, metallic, albedo and emissive constants, tint, subsurface values, and so on), or the normal, tangent, roughness, metallic, emissive, or subsurface textures | `SUCCESS`. The material's GPU data is written in place. No instance, geometry or BLAS rebuilds. Every user sees it next frame, including instances that use it through `remixapi_InstanceInfoMaterialOverrideEXT`. |
+| The alpha test, blend state, `opacityConstant`, `alphaIsThinFilmThickness`, the albedo texture, filter or wrap modes, the sprite sheet, displacement or the height texture, the subsurface diffusion profile, or the asset key | `SUCCESS`. Same as `CreateMaterial` with changed data: every user rebuilds, because BLAS flags, opacity micromaps and instance state depend on these. |
+| The material type (opaque, translucent, portal) | `INVALID_ARGUMENTS`. The material stays as it was. |
+
+A handle that is not live returns `INVALID_ARGUMENTS`.
+
+An in-place update keeps the material's hash, so mods and asset keys that matched it still match. A mod that replaces
+the material wins over the update, as it wins over the description. An instance whose runtime patches its material
+(world-space UI, the emissive blend override), or a particle system spawned from the material, makes later updates of
+that material rebuild its users.
+
+A material with no users at the moment is updated in place too, so a user that comes back sees the new values. The
+write is uploaded to the GPU in the next frame even when nothing else in the scene changed.
+
+Replaced textures stay alive until the GPU is done with them.
+
+The `[MaterialUpdate]` log line reports the totals: `inPlace`, `rebuilt`, `slotsPatched`, `staticUploads` (uploads that
+only updates caused, in frames whose scene was unchanged) and `liveSlots` (the surface material slots the live materials
+hold).
 
 ## Meshes
 
@@ -357,6 +398,14 @@ vertex/index arrays, an optional `remixapi_MeshInfoSkinning` block
 The vertex format is `remixapi_HardcodedVertex` — position(3) +
 normal(3) + texcoord(2) + color(uint32) + padding to 64 bytes. The
 padding is reserved for future runtime use; leave it zeroed.
+
+Chain `remixapi_MeshInfoSecondaryTexcoordEXT` on `remixapi_MeshInfo` to give
+the mesh a second texture coordinate set: one `remixapi_Float2D` array per
+surface, in the surface order of `surfaces_values`. Materials read it through
+`remixapi_MaterialInfoOpaqueDetailLayersEXT`. Check the named export
+`remixapi_GetSecondaryTexcoordVersion` (returns 2) before relying on it. Not
+forwarded by the 32-bit bridge. See
+[`SecondaryTexcoordLayers.md`](../documentation/SecondaryTexcoordLayers.md).
 
 ### Asset keys (`remixapi_AssetKeyEXT`)
 
@@ -401,10 +450,48 @@ for additional behavior:
 | `remixapi_InstanceInfoObjectPickingEXT` | Tags the instance with a 32-bit ID readable via the picking API. |
 | `remixapi_InstanceInfoParticleSystemEXT` | Spawns a GPU particle system bound to this instance. |
 | `remixapi_InstanceInfoGpuInstancingEXT` | Submits N GPU-instanced copies in one call. |
+| `remixapi_InstanceInfoDecalOrderEXT` | Sets the draw order of a decal instance (see below). |
 
 The full list of category bits is `remixapi_InstanceCategoryBit` in the
 header. Most plugins only need `WORLD_MATTE`, `SKY`, `PARTICLE`, the
 decal bits, and the `IGNORE_*` modifiers.
+
+### Decal order (`remixapi_InstanceInfoDecalOrderEXT`)
+
+```c
+typedef struct remixapi_InstanceInfoDecalOrderEXT {
+  remixapi_StructType sType;      // REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_DECAL_ORDER_EXT
+  void*               pNext;
+  uint32_t            sortOrder;  // 0..255
+} remixapi_InstanceInfoDecalOrderEXT;
+```
+
+Chain it on `remixapi_InstanceInfo` for `DrawInstance`,
+`CreateRetainedInstance(s)` and `UpdateRetainedInstance` to choose how
+overlapping decals stack, for example blood over a bullet hole over a
+painted sign on one wall.
+
+- Where decals overlap, the runtime composites them from the lowest
+  `sortOrder` up, so a higher order lands on top. Decals with equal
+  orders fall back to an arbitrary but stable order (geometry and
+  primitive index). At most four decal layers are kept per pixel. When
+  more overlap, nearly transparent layers are dropped first, then the
+  lowest orders.
+- `sortOrder` is 0 to 255. A larger value makes the call return
+  `REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS` and counts as `data` in the
+  runtime log's `[SceneInput]` line, with or without a decal category.
+- It applies only to instances with a `DECAL_*` category bit. Other
+  instances ignore it.
+- Without the struct, the runtime picks the order: retained instances get
+  one at creation, and `DrawInstance` decals get their draw order within
+  the frame. Both wrap at 256.
+- `UpdateRetainedInstance` replaces the whole description. To keep an
+  order, send the struct with every update; an update without it returns
+  the instance to a runtime order.
+- The 32-bit bridge does not forward this struct. Its `DrawInstance`
+  skips it with a warning, so decals drawn through the bridge keep the
+  runtime's order.
+- A runtime that predates the struct ignores it.
 
 ---
 
@@ -442,6 +529,17 @@ destroy and re-create a hash within one frame: use `UpdateLightDefinition`.
 `remixapi_LightInfoLightShaping` (used inside the sphere/rect/disk
 EXTs) gives spotlight-style cone shaping with cone angle / softness /
 focus exponent.
+
+The sphere, rect, disk, cylinder and distant EXTs carry
+`volumetricRadianceScale`. The runtime multiplies the light's radiance
+by it only in the volumetrics passes (froxel integration and its light
+sampling), and every other pass uses the unscaled radiance. Set it to 0
+for lights that belong to a first-person view, such as a flashlight or a
+muzzle flash, to keep them out of fog and volumetric scattering without
+changing how they light surfaces. The light still takes part in the
+volumetrics passes' light sampling, where it adds nothing. 1 is the
+neutral value. The developer option
+`rtx.volumetrics.debugDisableRadianceScaling` treats every scale as 1.
 
 ### `DrawLightInstance`
 
@@ -514,6 +612,45 @@ The bridge client and server must come from the same build.
 
 ---
 
+### `remixapi_UpdateTexture` (named export)
+
+```c
+remixapi_ErrorCode remixapi_UpdateTexture(const remixapi_TextureUpdateInfo* infos, uint32_t count);
+```
+
+Writes rectangles of a texture made by `CreateTexture`, for painted decals, wetness masks and dynamic UI surfaces. Each
+info names a texture and its rectangles. Each rectangle has a position and size at mip 0, a row pitch (0 means tightly
+packed) and pixels in the texture's own format, with no conversion. The pixels are copied before the call returns, on the
+calling thread.
+
+The writes apply on the command stream, in order with your other calls. The texture keeps its handle and table slot, so
+materials, meshes and BLASes are untouched. Lower mips are regenerated only for the changed rectangles, with a box filter
+that reads each changed texel's whole 2x2 block, in linear space for an sRGB format. Far-apart rectangles are regenerated
+apart, unless there are more than 16. Mips the host uploaded by other means are overwritten only inside those areas.
+
+A texture with mips of its own, in a format the device can filter, gets the transfer usage this needs when it is created.
+That costs no memory, so a texture that is never updated pays nothing.
+
+| Input | Result |
+| :-- | :-- |
+| A compressed format, an imported D3D11 texture, or mips in a format the device cannot filter | `REMIXAPI_ERROR_CODE_FEATURE_UNAVAILABLE` |
+| A null array with a count, null pixels, a rectangle outside the texture, a pitch shorter than a row | `REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS` |
+| A handle `CreateTexture` did not make or that is destroyed | `REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS` |
+
+Any error applies nothing from the batch.
+
+A `CreateTexture` for a live handle without `REMIXAPI_TEXTURE_HOST_IMPORT_FLAG_REPLACE` keeps the live image, so updates
+keep writing that image. When a replacing create changes the format while an update is in flight, the update is dropped
+with a warning and counted in `dropped`.
+
+**Opacity micromaps.** With `rtx.opacityMicromap.rebakeOnTextureChange` on (the default), a patch drops the micromaps baked
+from that texture and they rebake, at most `rtx.opacityMicromap.maxTextureChangeRebakesPerFrame` per frame. Until the new
+bake is ready, the old one or plain any-hit tests apply. With the option off, an alpha-tested surface keeps the micromap
+of the old alpha. Every patch counts, whichever channels it changes, so patching an alpha-tested texture every frame keeps
+it rebaking. Keep frequently patched textures off alpha-tested materials.
+
+The `[TextureUpdate]` log line reports the totals: `batches`, `rects`, `texels`, `mipTexels` and `dropped`.
+
 ## Configuration — `SetConfigVariable`
 
 ```c
@@ -541,6 +678,95 @@ For the architecture (config layers, priority, persistence), see
 [`RemixConfig.md`](../documentation/RemixConfig.md). For fork-side `rtx.*` namespaces
 that exist specifically as plugin-tuning surfaces (e.g.
 `rtx.weather.*`), see [Convention namespaces](#convention-namespaces).
+
+The value goes to the User layer, except an option flagged `NoSave`, which goes to the Derived layer. Options
+are read from layers at the end of the frame. A host that writes an option with a menu control every
+frame overrides the player's change to it, so write it on change only, or use a config layer.
+
+---
+
+## Config layers (named exports)
+
+```c
+remixapi_ErrorCode remixapi_CreateConfigLayer(const remixapi_ConfigLayerInfoEXT* info, uint64_t* out_handle);
+remixapi_ErrorCode remixapi_SetConfigLayerBlends(const remixapi_ConfigLayerBlend* blends, uint32_t count);
+remixapi_ErrorCode remixapi_DestroyConfigLayer(uint64_t handle);
+remixapi_ErrorCode remixapi_GetConfigValue(const char* key, char* value, uint32_t* inout_size);
+```
+
+A config layer is a sparse `.conf` file that the host fades in and out, for authored looks such as weather, time of
+day and interiors. The host decides when and how fast, and the runtime only blends. Resolve each export with
+`GetProcAddress`; they are not members of `remixapi_Interface`.
+
+A layer comes from one of two sources, with the same blending and order:
+
+- **A file:** `confPath`. The Option Layers view shows it by file name, and its save button writes to that file.
+- **Values in memory:** `values_values`, `values_count` and `layerName`. The view shows it under that name, and nothing
+  ever writes it to a file.
+
+Do not use a layer for values you compute every frame. A blend change walks the option table when it is applied, and
+every option the layer holds is resolved again.
+
+```c
+remixapi_ConfigLayerInfoEXT info = { REMIXAPI_STRUCT_TYPE_CONFIG_LAYER_INFO_EXT };
+info.confPath         = L"rain.conf";
+info.priority         = 10000;
+info.initialStrength  = 0.0f;
+info.initialThreshold = 0.5f;
+uint64_t rain = 0;
+if (pfnCreateConfigLayer(&info, &rain) == REMIXAPI_ERROR_CODE_SUCCESS) {
+  // Each frame of the fade:
+  remixapi_ConfigLayerBlend blend = { rain, fadeAmount, 0.5f };
+  pfnSetConfigLayerBlends(&blend, 1);
+}
+```
+
+| Rule | Behavior |
+| :-- | :-- |
+| Order | Higher priorities blend over lower ones. Priority is clamped to 100..10000000. That band is above `rtx.conf`, a mod's `rtx.conf`, environment overrides and derived values, and below user settings and quality presets, so a player's slider always wins. |
+| Blending | Float and vector options blend by strength. Other types apply once strength reaches the threshold. |
+| Persistence | A blend holds until you change it, and it can go down as well as up. Two calls in one frame: the last one counts. |
+| Sharing | The same path and priority share one layer, reference counted. The layer takes the highest strength and lowest threshold of its handles. A graph component on the same layer can raise the strength but not lower it. |
+| Timing | Calls apply in command-stream order, and options resolve at the end of the frame. `remixapi_GetConfigValue` sees the result after that. |
+| Lifetime | `Shutdown` releases the host's layers, and the next initialization starts with none. A device registered over another without `Shutdown` keeps them and their handles, because options are process-wide. |
+
+```c
+const remixapi_ConfigLayerValue values[] = { { "rtx.fogColorScale", "0.25" }, { "rtx.bloom.enable", "True" } };
+remixapi_ConfigLayerInfoEXT info = { REMIXAPI_STRUCT_TYPE_CONFIG_LAYER_INFO_EXT };
+info.values_values    = values;
+info.values_count     = 2;
+info.layerName        = "Interior";
+info.priority         = 10000;
+info.initialStrength  = 1.0f;
+info.initialThreshold = 0.5f;
+```
+
+`remixapi_CreateConfigLayer` reads and parses a file on the calling thread, and copies in-memory values during the call.
+
+| Input | Result |
+| :-- | :-- |
+| A bad struct or a non-finite value | `REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS` |
+| Both sources, or neither | `REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS` |
+| A list with an unknown key or a value its option cannot read, or an empty list | `REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS`, and nothing changes |
+| A name that is empty, over 128 characters, or holds a path separator or a `.conf` ending | `REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS` |
+| A name in use with another priority or other values | `REMIXAPI_ERROR_CODE_ALREADY_EXISTS` |
+| The same name, priority and values | Shares the layer, reference counted |
+| A missing or unreadable file | `REMIXAPI_ERROR_CODE_GENERAL_FAILURE` |
+| A file with an option this runtime lacks | Ignored, as in any `.conf` |
+| A file with a value its known option cannot read | That value is dropped with a warning in the log |
+
+`remixapi_SetConfigLayerBlends` checks the whole batch first. A non-finite value or a handle that is not live returns
+`REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS` and applies nothing. `remixapi_DestroyConfigLayer` returns the same for a handle
+that is not live.
+
+`remixapi_GetConfigValue` returns the resolved value as `.conf` text. A null `value` reports the size including the
+terminator in `*inout_size`. A buffer that is too small returns `REMIXAPI_ERROR_CODE_BUFFER_TOO_SMALL` (`0x4E560002`)
+and the needed size. An unknown key returns `REMIXAPI_ERROR_CODE_GENERAL_FAILURE`.
+
+Layers appear in the developer menu's Option Layers view, with their strength and threshold. Moving those sliders
+changes the blend until the host sets it again. Saving the player's settings writes only the User layer, so a host
+layer's values never reach `user.conf`. The view's save button on a file layer writes to that layer's own file. An
+in-memory layer has no save button.
 
 ---
 
