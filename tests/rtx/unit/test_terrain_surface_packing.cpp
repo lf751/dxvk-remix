@@ -82,6 +82,16 @@ void testSurfaceFlagsStayIndependent() {
     surface.writeGPUData(bytes.data(), offset);
     require(readU16(bytes.data() + 12) == uint16_t(defaultFlags | (flags << 2)),
             "Terrain flags must occupy only surface flags0 bits 2 and 3.");
+    for (const uint32_t uvOffset : { 1u, uint32_t(SURFACE_TEXCOORD1_DWORD_OFFSET_MAX) }) {
+      surface.texcoord1DwordOffset = uvOffset;
+      offset = 0;
+      surface.writeGPUData(bytes.data(), offset);
+      const uint16_t packed = readU16(bytes.data() + 12);
+      require((packed & 0xcu) == (flags << 2), "Secondary UV offset changed the terrain flags.");
+      require(((packed >> SURFACE_TEXCOORD1_DWORD_OFFSET_SHIFT) & SURFACE_TEXCOORD1_DWORD_OFFSET_MAX) == uvOffset,
+              "Terrain flags changed the secondary UV offset.");
+    }
+    surface.texcoord1DwordOffset = 0;
     bytes[12] = baseline[12];
     bytes[13] = baseline[13];
     require(bytes == baseline, "Terrain flags changed unrelated serialized surface fields.");
