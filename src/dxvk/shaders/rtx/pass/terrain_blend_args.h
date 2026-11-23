@@ -83,7 +83,7 @@ struct TerrainBlendArgs {
   float geoDipPeriod = 32.f;
   float lowerRockLowElevation = 0.f;
   float lowerRockHighElevation = 0.f;
-  float lowerRockPad0 = 0.f;
+  uint displacementMode = 2;
   float lowerRockPad1 = 0.f;
   TerrainBlendLayerArgs layers[kTerrainBlendLayerCount];
 };

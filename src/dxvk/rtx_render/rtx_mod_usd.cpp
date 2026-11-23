@@ -886,14 +886,10 @@ void UsdMod::Impl::processTerrainBlend(Args& args, const pxr::UsdStageRefPtr& st
   const auto displacementModeAttribute = attribute("displacementMode");
   if ((displacementModeAttribute.HasAuthoredValueOpinion() && !displacementModeAttribute.Get(&displacementMode)) ||
       displacementMode < 0 || displacementMode > 2) {
-    fail("displacementMode must be an integer: 0 off or 2 quadtree POM");
+    fail("displacementMode must be an integer: 0 off, 1 raymarched POM, or 2 quadtree POM");
     return;
   }
-  // Value 1 is the retired traversal mode in schema-one presets.
-  preset->displacementMode = displacementMode == 0 ? TerrainDisplacementMode::Off : TerrainDisplacementMode::QuadtreePOM;
-  if (displacementMode == 1) {
-    Logger::info("[RTX Terrain Blend] Legacy displacement mode migrated to Quadtree POM.");
-  }
+  preset->displacementMode = static_cast<TerrainDisplacementMode>(displacementMode);
   const auto readIterations = [&attribute](const char* name, uint32_t& value, int maximum) {
     const auto attr = attribute(name);
     int authored = static_cast<int>(value);

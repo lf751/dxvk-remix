@@ -2124,6 +2124,7 @@ namespace dxvk {
     m_terrainBlendArgs.heightBlendWidth = preset->heightBlendWidth;
     m_terrainBlendArgs.displacementEnabled = preset->displacementEnabled &&
       preset->displacementMode != TerrainDisplacementMode::Off;
+    m_terrainBlendArgs.displacementMode = static_cast<uint32_t>(preset->displacementMode);
     m_terrainBlendArgs.displacementStrength = preset->displacementStrength;
     m_terrainBlendArgs.displacementMaxIterations = static_cast<uint32_t>(preset->displacementMaxIterations);
     m_terrainBlendArgs.displacementSelfShadowEnabled = preset->displacementSelfShadowEnabled;

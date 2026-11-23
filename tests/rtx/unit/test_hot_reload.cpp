@@ -183,6 +183,10 @@ static void testTerrainShaderFeaturesBeforeGeometry() {
   };
   preset->displacementMode = TerrainDisplacementMode::Off;
   blendOnly();
+  preset->displacementMode = TerrainDisplacementMode::RaymarchPOM;
+  if (preset->shaderFeatures().key() != 3u) {
+    throw DxvkError("raymarched POM must expose both blend and shadow variants");
+  }
   preset->displacementMode = TerrainDisplacementMode::QuadtreePOM;
   preset->displacementStrength = 0.f;
   blendOnly();

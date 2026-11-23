@@ -24,7 +24,7 @@
 #include <cstdint>
 
 namespace dxvk {
-  enum class TerrainDisplacementMode : uint32_t { Off = 0, QuadtreePOM = 2 };
+  enum class TerrainDisplacementMode : uint32_t { Off = 0, RaymarchPOM = 1, QuadtreePOM = 2 };
 
   struct TerrainBlendShaderFeatures {
     bool enabled = false;
