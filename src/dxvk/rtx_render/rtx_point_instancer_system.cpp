@@ -112,26 +112,34 @@ namespace dxvk {
     const size_t batchCount = batches.size();
     m_batchScratch.clear();
     m_batchScratch.reserve(batchCount);
-    m_transformFirstScratch.resize(batchCount);
+    m_transformFirstScratch.clear();
+    m_transformFirstScratch.reserve(batchCount);
+    std::vector<const PointInstancerBatch*> activeBatches;
+    activeBatches.reserve(batchCount);
 
     const bool cullHost = cullHostInstancers();
     uint32_t threadCount = 0;
     uint32_t transformCount = 0;
+    const PointInstancerBatch* prevBatch = nullptr;
     for (size_t i = 0; i < batchCount; ++i) {
       const PointInstancerBatch& batch = batches[i];
+      if (batch.terrainGrass != nullptr) {
+        continue; // Populated directly on GPU by RtxTerrainGrassSystem::dispatchScatter
+      }
       // The SSS twin of a batch (recorded right after it by addPointInstancerBlas) shares its
       // transforms and surface slots: reuse the primary's transforms, and let only the
       // primary write the surface/material slots.
-      const bool isTwin = i > 0 &&
-        batches[i - 1].transforms == batch.transforms &&
-        batches[i - 1].baseSurfaceIndex == batch.baseSurfaceIndex &&
-        batches[i - 1].instanceCount == batch.instanceCount;
-      if (isTwin) {
-        m_transformFirstScratch[i] = m_transformFirstScratch[i - 1];
-      } else {
-        m_transformFirstScratch[i] = transformCount;
+      const bool isTwin = prevBatch != nullptr &&
+        prevBatch->transforms == batch.transforms &&
+        prevBatch->baseSurfaceIndex == batch.baseSurfaceIndex &&
+        prevBatch->instanceCount == batch.instanceCount;
+      prevBatch = &batch;
+      const uint32_t transformFirst = isTwin ? m_transformFirstScratch.back() : transformCount;
+      if (!isTwin) {
         transformCount += batch.instanceCount;
       }
+      m_transformFirstScratch.push_back(transformFirst);
+      activeBatches.push_back(&batch);
 
       PointInstancerCullingBatch gpu {};
       gpu.objectToWorld        = batch.objectToWorld;
@@ -145,7 +153,7 @@ namespace dxvk {
       gpu.blasRefHi            = static_cast<uint32_t>(batch.blasReference >> 32);
       gpu.instanceBufferOffset = batch.instanceBufferByteOffset;
       gpu.firstThread          = threadCount;
-      gpu.firstTransform       = m_transformFirstScratch[i];
+      gpu.firstTransform       = transformFirst;
       gpu.writeSurfaceData     = isTwin ? 0u : 1u;
       gpu.cullable             = (!batch.fromHost || cullHost) ? 1u : 0u;
       m_batchScratch.push_back(gpu);
@@ -159,14 +167,15 @@ namespace dxvk {
 
     // --- Upload what changed ---
     const bool skipUnchanged = skipUnchangedUploads();
+    const size_t activeBatchCount = activeBatches.size();
 
     m_transformScratch.resize(transformCount);
-    for (size_t i = 0; i < batchCount; ++i) {
+    for (size_t i = 0; i < activeBatchCount; ++i) {
       if (m_batchScratch[i].writeSurfaceData == 0) {
         continue; // twin: shares the primary's transforms
       }
-      memcpy(&m_transformScratch[m_transformFirstScratch[i]], batches[i].transforms->data(),
-             size_t(batches[i].instanceCount) * sizeof(Matrix4));
+      memcpy(&m_transformScratch[m_transformFirstScratch[i]], activeBatches[i]->transforms->data(),
+             size_t(activeBatches[i]->instanceCount) * sizeof(Matrix4));
     }
 
     bool transformsUnchanged = skipUnchanged && m_transformsGpu.ptr() != nullptr &&
@@ -175,8 +184,8 @@ namespace dxvk {
 
     const bool batchesUnchanged = skipUnchanged && m_batchesGpu.ptr() != nullptr &&
       m_uploadedThreadCount == threadCount &&
-      m_uploadedBatches.size() == batchCount &&
-      memcmp(m_uploadedBatches.data(), m_batchScratch.data(), batchCount * sizeof(PointInstancerCullingBatch)) == 0;
+      m_uploadedBatches.size() == activeBatchCount &&
+      memcmp(m_uploadedBatches.data(), m_batchScratch.data(), activeBatchCount * sizeof(PointInstancerCullingBatch)) == 0;
 
     const auto ensureBuffer = [&](Rc<DxvkBuffer>& buffer, size_t size, const char* name) {
       if (buffer.ptr() == nullptr || buffer->info().size < size) {
@@ -201,7 +210,7 @@ namespace dxvk {
       m_uploadedTransforms.swap(m_transformScratch);
     }
 
-    const size_t batchesSize = batchCount * sizeof(PointInstancerCullingBatch);
+    const size_t batchesSize = activeBatchCount * sizeof(PointInstancerCullingBatch);
     const size_t threadBatchSize = size_t(threadCount) * sizeof(uint32_t);
     const bool batchRealloc = ensureBuffer(m_batchesGpu, batchesSize, "RTX PointInstancer - Batches");
     const bool threadRealloc = ensureBuffer(m_threadBatchGpu, threadBatchSize, "RTX PointInstancer - Thread Batch");
@@ -209,7 +218,7 @@ namespace dxvk {
       ctx->writeToBuffer(m_batchesGpu, 0, batchesSize, m_batchScratch.data());
 
       m_threadBatchScratch.resize(threadCount);
-      for (size_t i = 0; i < batchCount; ++i) {
+      for (size_t i = 0; i < activeBatchCount; ++i) {
         std::fill_n(m_threadBatchScratch.begin() + m_batchScratch[i].firstThread,
                     m_batchScratch[i].instanceCount, static_cast<uint32_t>(i));
       }

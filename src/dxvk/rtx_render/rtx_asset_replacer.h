@@ -34,6 +34,7 @@
 #include "rtx_utils.h"
 #include "rtx_lights_data.h"
 #include "rtx_terrain_blend_types.h"
+#include "rtx_terrain_grass_types.h"
 #include "../shaders/rtx/pass/terrain_blend_args.h"
 
 namespace dxvk {
@@ -250,6 +251,16 @@ namespace dxvk {
       m_terrainBlendPreset = std::move(preset);
     }
 
+    std::shared_ptr<const TerrainGrassPreset> getTerrainGrassPreset() const {
+      std::lock_guard<sync::Spinlock> lock(m_spinlock);
+      return m_terrainGrassPreset;
+    }
+
+    void setTerrainGrassPreset(std::shared_ptr<const TerrainGrassPreset> preset) {
+      std::lock_guard<sync::Spinlock> lock(m_spinlock);
+      m_terrainGrassPreset = std::move(preset);
+    }
+
     // Returns the bucket of replacements of type T for a given hash value, or a nullptr
     // if no replacements were found. The strong ref is copied under the lock, so the
     // caller's bucket stays alive even if another thread replaces the map entry.
@@ -408,6 +419,7 @@ namespace dxvk {
       {
         std::scoped_lock lock(m_spinlock, src.m_spinlock);
         m_terrainBlendPreset = std::move(src.m_terrainBlendPreset);
+        m_terrainGrassPreset = std::move(src.m_terrainGrassPreset);
 
         const auto staleAndReplace = [&doomed](auto& map, auto& srcMap,
                                         const std::unordered_set<XXH64_hash_t>& dirty,
@@ -548,6 +560,7 @@ namespace dxvk {
       m_materialPathIndex.clear();
       m_secretReplacements.clear();
       m_terrainBlendPreset.reset();
+      m_terrainGrassPreset.reset();
     }
 
     const SecretReplacements& secretReplacements() const {
@@ -578,6 +591,7 @@ namespace dxvk {
 
     mutable sync::Spinlock m_spinlock;
     std::shared_ptr<const TerrainBlendPreset> m_terrainBlendPreset;
+    std::shared_ptr<const TerrainGrassPreset> m_terrainGrassPreset;
 
     // Replacements ready to be fed to the renderer
     fast_unordered_cache<std::shared_ptr<ReplacementBucket>> m_meshReplacers;
@@ -606,6 +620,7 @@ namespace dxvk {
     std::shared_ptr<const ReplacementBucket> getReplacementsForLight(XXH64_hash_t hash);
     std::shared_ptr<MaterialData> getReplacementMaterial(XXH64_hash_t hash);
     std::shared_ptr<const TerrainBlendPreset> getTerrainBlendPreset();
+    std::shared_ptr<const TerrainGrassPreset> getTerrainGrassPreset();
 
     // process the replacement USD and create all the m_replacements entries.
     void initialize(const Rc<DxvkContext>& context);

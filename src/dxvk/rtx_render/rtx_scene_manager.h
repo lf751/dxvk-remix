@@ -384,6 +384,10 @@ public:
   const TerrainBlendArgs& getTerrainBlendArgs() const { return m_terrainBlendArgs; }
   TerrainBlendShaderFeatures getTerrainBlendShaderFeatures() const;
   const std::shared_ptr<const TerrainBlendPreset>& getActiveTerrainBlendPreset();
+  const std::shared_ptr<const TerrainGrassPreset>& getActiveTerrainGrassPreset();
+  const TextureRef& getTerrainCoverageTexture() const { return m_terrainCoverageTexture; }
+  bool shouldHideVanillaGrass();
+  bool isTerrainGrassFlipUp();
 
   // Scene utility functions
   static Vector3 getSceneUp();
@@ -534,10 +538,22 @@ public:
 
 private:
   void prepareTerrainBlend();
+  void submitTerrainGrassInstances(const Rc<DxvkContext>& ctx);
   TerrainBlendArgs m_terrainBlendArgs;
   TextureRef m_terrainCoverageTexture;
   std::shared_ptr<const TerrainBlendPreset> m_activeTerrainBlendPreset;
   uint32_t m_terrainBlendFrame = UINT32_MAX;
+  std::shared_ptr<const TerrainGrassPreset> m_activeTerrainGrassPreset;
+  uint32_t m_terrainGrassFrame = UINT32_MAX;
+  bool m_lastHideVanillaGrass = false;
+  struct TerrainGrassCachedBatch {
+    uint64_t key = 0;
+    std::shared_ptr<const std::vector<Matrix4>> placeholders;
+    std::shared_ptr<const TerrainGrassBatchInfo> batchInfo;
+  };
+  std::vector<TerrainGrassCachedBatch> m_terrainGrassBatches;
+  uint64_t m_terrainGrassCacheGeneration = 0;
+  float m_terrainGrassCacheDensity = 0.f;
 
   enum class ObjectCacheState
   {

@@ -159,7 +159,7 @@ namespace dxvk {
   namespace {
     template<int RtInstanceSize> struct CheckRtInstanceSize {
       // The second line of the build error should contain the new size of RtInstance in the template argument, i.e. `dxvk::CheckRtInstanceSize<newSize>`
-      static_assert(RtInstanceSize == 856,"RtInstance size has changed.  Fix the copy constructor above this message, then update the expected size.");
+      static_assert(RtInstanceSize == 872,"RtInstance size has changed.  Fix the copy constructor above this message, then update the expected size.");
     };
     CheckRtInstanceSize<sizeof(RtInstance)> _rtInstanceSizeTest;
   }
@@ -948,6 +948,11 @@ namespace dxvk {
     currentInstance.m_categoryFlags = drawCall.getCategoryFlags();
     currentInstance.surface.instancesToObject = drawCall.getTransformData().instancesToObject;
     currentInstance.surface.instancesFromHost = drawCall.getTransformData().instancesFromHost;
+    if (lookupHash(LegacyMaterialDefaults::worldSpaceSecondaryOpacityTextures(),
+                   drawCall.getMaterialData().getColorTexture().getImageHash()) &&
+        m_device->getCommon()->getSceneManager().shouldHideVanillaGrass()) {
+      currentInstance.m_categoryFlags.set(InstanceCategories::Hidden);
+    }
 
     // setFrameLastUpdated() must be called first as it resets instance's state on a first call in a frame
     const bool isFirstUpdateThisFrame = currentInstance.setFrameLastUpdated(m_device->getCurrentFrameId());

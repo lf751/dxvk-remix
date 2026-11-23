@@ -299,6 +299,9 @@ namespace dxvk {
   void SceneManager::clear(Rc<DxvkContext> ctx, bool needWfi) {
     ScopedCpuProfileZone();
     m_terrainCoverageTexture = TextureRef {};
+    m_terrainGrassBatches.clear();
+    m_terrainGrassCacheGeneration = 0;
+    m_device->getCommon()->metaTerrainGrassSystem().onSceneClear();
 
     ++m_clearEpoch;
     // The retained scene releases its geometry's buffer slots before the check below.
@@ -1915,6 +1918,9 @@ namespace dxvk {
     instance.surface.terrainBlend = terrainPreset != nullptr;
     instance.surface.worldSpaceSecondaryOpacity = lookupHash(LegacyMaterialDefaults::worldSpaceSecondaryOpacityTextures(),
       drawCall.getMaterialData().getColorTexture().getImageHash());
+    if (instance.surface.worldSpaceSecondaryOpacity) {
+      m_terrainCoverageTexture = drawCall.getMaterialData().getColorTexture2();
+    }
 
     // Create and bind the RT material
     uint32_t newMatIdx = kInvalidMaterialCacheIndex;
@@ -2085,6 +2091,194 @@ namespace dxvk {
       m_terrainBlendFrame = frame;
     }
     return m_activeTerrainBlendPreset;
+  }
+
+  const std::shared_ptr<const TerrainGrassPreset>& SceneManager::getActiveTerrainGrassPreset() {
+    const uint32_t frame = m_device->getCurrentFrameId();
+    if (m_terrainGrassFrame != frame) {
+      m_activeTerrainGrassPreset = m_pReplacer->getTerrainGrassPreset();
+      m_terrainGrassFrame = frame;
+    }
+    return m_activeTerrainGrassPreset;
+  }
+
+  bool SceneManager::shouldHideVanillaGrass() {
+    if (RtxTerrainGrassSystem::getForceHideVanillaGrass()) {
+      return true;
+    }
+    if (!RtxTerrainGrassSystem::isEnabled()) {
+      return false;
+    }
+    const auto& preset = getActiveTerrainGrassPreset();
+    return preset != nullptr && preset->enabled && preset->hideVanillaGrass;
+  }
+
+  bool SceneManager::isTerrainGrassFlipUp() {
+    const auto& grassPreset = getActiveTerrainGrassPreset();
+    if (grassPreset && grassPreset->flipUpAuthored) {
+      return grassPreset->flipUp;
+    }
+    const auto& blendPreset = getActiveTerrainBlendPreset();
+    if (blendPreset) {
+      return blendPreset->flipElevation;
+    }
+    return grassPreset ? grassPreset->flipUp : false;
+  }
+
+  void SceneManager::submitTerrainGrassInstances(const Rc<DxvkContext>& ctx) {
+    const bool hideNow = shouldHideVanillaGrass();
+    if (hideNow != m_lastHideVanillaGrass) {
+      m_lastHideVanillaGrass = hideNow;
+      for (RtInstance* inst : m_instanceManager.getInstanceTable()) {
+        if (inst != nullptr && inst->surface.worldSpaceSecondaryOpacity) {
+          inst->setHidden(hideNow || inst->testCategoryFlags(InstanceCategories::Hidden));
+        }
+      }
+    }
+
+    if (!RtxTerrainGrassSystem::isEnabled() || !m_cameraManager.isCameraValid(CameraType::Main)) {
+      return;
+    }
+    const auto& preset = getActiveTerrainGrassPreset();
+    if (!preset || !preset->enabled) {
+      return;
+    }
+
+    const float densityScale = std::max(0.25f, RtxTerrainGrassSystem::getDensityScale());
+    const float invDensity = 1.f / densityScale;
+    const bool rebuildCache = m_terrainGrassCacheGeneration != preset->generation ||
+      std::fabs(m_terrainGrassCacheDensity - densityScale) > 1e-4f ||
+      m_terrainGrassBatches.empty();
+
+    if (rebuildCache) {
+      m_terrainGrassBatches.clear();
+      m_terrainGrassCacheGeneration = preset->generation;
+      m_terrainGrassCacheDensity = densityScale;
+
+      static constexpr uint32_t kMaxGridWidths[kTerrainGrassRingCount] = { 224u, 224u, 224u };
+      float prevRadius = 0.f;
+      for (uint32_t r = 0; r < kTerrainGrassRingCount; ++r) {
+        const auto& ring = preset->rings[r];
+        const uint32_t variantCount = static_cast<uint32_t>(ring.prototypes.size());
+        if (variantCount == 0) {
+          continue;
+        }
+        const bool isWholeIsland = (r == kTerrainGrassRingCount - 1u);
+        if (!isWholeIsland && ring.outerRadius <= prevRadius) {
+          continue;
+        }
+        float spacing = std::max(0.5f, ring.spacing * invDensity);
+        const TerrainGrassRingLayout layout = computeTerrainGrassRingLayout(
+          spacing, ring.outerRadius, preset->worldSize, variantCount, isWholeIsland, kMaxGridWidths[r]);
+        if (isWholeIsland) {
+          // Ensure whole-island ring still spans the full worldSize if density hits the grid cap.
+          const float minIslandSpacing = preset->worldSize / float(std::max<uint32_t>(1u, layout.gridWidth));
+          spacing = std::max(spacing, minIslandSpacing);
+        }
+        // Clamp toroidal outer radius to what the grid actually covers so a gap can never open before the next ring.
+        const float maxToroidalRadius = std::max(0.f, (float(layout.gridWidth) * 0.5f - 1.5f) * spacing);
+        const float effectiveOuterRadius = isWholeIsland
+          ? ring.outerRadius
+          : std::min(ring.outerRadius, maxToroidalRadius);
+        if (!isWholeIsland && effectiveOuterRadius <= prevRadius) {
+          continue;
+        }
+
+        auto placeholders = std::make_shared<std::vector<Matrix4>>(layout.slotsPerVariant, Matrix4());
+
+        for (uint32_t v = 0; v < variantCount; ++v) {
+          const auto& proto = ring.prototypes[v];
+          for (uint32_t m = 0; m < proto.meshes.size(); ++m) {
+            const auto& mesh = proto.meshes[m];
+            auto batchInfo = std::make_shared<TerrainGrassBatchInfo>();
+            batchInfo->meshToPrototype = mesh.meshToPrototype;
+            batchInfo->ringIndex = r;
+            batchInfo->variantIndex = v;
+            batchInfo->variantCount = variantCount;
+            batchInfo->gridWidth = layout.gridWidth;
+            batchInfo->rowSlots = layout.rowSlots;
+            batchInfo->isWholeIsland = isWholeIsland;
+            batchInfo->spacing = spacing;
+            batchInfo->innerRadius = prevRadius;
+            batchInfo->outerRadius = effectiveOuterRadius;
+            batchInfo->ringScale = ring.scale;
+
+            const uint64_t key =
+              (preset->generation << 24) ^
+              (uint64_t(r) << 16) ^
+              (uint64_t(v) << 8) ^
+              uint64_t(m) ^
+              0x4A504F4747524153ull;
+
+            m_terrainGrassBatches.push_back({ key, placeholders, std::move(batchInfo) });
+          }
+        }
+        prevRadius = effectiveOuterRadius;
+      }
+    }
+
+    const uint32_t currentFrameId = m_device->getCurrentFrameId();
+    const RtCamera& mainCamera = m_cameraManager.getMainCamera();
+    const Matrix4 identityMatrix;
+    static const MaterialData kDefaultGrassMaterial(LegacyMaterialData::createDefault());
+
+    size_t cacheCursor = 0;
+    for (uint32_t r = 0; r < kTerrainGrassRingCount; ++r) {
+      if (cacheCursor >= m_terrainGrassBatches.size() ||
+          m_terrainGrassBatches[cacheCursor].batchInfo->ringIndex != r) {
+        continue;
+      }
+      const auto& ring = preset->rings[r];
+      for (uint32_t v = 0; v < ring.prototypes.size(); ++v) {
+        const auto& proto = ring.prototypes[v];
+        for (uint32_t m = 0; m < proto.meshes.size(); ++m) {
+          if (cacheCursor >= m_terrainGrassBatches.size()) {
+            return;
+          }
+          const auto& cached = m_terrainGrassBatches[cacheCursor++];
+          const auto& mesh = proto.meshes[m];
+          if (!mesh.geometry || mesh.geometry->data.vertexCount == 0) {
+            continue;
+          }
+
+          SceneDraw drawCall;
+          drawCall.cameraType = CameraType::Main;
+          drawCall.overrideReplacementGeometryData(
+            std::shared_ptr<const RasterGeometry>(mesh.geometry, &mesh.geometry->data));
+          drawCall.overrideCullMode(VK_CULL_MODE_NONE);
+          drawCall.modifyCategoryFlags() = CategoryFlags(mesh.categoryFlagsRaw);
+
+          DrawCallTransforms& transforms = drawCall.modifyTransformData();
+          transforms.objectToWorld = identityMatrix;
+          transforms.worldToView = mainCamera.getWorldToView();
+          transforms.viewToProjection = mainCamera.getViewToProjection();
+          transforms.objectToView = transforms.worldToView;
+          transforms.instancesToObject = cached.placeholders;
+          transforms.instancesFromHost = false;
+
+          const MaterialData& matData = mesh.materialData ? *mesh.materialData : kDefaultGrassMaterial;
+          const XXH64_hash_t matHash = matData.getHash();
+          constexpr XXH64_hash_t kGrassSpatialHash = 0x4A504F4747524153ull;
+          const ReplacementInstance::LookupKey lookupKey {
+            cached.key, kGrassSpatialHash, matHash, kEmptyHash, Vector3(0.f, 0.f, 0.f), identityMatrix
+          };
+          ReplacementInstance* ri = m_drawCallTracker.findOrCreateReplacementInstance(lookupKey);
+          RtInstance* existingInstance = !ri->prims.empty() ? ri->prims[0].getInstance() : nullptr;
+
+          RtInstance* instance = processDrawCallState(ctx, drawCall, matData, *ri, existingInstance, nullptr);
+          if (instance != nullptr) {
+            instance->surface.terrainGrassBatch = cached.batchInfo;
+            if (ri->root.getUntyped() == nullptr) {
+              ri->setup(PrimInstance(instance, PrimInstance::Type::Instance), 1u, nullptr);
+            }
+            if (!ri->prims.empty() && ri->prims[0].getUntyped() != instance) {
+              instance->getPrimInstanceOwner().setReplacementInstance(ri, 0u, instance, PrimInstance::Type::Instance);
+            }
+          }
+          ri->frameLastSeen = currentFrameId;
+        }
+      }
+    }
   }
 
   bool SceneManager::shouldSmoothNormals(const SceneDraw& drawCallState) {
@@ -3394,6 +3588,8 @@ namespace dxvk {
         std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - lightMatchStart).count());
     }
 
+    submitTerrainGrassInstances(ctx);
+
     garbageCollection();
     prepPhase(0);
 
@@ -3458,6 +3654,15 @@ namespace dxvk {
       geometryUtils.weldTerrainNormals(ctx, m_instanceManager.getInstanceTable());
     } else {
       geometryUtils.resetTerrainNormals();
+    }
+
+    const auto& grassPreset = getActiveTerrainGrassPreset();
+    if (grassPreset && grassPreset->enabled && RtxTerrainGrassSystem::isEnabled() &&
+        m_cameraManager.isCameraValid(CameraType::Main)) {
+      const Vector3 artificialOffset = m_cameraManager.getCamera(CameraType::Main).getArtificialWorldOffset();
+      const Vector3 worldOffset(-artificialOffset.x, -artificialOffset.y, -artificialOffset.z);
+      m_device->getCommon()->metaTerrainGrassSystem().updateHeightAtlas(
+        ctx, m_instanceManager.getInstanceTable(), *grassPreset, worldOffset, isTerrainGrassFlipUp());
     }
 
     // Binds every instance's mesh to its cached SCCR shell buffer and builds the missing ones. This runs after garbage

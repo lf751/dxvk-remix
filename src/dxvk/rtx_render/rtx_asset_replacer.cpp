@@ -115,6 +115,20 @@ std::shared_ptr<const TerrainBlendPreset> AssetReplacer::getTerrainBlendPreset()
   return nullptr;
 }
 
+std::shared_ptr<const TerrainGrassPreset> AssetReplacer::getTerrainGrassPreset() {
+  if (!RtxOptions::getEnableReplacementMeshes()) {
+    return nullptr;
+  }
+  const auto& mods = m_modManager.mods();
+  for (auto mod = mods.rbegin(); mod != mods.rend(); ++mod) {
+    if (auto preset = (*mod)->replacements().getTerrainGrassPreset()) {
+      // An explicitly disabled preset suppresses grass presets in weaker mods.
+      return preset->enabled ? preset : nullptr;
+    }
+  }
+  return nullptr;
+}
+
 void AssetReplacer::initialize(const Rc<DxvkContext>& context) {
   for (auto& mod : m_modManager.mods()) {
     // Each mod cancels internally too; this stops us starting the next one. Returning
