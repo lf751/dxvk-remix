@@ -22,6 +22,9 @@
 #pragma once
 
 #include <array>
+#include <atomic>
+#include <mutex>
+#include <string>
 #include <vector>
 #include <unordered_map>
 #include "../util/rc/util_rc_ptr.h"
@@ -80,6 +83,85 @@ struct LightIdentityGpuEntry {
   uint32_t index;
 };
 
+// Where a light in the light debug view comes from, as far as the light manager can tell.
+enum class LightDebugSource : uint8_t {
+  Game,
+  Replacement,
+  ExternallyTracked,
+  Api,
+  Fallback,
+  SkyProvider,
+};
+
+// A copy of one light's state for the light debug view.
+// The view reads these copies, so it never touches light storage that the render thread changes.
+struct LightDebugInfo {
+  RtLightType type = RtLightType::Sphere;
+  LightDebugSource source = LightDebugSource::Game;
+  Vector4 colorAndIntensity = Vector4(0.0f);
+  Vector3 position = Vector3(0.0f);
+  Vector3 direction = Vector3(0.0f);
+  Vector3 radiance = Vector3(0.0f);
+
+  // Shape parameters.
+  // The sphere and cylinder use radius, the cylinder also uses axis and axisLength.
+  // The rect uses xAxis, yAxis and dimensions, the disk uses them with dimensions holding its half-dimensions.
+  // The rect and disk face along direction, and the distant light shines along direction with halfAngle.
+  float radius = 0.0f;
+  Vector3 axis = Vector3(0.0f);
+  float axisLength = 0.0f;
+  Vector3 xAxis = Vector3(0.0f);
+  Vector3 yAxis = Vector3(0.0f);
+  Vector2 dimensions = Vector2(0.0f);
+  float halfAngle = 0.0f;
+
+  // The luminance of the emitter's radiant intensity facing it, with the host calibration applied.
+  // The view derives its range hint from it.
+  float facingIntensity = 0.0f;
+
+  bool shapingSupported = false;
+  bool shapingEnabled = false;
+  Vector3 shapingDirection = Vector3(0.0f);
+  float shapingCosConeAngle = 1.0f;
+  float shapingConeSoftness = 0.0f;
+  float shapingFocusExponent = 0.0f;
+
+  // Gobo parameters, see documentation/LightGobos.md.
+  // goboRendered follows RtLight::isGoboRendered, and goboTextureIndex is only valid while it is true.
+  bool hasGobo = false;
+  bool goboRendered = false;
+  std::string goboTextureName;
+  uint32_t goboTextureWidth = 0;
+  uint32_t goboTextureHeight = 0;
+  uint32_t goboTextureIndex = BINDING_INDEX_INVALID;
+  // The gobo's settings, with the field of view resolved.
+  RtLightGobo gobo;
+  float goboAspect = 1.0f;
+  double goboTimeOffset = 0.0;
+  uint32_t goboCell = 0;
+  bool goboProjectionValid = false;
+  RtLightGoboGPUData goboProjection = {};
+
+  float volumetricRadianceScale = 1.0f;
+  XXH64_hash_t initialHash = 0;
+  XXH64_hash_t transformedHash = 0;
+  uint32_t frameLastTouched = 0;
+
+  bool hasReplacement = false;
+  size_t replacementIndex = 0;
+  bool isReplacementRoot = false;
+  PrimInstance::Type replacementRootType = PrimInstance::Type::None;
+};
+
+// A copy of the active dome light's state for the light debug view.
+struct DomeLightDebugInfo {
+  bool active = false;
+  Vector3 radiance = Vector3(0.0f);
+  std::string textureName;
+  uint32_t textureWidth = 0;
+  uint32_t textureHeight = 0;
+};
+
 struct LightManager : public CommonDeviceObject {
   // The external-light hooks in rtx_fork_light.cpp use the private external-light state.
   friend void fork_hooks::flushPendingLightMutations(LightManager&);
@@ -131,6 +213,7 @@ public:
   const DomeLightArgs& getDomeLightArgs();
 
   void clear();
+  // Requests a clear of the lights and the fallback light, which the render thread applies in its next prepareSceneData.
   void clearFromUIThread();
 
   void garbageCollection(RtCamera& camera);
@@ -141,6 +224,10 @@ public:
   void dynamicLightMatching();
 
   void prepareSceneData(Rc<DxvkContext> ctx, CameraManager const& cameraManager);
+
+  // Resolves the bindless indices of gobo textures and their sampler.
+  // Must be called after all lights for the frame are added and before the bindless tables are built.
+  void trackGoboTextures();
 
   void addGameLight(frontend::FixedFunctionLight::Type type, const RtLight& light);
   RtLight* addLight(const RtLight& light, const RtLightAntiCullingType antiCullingType);
@@ -196,6 +283,16 @@ private:
   Rc<DxvkBuffer> m_lightIdentityBuffer;
   LightBvh m_lightBvh;
 
+  // The texture cache generations the gobo texture indices in the light buffers were resolved in.
+  uint32_t m_lightBufferTextureGeneration = 0;
+  uint32_t m_previousLightBufferTextureGeneration = 0;
+  // The gobo sampler of each wrap mode, indexed by lightGoboWrapClamp to lightGoboWrapExtend.
+  std::array<uint32_t, 4> m_goboSamplerIndices = { BINDING_INDEX_INVALID, BINDING_INDEX_INVALID, BINDING_INDEX_INVALID, BINDING_INDEX_INVALID };
+  // The world's handedness as the main camera last showed it, see LightUtils::getWorldHandedness.
+  bool m_isWorldLeftHanded = false;
+  // The squared camera distance and buffer index of the nearest animated gobo lights.
+  std::vector<std::pair<float, uint32_t>> m_animatedGoboLights;
+
   uint32_t m_currentActiveLightCount = 0;
   std::array<LightRange, lightTypeCount> m_lightTypeRanges;
   // Note: The following vectors are included as members rather as local variables in the
@@ -220,11 +317,19 @@ private:
   std::vector<uint16_t> m_lightMappingData{};
   std::vector<LightIdentityGpuEntry> m_lightIdentityData{};
 
-  // Mutex to prevent the debugging UI from accessing the light data after it's been deleted.
+  // The light debug view's copy of this frame's lights, built by prepareSceneData while the view is enabled.
+  // The UI thread reads it while the render thread replaces it, so both hold m_lightUIMutex.
+  std::vector<LightDebugInfo> m_lightDebugSnapshot{};
+  DomeLightDebugInfo m_domeLightDebugSnapshot{};
   mutable std::mutex m_lightUIMutex;
-  std::unique_lock<std::mutex> m_lightDebugUILock = std::unique_lock<std::mutex>(m_lightUIMutex, std::defer_lock);
+
+  // Set by clearFromUIThread and applied on the render thread at the start of prepareSceneData.
+  std::atomic<bool> m_clearRequested { false };
 
   bool getActiveDomeLight(DomeLight& lightOut);
+
+  // Copies m_linearizedLights into m_lightDebugSnapshot while the light debug view is enabled.
+  void updateDebugSnapshot();
 
   void garbageCollectionInternal();
 
@@ -297,6 +402,10 @@ private:
              "If true, scales the RectLight cone half-angle by the light's aspect ratio in tangent space, "
              "producing a cone that matches the rect's proportions. When false (default), the cone is uniform "
              "and independent of the light's width/height. Ignored when enableLegacyRectLightConeShaping is true.");
+  RTX_OPTION("rtx.lights", bool, enableGobos, true,
+             "Enables light gobos, textures that spot lights project onto the scene like a slide projector, for example window frames or foliage shadows. "
+             "Gobos are authored on replacement sphere lights with shaping through the inputs:shaping:gobo attributes. "
+             "Turning this off renders those lights without their gobo texture, which can help to compare the look or performance.");
 };
 
 }  // namespace dxvk

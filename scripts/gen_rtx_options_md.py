@@ -6,7 +6,8 @@ Usage, from anywhere:
   python scripts/gen_rtx_options_md.py --check    # exits 1 when RtxOptions.md is out of date
   python scripts/gen_rtx_options_md.py --json out.json   # also dumps the parsed options
 
-The output matches the table the runtime writes with DXVK_DOCUMENTATION_WRITE_RTX_OPTIONS_MD=1:
+The output is the file the runtime writes with DXVK_DOCUMENTATION_WRITE_RTX_OPTIONS_MD=1, which
+test_documentation compares RtxOptions.md against. It has the header and these columns:
 name, type, default, min, max and description, with simple and complex types in separate tables.
 Defaults and limits are evaluated from the C++ source, so an expression the evaluator cannot
 reduce is an error that names the option and the expression.

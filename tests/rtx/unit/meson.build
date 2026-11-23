@@ -96,6 +96,10 @@ exe = executable('test_material_update',  files('test_material_update.cpp'), inc
 test('test_material_update', exe, env: test_env)
 tests += exe
 
+exe = executable('test_remix_api_version',  files('test_remix_api_version.cpp'), include_directories : remix_api_include_path, win_subsystem : 'console', override_options: ['cpp_std='+dxvk_cpp_std])
+test('test_remix_api_version', exe, env: test_env)
+tests += exe
+
 exe = executable('test_texture_update',  files('test_texture_update.cpp'), win_subsystem : 'console', override_options: ['cpp_std='+dxvk_cpp_std])
 test('test_texture_update', exe, env: test_env)
 tests += exe
@@ -122,6 +126,10 @@ tests += exe
 
 exe = executable('test_particle_system_schema', files('test_particle_system_schema.cpp'), dependencies : usd_dep, win_subsystem : 'console', override_options: ['cpp_std='+dxvk_cpp_std])
 test('test_particle_system_schema', exe, env: test_env, args: remix_particle_system_plugin.full_path(), depends: remix_particle_system_plugin)
+tests += exe
+
+exe = executable('test_particle_drag', files('test_particle_drag.cpp'), include_directories : test_include_path, win_subsystem : 'console', override_options: ['cpp_std='+dxvk_cpp_std])
+test('test_particle_drag', exe, env: test_env)
 tests += exe
 
 exe = executable('test_graph_usd_parser',  files('graph/test_component.h', 'graph/test_flexible_component.h', 'graph/test_flexible_component.cpp', 'test_graph_usd_parser.cpp'),
@@ -203,6 +211,16 @@ exe = executable('test_geometry_continuity', files('test_geometry_continuity.cpp
   include_directories: test_include_path, dependencies: [test_unit_deps, d3d9_dep],
   link_with: [d3d9_dll, dxvk_lib], win_subsystem: 'console', override_options: ['cpp_std='+dxvk_cpp_std])
 test('test_geometry_continuity', exe, env: test_env)
+tests += exe
+
+exe = executable('test_light_data_merge', files('test_light_data_merge.cpp'),
+  include_directories : test_include_path, dependencies : [ d3d9_dep, test_unit_deps ], link_with: [ d3d9_dll, dxvk_lib ], win_subsystem : 'console', override_options: ['cpp_std='+dxvk_cpp_std])
+test('test_light_data_merge', exe, env: test_env)
+tests += exe
+
+exe = executable('test_light_gobo', files('test_light_gobo.cpp'),
+  include_directories : test_include_path, dependencies : [ d3d9_dep, test_unit_deps ], link_with: [ d3d9_dll, dxvk_lib ], win_subsystem : 'console', override_options: ['cpp_std='+dxvk_cpp_std])
+test('test_light_gobo', exe, env: test_env)
 tests += exe
 # The RayQuery G-buffer slim variant coverage over every feature combination (self-contained, no runtime link).
 exe = executable('test_gbuffer_variant_coverage',  files('test_gbuffer_variant_coverage.cpp'),  dependencies : test_unit_deps, win_subsystem : 'console', override_options: ['cpp_std='+dxvk_cpp_std])

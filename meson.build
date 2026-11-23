@@ -327,7 +327,7 @@ python_interpreter = find_program('python3', 'python')
 shader_compile_script = join_paths(global_src_root_norm, 'scripts-common/compile_shaders.py')
 
 # NV-DXVK start: NUMOS sky provider (submodules/numos). Its passes build with this slangc into
-# numos_spirv_dir; install copies them and the night sky data to <output>/numos.
+# numos_spirv_dir; install copies them, the night sky data and the NUMOS notices to <output>/numos.
 numos_root = join_paths(global_src_root_norm, 'submodules/numos')
 numos_shader_script = join_paths(global_src_root_norm, 'scripts-common/numos_shaders.py')
 numos_spirv_dir = join_paths(current_build_dir_norm, 'src/dxvk/numos_spirv')
@@ -817,7 +817,7 @@ if dxvk_is_ninja or dxvk_is_woa_ec
       )
     endif
 
-    # NV-DXVK start: NUMOS shaders and night sky data, loaded from <output>/numos at run time
+    # NV-DXVK start: NUMOS shaders and night sky data, loaded from <output>/numos at run time, and its notices
     meson.add_install_script(
       python_interpreter, numos_shader_script, 'install', numos_root, numos_spirv_dir, output_path,
       install_tag: target_suffix
@@ -832,6 +832,18 @@ if dxvk_is_ninja or dxvk_is_woa_ec
         join_paths(current_build_dir_norm, 'src/d3d9', release_build ? 'd3d9.dll' : 'd3d9.*'), output_path,
         install_tag: target_suffix
       )
+    endif
+
+    # The D3D11 and DXGI forwarders go in a subfolder of the package, not next to d3d9.dll.
+    # Any D3D11 game that finds them beside its executable runs on DXVK's D3D11, so only a Remix API D3D11 host copies them in.
+    if target_suffix == 'output' and get_option('enable_d3d11') and get_option('enable_dxgi')
+      foreach forwarder : [ 'd3d11', 'dxgi' ]
+        meson.add_install_script(
+          join_paths(global_src_root_norm, 'scripts-common/install_file_in_dir.bat'),
+          join_paths(current_build_dir_norm, 'src', forwarder, forwarder + '.dll'), join_paths(output_path, 'd3d11-forwarders'),
+          install_tag: target_suffix
+        )
+      endforeach
     endif
 
   endforeach

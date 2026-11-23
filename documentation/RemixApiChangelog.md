@@ -39,6 +39,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `remixapi_ConfigLayerBlend` and `REMIXAPI_ERROR_CODE_BUFFER_TOO_SMALL` (`0x4E560002`).
 
 ### Changed
+- 2026-11-18: `remixapi_InitializeLibrary` writes only the part of
+  `remixapi_Interface` that the caller's version knows, in the runtime and in the
+  bridge client. Every accepted version knows the whole current table, so callers
+  see no difference until a minor version appends a function pointer. The bridge
+  zero-initializes struct fields that it does not forward. The surface is
+  unchanged.
 - 2026-11-02: `SetConfigVariable` writes an option flagged `NoSave` to the Derived
   layer instead of the User layer, so the runtime's menus can change it afterwards.
 
@@ -48,6 +54,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   trace it replayed (`rtx.d3d9Identity.traceFrames`). It was a diagnostics
   entry point for `remix_replay --identity-trace`, not part of the plugin
   contract; `remix_c.h` and `remixapi_Interface` are unchanged.
+
+### Fixed
+- 2026-11-21: the bridge client's `CreateMesh` no longer hangs when
+  `remixapi_MeshInfo::pNext` is set. It drops each mesh extension with a warning
+  and sends the mesh. The surface is unchanged.
+- 2026-11-21: the bridge client sends a skinned mesh's blend weights and blend
+  indices as `blendWeights_count` and `blendIndices_count` elements, the totals
+  `remix_c.h` defines. It multiplied them by `bonesPerVertex` and the vertex
+  count again and read past the caller's arrays. The surface is unchanged.
+- 2026-11-21: the 32-bit bridge forwards `UpdateLightDefinition` and
+  `AutoInstancePersistentLights` to the runtime. They were stubs that did
+  nothing, and `UpdateLightDefinition` returned `GENERAL_FAILURE`, so a
+  32-bit plugin could change a light only by destroying and re-creating it.
+  An update now carries every light shape, as `CreateLight` does, and keeps
+  the light's identity. The client checks the handle and the base `sType` and
+  returns `SUCCESS` without waiting for the server. No struct or table slot
+  changed.
+- 2026-11-21: on the D3D9 host path, the begin-scene callback fires on every
+  frame, not only the first: the device's own `Present` ends the frame. It
+  still fires neither the end-scene nor the present callback.
+- 2026-11-21: `Shutdown` no longer releases a game's own D3D9 device that a
+  plugin registered with `dxvk_RegisterD3D9Device`. It releases only the
+  reference registering took. Devices made through `Startup` or
+  `dxvk_CreateD3D9` are released as before.
 
 ### Changed
 - 2026-11-11: `AddTextureHash` and `RemoveTextureHash` accept a `session:` prefix

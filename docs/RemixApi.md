@@ -110,9 +110,11 @@ remixapi_ErrorCode Shutdown(void);
 `Startup` activates the renderer for a given HWND. Optional flags on
 `remixapi_StartupInfo` control sRGB conversion, swapchain ownership
 (`forceNoVkSwapchain` for OpenGL / external present paths), and editor
-mode. `Shutdown` releases the registered D3D9 device and everything the runtime holds
-for the host; a second call does nothing. It releases the device until it is destroyed,
-so a plugin that registered a game's own device must not call it while the game runs.
+mode. `Shutdown` unregisters the device and releases everything the runtime holds
+for the host; a second call does nothing. A device made through `Startup` or
+`dxvk_CreateD3D9` is released until it is destroyed. A game's own device that a
+plugin registered with `dxvk_RegisterD3D9Device` stays alive: `Shutdown` releases
+only the reference that registering took.
 
 ### `Present`
 
@@ -445,7 +447,7 @@ for additional behavior:
 
 | Extension | Effect |
 | :-- | :-- |
-| `remixapi_InstanceInfoBoneTransformsEXT` | Per-bone world transforms for skinned mesh playback. |
+| `remixapi_InstanceInfoBoneTransformsEXT` | Per-bone skinning transforms for skinned mesh playback, in the mesh's object space. Each one takes a vertex as the mesh stores it to its posed position, so it includes the inverse bind pose. The instance transform then places the result in the world. |
 | `remixapi_InstanceInfoBlendEXT` | D3D9-style alpha test/blend state, used when the material has `useDrawCallAlphaState=true`. |
 | `remixapi_InstanceInfoObjectPickingEXT` | Tags the instance with a 32-bit ID readable via the picking API. |
 | `remixapi_InstanceInfoParticleSystemEXT` | Spawns a GPU particle system bound to this instance. |
@@ -1046,7 +1048,10 @@ The API version is 1.0.0. The runtime accepts a caller with the same major
 and a minor no higher than its own. It also accepts a 0.1000.x caller (the
 header of `rebased-9-19` and rc1), whose interface table and structs are the
 same as 1.0's, and rejects every other 0.x caller (NVIDIA dxvk-remix and other
-forks). The patch is not compared. The bridge client applies the same rule. See
+forks). The patch is not compared. The bridge client applies the same rule.
+Initialization writes only the part of `remixapi_Interface` that the caller's
+version knows, so a function pointer appended in a later minor version never
+writes past an older caller's table. See
 [`RemixApi-Migration.md`](RemixApi-Migration.md#2-version-and-compatibility).
 
 `remixapi_StructType` values are append-only — never reorder. Adding

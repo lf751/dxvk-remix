@@ -41,6 +41,154 @@ Smooth terrain normals weld at matching world positions across draws, so indepen
 - Preset controls: optional `controlMap` with `controlWorldToUv` projection.
 - Docs: [Terrain Blend](../documentation/TerrainBlend.md).
 
+### Fix: color grades could flicker black with DLSS-NR
+With a grade that has negative matrix terms, such as Warm Amber, the tone curve could return a channel below zero, and the DLSS-NR fast tone mapping pass turned it into NaN in the network's input. That pass and the inverse pass now clamp to 0 to 1, and a pixel whose curve output was negative keeps its original HDR color.
+- Options: none.
+- Commits: the commit that adds this entry.
+
+### Fix: replacement lights no longer stop taking updates
+Externally tracked lights (mesh replacement lights, game light replacements, retained scene lights) stopped copying updates after `numFramesToKeepLights / 2` updates, whether or not the update changed anything, so a light on a moving mesh froze and edits after a hot reload were lost. A light now only sleeps after that many updates in a row that change nothing, and any change wakes it. The comparison covers every member an update copies, not the hashes, which leave out the radiance, the volumetric scale, the light flags and the gobo. A sleeping or updated light keeps its buffer index and identity, so it keeps its temporal data.
+- Options: none.
+- Commits: the commit that adds this entry.
+
+### Light gobos: flipbooks, motion and filtering, and fixes from a review
+Gobos gained the full attribute set of the upstream change: aspect, wrap modes, strength, invert, alpha, color space, scrolling, rotation, shake, time offsets and flipbooks with blending and four loop modes, filtered with one anisotropic fetch from the pixel or froxel footprint and the emitter size, with a short volumetric history in the cones of animated gobos. Fixes since: one channel textures show as gray, flipbook lookups stay inside their cell at every mip, textures without mips clamp at the mip they have, gobos on game lights are upright in Z-up and left-handed worlds, and the tangent decodes as the CPU encodes it. From the review: the side of the image that is right now follows the handedness of the main camera instead of `rtx.leftHandedCoordinateSystem`, so a left-handed game needs no option, and the handedness holds while the camera is missing. Child lights of a light replacement get an upright image whichever way the game light points. Each wrap mode has its own sampler, so anisotropic taps no longer wrap to the opposite edge of a clamped, extended or mirrored image. A large emitter softens the edge of a clamped image like its content. A camera at the receiver no longer gives a NaN footprint. The debug view no longer starts the clock of a gobo that plays once before it renders, and its tooltip lists every gobo option. A light's conversion no longer allocates a gobo each frame.
+- Options: none. `rtx.leftHandedCoordinateSystem` no longer affects gobos.
+- Commits: the commit that adds this entry.
+- Docs: [LightGobos.md](LightGobos.md), [documentation/LightGobos.md](../documentation/LightGobos.md)
+
+### Fix: RtxOptions.md matches the runtime's documentation writer again
+Regenerating `RtxOptions.md` with `scripts/gen_rtx_options_md.py` gave a different header and appended environment variable names, which the runtime's writer does not, so `test_documentation` failed. The script now writes the runtime's format.
+- Options: none.
+- Commits: the commit that adds this entry.
+
+### Fix: gobos wait for a resident texture and track its mip size
+A gobo whose texture was not loaded sampled the black dummy texture, which turned its light off. The light now renders without its gobo until the texture has an image, and the gobo's mip selection follows the resident top mip every frame. The light debug view shows such a gobo as not rendered.
+- Options: none.
+- Commits: the commit that adds this entry.
+- Docs: [LightGobos.md](LightGobos.md)
+
+### Fix: runtime packages carry the NUMOS license and notices
+The install copied only NUMOS's SPIR-V and night sky data, so binary packages had no copy of its Apache-2.0 license, its NOTICE, or the MIT notice of its community contributors. The install now also copies `LICENSE`, `NOTICE`, `THIRD_PARTY_NOTICES.md` and `licenses/` into the `numos` folder and fails if one is missing. `ThirdPartyLicenses.txt` has a NUMOS section with the notice, the contributors' license and the night sky data credits.
+- Options: none.
+- Commits: the commit that adds this entry.
+
+## 2026-11-21
+
+### Fix: a `def` light override no longer resets the light
+A `light_<hash>` prim written as `def` instead of `over` took schema defaults for every attribute it did not author, so a replacement that only added a gobo put the light at the world origin with no radius, unit intensity and no shaping, and the light vanished. A light named after the light it replaces is now an override whether it is a `def` or an `over`: only its authored attributes replace the game light's values. Child lights under it still take schema defaults when they are `def`.
+- Options: none.
+- Commits: the commit that adds this entry.
+
+### Lights: the debug view draws every light type, spot cones and gobos
+The light debug view drew every sphere light as a plain disc, so spot lights looked like point lights, and it skipped distant and dome lights. It now draws each light type in its own color with a legend: sphere and spot emitters at their true radius, spot cones with the dashed inner edge where the softness ends, rect and disk outlines with their facing arrow and shaping cone (the rect pyramid follows the legacy and ratio scaling cone options), cylinder caps with the axis, the area a gobo projects onto at the end of a spot cone, a direction gizmo with the angular diameter for each distant light, and a panel for the dome light. An optional dashed range hint shows where a light's inverse-square illuminance falls below a threshold. The hover tooltip adds the light's source (game, replacement, externally tracked, Remix API, fallback, sky provider), intensity, inner cone angle and the gobo's texture, size, index, field of view, rotation, scale and offset. The view still draws from the render thread's snapshot, built only while the view is on.
+- Options: added `rtx.lights.debugShowCones` (default on), `rtx.lights.debugShowRange`, `rtx.lights.debugRangeThreshold`, `rtx.lights.debugShowDistantAndDome` (default on), `rtx.lights.debugShowSphereLights` / `SpotLights` / `RectLights` / `DiskLights` / `CylinderLights` (default on), `rtx.lights.debugColorMode`, `rtx.lights.debugLabelMode`, `rtx.lights.debugMaxDrawDistance`, `rtx.lights.debugMaxLights` (default 1024), all debug-only and not saved, under Lighting > Light Statistics. Removed `rtx.lights.debugDrawLightHashes`, which `rtx.lights.debugLabelMode` = 1 replaces. The view is off by default, and the filters inside it default to showing everything. Preset-independent: debug only.
+- Commits: the commit that adds this entry.
+
+### Lights: gobos on spot lights
+Replacement sphere lights with shaping can project a texture, a gobo, like a slide projector, authored with the `inputs:shaping:gobo:file`, `:scale`, `:offset`, `:rotation` and `:fov` USD attributes. The gobo's color multiplies the light and blocks it outside the projected texture, in every path that evaluates sphere light shaping (RTXDI, LightBVH, the NEE cache, the integrators and volumetrics). Ported from our upstream change 816f427d0 (on NVIDIA's main).
+- Options: added `rtx.lights.enableGobos` (default on, since it only changes lights that author a gobo), in the Light Gobos section of the light settings. Preset-independent: it costs nothing on lights without a gobo.
+- Packing: the gobo uses the sphere light's spare bytes (data0.w high half, data2) and flag bit 3. Flag bits 1 and 2 (view model, distant light cloud shadow) are unchanged.
+- Not applied: NUMOS froxel local-light injection evaluates the shaping cone itself and lights a gobo light as a plain spot.
+- Commits: the commit that adds this entry.
+- Docs: [LightGobos.md](../documentation/LightGobos.md)
+
+### Weather Presets window redesigned
+The Weather Presets window was cluttered: about twelve rows of global controls sat above the presets, every setting was listed whatever a preset overrode, and sliders stretched across the window. The window now has a one-line header (folder, unsaved count, Save, Reload, and Files & seeds, which shows the seed and file tools in tabs), a status strip (game weather, the preset bound to it, what shows, Follow game weather, Ease, the preset without a game weather, and a Look... menu for tuning and saving the current look), and a resizable split between the preset list and the editor. The editor lists only the settings the preset overrides, by section with a count in each header, as label, fixed-width value and an x that removes the override; Add setting... searches the rest, and Show all settings lists the inherited ones dimmed, where a click overrides one. The name renames on a click, the weathers show as chips, and Save as new file moved to a menu. Presentation only: the same preset data, file format and behavior.
+- Options: none.
+- Commits: the commit that adds this entry.
+- Docs: [RemixSkyAPI.md](RemixSkyAPI.md)
+
+### NUMOS: separate star, moonlight and moon disc brightness
+Night Gain scaled the stars, the Milky Way and the moons by one factor, and the moons and stars were lit by the sun after Sun Intensity and a weather preset's sun illuminance, so raising the stars blew out the moon and raising the sun brightened the night. The whole night sky is now lit by a fixed reference sun (the default sun), and three gains on top of Night Gain set the stars and Milky Way, the moonlight, and the visible moon discs apart. They fade in through twilight like Night Gain and leave daylight unchanged. Exposure follows the moonlight, not the discs. The look at default settings is unchanged; a config with a non-default Sun Intensity or sun illuminance gets a different night (a brighter sun no longer brightens it), which the new gains make up for.
+- Options: added `rtx.atmosphere.starGainStops`, `rtx.atmosphere.moonlightGainStops`, `rtx.atmosphere.moonDiscGainStops` (stops, default 0), in the Sky > Night tab and the user menu's night page.
+- Commits: the commit that adds this entry (NUMOS submodule bump and menu rows).
+
+### Fix: D3D9 suite fails hung and crashed runs
+`tools/remix_replay/d3d9v2_scenarios.sh` passed a run's "the run finishes" check whenever the testhost had printed "frames done", so a run that then hung until the timeout, was killed or exited with an error still counted as finished. The run step now records the testhost's exit code (and a timeout) in the run's `out-` file, and the check also requires exit code 0.
+- Options: none.
+- Commits: the commit that adds this entry.
+
+### Fix: NUMOS sky panel note overlapping the first control
+While a weather preset was showing, the note that its settings are set by the preset was drawn inside the Sky section's tab bar, so it overlapped the first control of the open tab (Sun Intensity on the Sky tab). The note and the shader load warning now sit above the tab bar.
+- Options: none.
+- Commits: the commit that adds this entry.
+
+### Fix: weather preset Sunlight strength stuck at zero
+In the weather preset editor, a color-and-strength row such as Sunlight split its value into a color and a strength, so a strength of 0 stored black and lost the color, and no later strength could bring the light back. The row now keeps its last nonzero color (white if it never had one) and builds the value from it, so raising the strength from 0 restores the light with its hue.
+- Options: none.
+- Commits: the commit that adds this entry.
+
+### Fix: bridge CreateMesh hang with a mesh extension
+The bridge client's `CreateMesh` walked the `pNext` chain without advancing, so any mesh created with a non-null `remixapi_MeshInfo::pNext` hung the game. It now drops each mesh extension with a warning and sends the mesh.
+- Options: none.
+- Commits: the commit that adds this entry.
+- Docs: [RemixApi-Plugin-Guide.md](../documentation/RemixApi-Plugin-Guide.md)
+
+### Fix: bridge skinned meshes
+The bridge client sized a skinned mesh's blend weights and blend indices as `count * bonesPerVertex * vertexCount`, but the API's counts are already the totals, so it read far past the plugin's arrays and could crash or send garbage. It now sends exactly `blendWeights_count` floats and `blendIndices_count` indices, so skinned meshes work through the bridge.
+- Options: none.
+- Commits: the commit that adds this entry.
+- Docs: [RemixApi-Plugin-Guide.md](../documentation/RemixApi-Plugin-Guide.md)
+### The frame generation dropdown is the only frame generation switch
+The dropdown could show FSR while FSR frame generation stayed off with the status "selected but inactive": it wrote the hidden `rtx.fsrfg.enable` switch on the derived-settings layer, so a saved `rtx.fsrfg.enable = False` in `user.conf`, a stronger layer, won. Both hidden switches are removed, and `rtx.frameGenerationType` alone decides whether DLSS or FSR frame generation runs. Every status other than active or off now names its reason in the menu and logs it once per change as a `[FrameGen] status:` line: not supported (with the missing DLL, the NGX reason or the missing queues), failed (with the error from the log), off for the session after repeated prepare failures, waiting for the swap chain or the frame generation presenter, paused while presents have no ray-traced frame, and the D3D11 swap chain, which cannot present generated frames.
+- Options: removed `rtx.dlfg.enable` (env `RTX_DLFG_ENABLE`) and `rtx.fsrfg.enable` (env `RTX_FSRFG_ENABLE`). Use `rtx.frameGenerationType` (env `DXVK_FRAMEGEN_TYPE`) instead. Stale values in a config file are ignored, and the next save of that file drops them.
+- Commits: the commit that adds this entry.
+
+### Light debug view no longer crashes
+Turning on `rtx.lights.enableDebugMode` could crash at once, most often with Remix API lights. The view read lights through pointers into the light tables from the UI thread while the render thread freed and rebuilt them: garbage collection erased lights after the list was built, and the light prepare rebuilt the list and replaced API lights without the lock. The render thread now copies what the view shows into a list of plain values at the end of the light prepare, only while the view is on, and the view reads only that copy. The lock that the render thread held from the first light added in a frame until garbage collection is removed, and the light clear that a light settings change in the menu triggers is now queued for the render thread's next light prepare.
+- Options: none.
+- Commits: the commit that adds this entry.
+
+### FSR frame generation no longer races device teardown at quit
+About one quit in four with FSR frame generation logged `waitForIdle: Operation failed`, because the device was idled while the FFX proxy's present thread could still be presenting. The swapchain now drains and releases the FSR presenter before it idles the device, every device idle waits for the proxy's queued presents, and the frame generation object waits for them before destroying its contexts.
+- Options: none.
+- Commits: the commit that adds this entry.
+
+### RemixFX effect states and parameters apply live
+`rtx.postfx.external.effectEnabledStates` and `rtx.postfx.external.effectParameterValues` were read only when effects loaded, so a mod that set them through the Remix API's config call, or a config file change, did nothing until the next reload. A change now applies to the loaded effects at the end of the frame it is set in, with parameter values clamped to their bounds as at load. The unused `RtxExternalEffects::setParameter` is removed.
+- Options: none added. The two options now have change callbacks.
+- Commits: the commit that adds this entry.
+- Docs: [RemixFx.md](RemixFx.md), [RemixFx-Shader-Guide.md](../documentation/RemixFx-Shader-Guide.md)
+
+### FSR or XeSS instead of TAA-U where DLSS is unsupported
+When DLSS is the selected upscaler (the default) but the GPU cannot run it, Remix now picks FSR, then XeSS, then TAA-U, whichever runs first, instead of always falling back to TAA-U. An upscaler the user picked other than DLSS is left alone. The Auto graphics preset on non-NVIDIA GPUs sets the FSR and XeSS presets to Performance, which matches the 0.5 resolution scale it already sets for NIS and TAA-U.
+- Options: none. Auto preset on non-NVIDIA GPUs now also sets `rtx.fsr.preset` → 1 (Performance) and `rtx.xess.preset` → 1 (Performance).
+- Commits: the commit that adds this entry.
+
+### FSR frame generation turns off when its prepare pass keeps failing
+A failed prepare dispatch counts as a present without inputs again, so frame generation is configured off after a few failures instead of showing every real frame twice. After 30 failures in a row it stays off for the rest of the session, with one log line and an "off" status in the frame generation menu. The user's config is not changed.
+- Options: none.
+- Commits: the commit that adds this entry.
+### Fix: light updates through the bridge
+32-bit plugins can now update their lights in place: the bridge forwards `UpdateLightDefinition` (with every light shape, as `CreateLight` does) and `AutoInstancePersistentLights` to the server, which calls the runtime with the light's runtime handle, so the light keeps its identity instead of being destroyed and re-created. Both were client stubs, and `UpdateLightDefinition` returned `GENERAL_FAILURE`. Two bridge commands are added, so the bridge client and server must come from the same build.
+- Options: none.
+- Commits: the commit that adds this entry.
+- Docs: [RemixApi-Plugin-Guide.md](../documentation/RemixApi-Plugin-Guide.md), [RemixApi-Migration.md](RemixApi-Migration.md), [RemixApiChangelog.md](../documentation/RemixApiChangelog.md)
+
+### Fix: Remix API begin-scene callback fires every frame on the D3D9 host path
+When a plugin registered the game's own D3D9 device, the begin-scene callback fired only on the first frame, because only the API's `Present` and `RenderD3D11` ended the frame. The device's own `Present` now ends it too, so the callback fires on the first submission of every frame. Hosts that present through the API see no change.
+- Options: none.
+- Commits: the commit that adds this entry.
+- Docs: [RemixApi-Plugin-Guide.md](../documentation/RemixApi-Plugin-Guide.md), [RemixApiChangelog.md](../documentation/RemixApiChangelog.md)
+
+### Fix: Remix API Shutdown keeps the game's D3D9 device
+`Shutdown` released a registered D3D9 device until it was destroyed, and its `IDirect3D9Ex` too, also when a plugin had registered the game's own device, so the game crashed on its next call. It now does that only for a device made through the API's `IDirect3D9Ex` (`Startup` or `dxvk_CreateD3D9`), and for any other device releases only the reference that registering took.
+- Options: none.
+- Commits: the commit that adds this entry.
+- Docs: [RemixApi.md](RemixApi.md), [RemixApi-Plugin-Guide.md](../documentation/RemixApi-Plugin-Guide.md), [RemixApiChangelog.md](../documentation/RemixApiChangelog.md)
+
+### Release packages ship the D3D11 and DXGI forwarders
+CI builds the runtime with the D3D11 and DXGI modules, and the x64 package has `d3d11.dll` and `dxgi.dll` in a `d3d11-forwarders` folder, so Remix API plugins for D3D11 games can use a release build. They are not next to `d3d9.dll`, because any D3D11 game that finds them in its folder runs its D3D11 calls through Remix, so a plugin's install copies them in on purpose. The x86 package does not have them.
+- Options: none. The meson defaults stay off for local builds. `build_common.ps1`'s `PerformBuild` takes `-ExtraMesonArgs` for CI.
+- Commits: the commit that adds this entry.
+- Docs: [RemixApi-Migration.md](RemixApi-Migration.md#47-the-d3d11-host-path), [RemixApi-Plugin-Guide.md](../documentation/RemixApi-Plugin-Guide.md#d3d11-host)
+
+### Fix: release packages ship the NUMOS data and the crash handler
+The CI packages left out the `numos` folder (the NUMOS shaders and night sky data) and `crashpad_handler.exe`, which the runtime loads from the folder that holds `d3d9.dll`, so a release build ran without NUMOS shaders and could not write crash dumps. The x64 package has both next to `d3d9.dll`, and the x86 package has both in `.trex`.
+- Options: none.
+- Commits: the commit that adds this entry.
+
 ## 2026-11-21
 
 ### Five-layer terrain palette
@@ -67,6 +215,56 @@ Opaque API materials can have a clear coat, a second dielectric GGX specular lob
 - Options: none. The named export `remixapi_GetClearCoatMaterialVersion` returns 1.
 - Commits: the commit that adds this entry.
 - Docs: [ClearCoatMaterial.md](../documentation/ClearCoatMaterial.md), [RemixApi.md](RemixApi.md)
+### Best-light sampling stays on with DLSS-RR
+The Ray Reconstruction path tracer preset turned off RTXDI best-light sampling (`rtx.di.enableBestLightSampling`), which feeds the previous frame's strongest nearby light into initial sampling. It now keeps the option's value (default on), so direct lighting under DLSS-RR has less noise from scenes with many lights. This changes the image with DLSS-RR, and the best-light pass and its illuminance buffers now run with RR as they do with NRD. Port of upstream `35a52d5ca`.
+- Options: the Ray Reconstruction preset no longer sets `rtx.di.enableBestLightSampling` to false.
+- Commits: the commit that adds this entry.
+
+### Fix: frame generation while the window has no swap chain
+With DLSS frame generation on, minimizing the window left the frame generation presenter creating backbuffers with a zero extent and an undefined format and handing them out. While the window has no swap chain it now holds no backbuffers, reports no images, and reports the swap chain out of date on acquire, like the regular presenter. Port of the frame generation part of upstream `33ef09e0e`; the rest was already in `d5fa4e2a5`.
+- Options: none.
+- Commits: the commit that adds this entry.
+
+### Particle drag independent of frame rate
+Drag scaled velocity by `1 - k * dt` each frame, so the same effect slowed down differently at different frame rates, and strong drag at a low frame rate stopped particles in one frame. Drag is now integrated exactly over the step (velocity retention `exp(-k * dt)`), together with gravity, turbulence and attractor acceleration, so velocity and travel are the same however the elapsed time is split into frames. Effects with strong drag may travel farther than before. Effects without drag move as before. Port of upstream `693b787e2`.
+- Options: none.
+- Commits: the commit that adds this entry.
+
+### Fix: particles gain no spurious velocity on collision
+Particle collisions estimated the surface's velocity from two G-buffer reads of the same frame, which gave colliding particles velocity the surface never had. Collisions now treat the surface as static. Particles behind the previous camera, or with an invalid reprojection, skip the collision test instead of reading a wrapped pixel. Port of upstream `1541c0fd2`.
+- Options: none.
+- Commits: the commit that adds this entry.
+
+### Fix: G-buffer screenshots in scenes without subsurface materials
+The debug G-buffer screenshot also wrote the two subsurface buffers, which exist only while the scene has subsurface or thin opaque materials, so it handed a null image to the screenshot code in every other scene. It now skips buffers that are not allocated. Port of upstream `07f5c6b37`.
+- Options: none.
+- Commits: the commit that adds this entry.
+
+### Fix: bridge MultiplyTransform and state block capture
+The bridge client multiplied `MultiplyTransform` into its own state in the wrong order and never sent it to the server, so bridged games that use it rendered with stale transforms. The client now computes the server's product, sends the call, and forgets that transform in the sent-state cache. Like the runtime, it applies the multiply to the device state even while a state block is recorded. Also fixed: state block capture flags for sampler states were set one slot off, a reset device read its depth enable from the released swapchain, and the client's `D3DRS_POINTSIZE_MAX` default is the D3D9 default of 64. The runtime's `MultiplyTransform` now validates its arguments and marks the transform and texture transform state changed, as `SetTransform` does. Port of upstream `f963a4455`.
+- Options: none.
+- Commits: the commit that adds this entry.
+
+### Remix API: interface copy sized by the caller's version
+`remixapi_InitializeLibrary` copied the whole `remixapi_Interface` into the caller's table, so once a minor version appends a function pointer, an older caller's smaller table would be overrun. The runtime and the bridge client now share one version table (`src/util/util_remix_api_version.h`) and write only the prefix the caller's version knows. All accepted versions (0.1000.x and 1.0.x) know the whole current table, so nothing changes for existing callers. The bridge also zero-initializes struct fields it does not forward. Port of upstream `4ea991be3`, with our own version table.
+- Options: none.
+- Commits: the commit that adds this entry.
+- Docs: [RemixApiChangelog.md](../documentation/RemixApiChangelog.md), [RemixSDK.md](../documentation/RemixSDK.md#extensibility)
+
+### Fix: external presenter frame latency
+The external presenter, which hands frames to an out-of-process viewer such as an editor, never waited on frame latency, so the runtime could run far enough ahead to reuse a frame's resources while the GPU still used them and crash. It now caps frames in flight one below the per-frame resource count and waits and signals like the windowed swapchain. Port of upstream `159afc39b`.
+- Options: none.
+- Commits: the commit that adds this entry.
+
+### RTXDI moved to c04c1de: volumetric NEE page-fault workaround
+A texture fetch in divergent control flow in the RTXDI volumetrics' `evalVolumetricNEE` page-faults the GPU in ray query compute kernels on NVIDIA drivers (NVBUGS 7020086). The SDK at `c04c1de` makes every lane fetch from a valid coordinate. The submodule stays unmodified; only its pin moves. Port of upstream `d22f9608c`.
+- Options: none.
+- Commits: the commit that adds this entry.
+
+### Bridge server runs at high QoS
+Windows gives the highest QoS to the process that owns the foreground window, which is the game, so the bridge server's threads could land on efficiency cores while the game waited on them. The server now opts out of execution speed throttling. Port of upstream `10b605850`.
+- Options: none.
+- Commits: the commit that adds this entry.
 
 ## 2026-11-15
 

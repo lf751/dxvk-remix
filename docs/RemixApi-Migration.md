@@ -442,7 +442,9 @@ if (pfnDrawOverlayD3D11(&hud, 1) != REMIXAPI_ERROR_CODE_SUCCESS) {
 
 A D3D11 game can render through its own device instead of the API's D3D9 device. The runtime must be built with the
 D3D11 and DXGI modules (`enable_d3d11`, `enable_dxgi`), and the game must load the runtime's `d3d11.dll` and
-`dxgi.dll`, which forward to `d3d9.dll`. `remixapi_RegisterD3D11Device(device)` takes the game's `ID3D11Device*`,
+`dxgi.dll`, which forward to `d3d9.dll`. Release packages build both modules and ship the two forwarders in the x64
+package's `d3d11-forwarders` folder, so a plugin's install copies them next to `d3d9.dll` on purpose.
+`remixapi_RegisterD3D11Device(device)` takes the game's `ID3D11Device*`,
 once, on the game's render thread. Skip `Startup`. Each frame, after your scene calls,
 `remixapi_RenderD3D11(destination, render)` queues Remix's composition into a single-sample render target of the
 same device. The game's next `Present` of that swapchain ends the frame. `render = false` keeps the game's raster
@@ -612,10 +614,10 @@ its input. For `CreateTexture` pixel data, keep the buffer alive until the call 
 **What does the bridge forward for 32-bit games?** The bridge client (`d3d9.dll` in the 32-bit game) needs
 `exposeRemixApi = True` in `bridge.conf`. It fills only these slots: `CreateMaterial`, `DestroyMaterial`,
 `CreateTexture`, `DestroyTexture`, `CreateMesh`, `DestroyMesh`, `DrawInstance`, `CreateLight`, `DestroyLight`,
-`DrawLightInstance`, `SetConfigVariable`, `dxvk_CreateD3D9`, `dxvk_RegisterD3D9Device`, `SetGameValue` and
-`GetGameValue`, `AddTextureHash` and `dxvk_GetTextureHash`. The hash calls wait for the server result; `RemoveTextureHash` remains unavailable. Build the bridge client and server together for their shared hash commands. `dxvk_CreateD3D9` and `dxvk_RegisterD3D9Device` return `GENERAL_FAILURE`, because the server
-registers the game's device itself. `GetUIState`, `SetUIState`, `AutoInstancePersistentLights` and
-`UpdateLightDefinition` are stubs that log once and do nothing. Every other slot, `SetupCamera`, `Startup` and
+`DrawLightInstance`, `UpdateLightDefinition`, `AutoInstancePersistentLights`, `SetConfigVariable`,
+`dxvk_CreateD3D9`, `dxvk_RegisterD3D9Device`, `SetGameValue`, `GetGameValue`, `AddTextureHash` and
+`dxvk_GetTextureHash`. The hash calls wait for the server result; `RemoveTextureHash` remains unavailable. Build the bridge client and server together for their shared hash commands. `dxvk_CreateD3D9` and `dxvk_RegisterD3D9Device` return `GENERAL_FAILURE`, because the server
+registers the game's device itself. `GetUIState` and `SetUIState` are stubs that log once and do nothing. Every other slot, `SetupCamera`, `Startup` and
 `Present` included, is null: the game's own D3D9 device drives the frame. Of the named exports, the client exports
 only `remixapi_RegisterCallbacks` and the five color grading calls (section 4.13). It forwards these chained structs:
 on materials the opaque, subsurface, translucent and portal extensions; on instances object picking, blend, bone

@@ -32,6 +32,7 @@
 
 #include <vulkan/vulkan.h>
 #include <array>
+#include <atomic>
 #include <cstdint>
 #include <mutex>
 #include <string>
@@ -76,6 +77,9 @@ namespace dxvk {
       bool hdr = false;
       VkFormat backBufferFormat = VK_FORMAT_UNDEFINED;
       bool contextFailed = false;       // The proxy or the frame generation context could not be created.
+      bool prepareFailed = false;       // The prepare dispatch kept failing, so frame generation is off for the session.
+      std::string failureReason;        // The error behind contextFailed or prepareFailed, as the log prints it.
+      bool generating = false;          // Frame generation is configured on for the latest present.
       std::string versionName;          // The frame generation version FFX picked. Empty without a context.
     };
 
@@ -86,15 +90,17 @@ namespace dxvk {
     // image-acquire queues the FFX proxy needs.
     bool supportsFSRFrameGen() const;
 
+    // True after the prepare dispatch kept failing. Frame generation then stays off until the device is destroyed.
+    bool hasFailedForSession() const {
+      return m_prepareFailedForSession.load(std::memory_order_acquire);
+    }
+
     // CS thread. Copies the Remix output into this frame's HUD-less image in the back buffer format.
     // Returns null when the HUD is interpolated with the scene.
     Rc<DxvkImage> copyHudLessColor(Rc<DxvkContext> ctx, const Rc<DxvkImage>& source);
 
     Stats getStats() const;
 
-    RTX_OPTION_ENV("rtx.fsrfg", bool, enable, false, "RTX_FSRFG_ENABLE",
-      "Enables AMD FSR frame generation, which inserts interpolated frames to raise the frame rate. Set "
-      "rtx.frameGenerationType instead of this option.");
     RTX_OPTION("rtx.fsrfg", bool, interpolateHud, false,
       "Interpolates the whole presented image, HUD included, instead of drawing the current HUD over the generated "
       "frame. When off, every pixel that differs from the Remix output counts as HUD and repeats the real frame. Turn "
@@ -117,7 +123,8 @@ namespace dxvk {
     // Submission thread, right before the proxy present: prepares and configures this frame.
     void beginPresent(VkSwapchainKHR swapchain, const DxvkFrameInterpolationInfo& frame, bool enabled, const vk::PresenterInfo& info);
     bool prepare(const DxvkFrameInterpolationInfo& frame, uint64_t frameId, bool reset);
-    void setContextFailed(bool failed);
+    // Logs the error and records it as the reason the proxy or the frame generation context is missing.
+    void setContextFailed(const std::string& reason);
     void logStats();
 
     // Runs inside the proxy's present call, on the submission thread.
@@ -148,6 +155,9 @@ namespace dxvk {
     bool m_configuredEnabled = false;
     bool m_presentingReset = false;
     uint32_t m_consecutiveSkips = 0;
+    uint32_t m_consecutivePrepareFailures = 0;
+    int32_t m_lastPrepareError = 0;
+    std::atomic<bool> m_prepareFailedForSession = { false };
     DxvkDLFGCommandListArray m_prepareCommandLists;
 
     // The dev menu reads the stats from another thread.
@@ -194,6 +204,9 @@ namespace dxvk {
       VkSetPresentConfigNV* presentMetering) override;
     VkResult recreateSwapChain(const vk::PresenterDesc& desc) override;
 
+    // Waits until the FFX proxy has finished every present it queued, including its generated frames.
+    void synchronize() override;
+
     // The FFX proxy reads its images in SHADER_READ_ONLY_OPTIMAL at present and leaves them in it.
     VkImageLayout presentLayout() const override {
       return m_proxyActive ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
@@ -207,6 +220,10 @@ namespace dxvk {
     bool m_proxyActive = false;
     bool m_disableForSession = false;
     vk::PresenterDesc m_cachedDesc = {};
+
+    // Keeps synchronize from waiting on the proxy while the submission thread presents through it.
+    // The submission thread takes it after the device queue lock, and nothing that holds it waits for that thread.
+    dxvk::mutex m_proxyMutex;
   };
 
 } // namespace dxvk

@@ -606,13 +606,9 @@ namespace dxvk {
       m_frameLastInjected = m_device->getCurrentFrameId();
     }
 
-    if (RtxOptions::upscalerType() == UpscalerType::DLSS && !common->metaDLSS().supportsDLSS()) {
-      RtxOptions::upscalerType.setDeferred(UpscalerType::TAAU);
-    }
+    RtxOptions::replaceUnsupportedUpscaler(m_device.ptr());
 
-    if (DxvkDLFG::enable() && !common->metaDLFG().supportsDLFG()) {
-      DxvkDLFG::enable.setDeferred(false);
-    }
+    common->metaFrameGenerationStatus().update();
     
 #ifdef REMIX_DEVELOPMENT
     // Update the Shader Manager
@@ -802,8 +798,13 @@ namespace dxvk {
         
         if (captureScreenImage && captureDebugImage) {
           takeScreenshot("baseReflectivity", rtOutput.m_primaryBaseReflectivity.image(Resources::AccessType::Read));
-          takeScreenshot("sharedSubsurfaceData", rtOutput.m_sharedSubsurfaceData.image);
-          takeScreenshot("sharedSubsurfaceDiffusionProfileData", rtOutput.m_sharedSubsurfaceDiffusionProfileData.image);
+          // The subsurface buffers only exist while the scene has subsurface or thin opaque materials, see Resources::onFrameBegin.
+          if (rtOutput.m_sharedSubsurfaceData.isValid()) {
+            takeScreenshot("sharedSubsurfaceData", rtOutput.m_sharedSubsurfaceData.image);
+          }
+          if (rtOutput.m_sharedSubsurfaceDiffusionProfileData.isValid()) {
+            takeScreenshot("sharedSubsurfaceDiffusionProfileData", rtOutput.m_sharedSubsurfaceDiffusionProfileData.image);
+          }
         }
 
         // Demodulation

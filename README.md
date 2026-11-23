@@ -161,6 +161,10 @@ NVIDIA-only features (DLSS, Ray Reconstruction, DLSS-NR).
 The runtime loads many DLLs that ship beside `d3d9.dll`, so a partial copy fails to load. Remix mods go in
 `rtx-remix/mods/`; see [`documentation/RemixModsForPlayers.md`](documentation/RemixModsForPlayers.md).
 
+The x64 package's `d3d11-forwarders` folder holds `d3d11.dll` and `dxgi.dll` for Remix API plugins that render a
+D3D11 game. Copy them next to `d3d9.dll` only when a plugin's instructions say so: any D3D11 game that finds them in
+its folder runs its D3D11 calls through Remix, without path tracing.
+
 ## Graphics presets
 
 The preset is in the Alt+X menu. **Auto** (the default) picks one for your GPU:
@@ -210,12 +214,13 @@ keeps every setting as you set it.
 - [Remix API changelog](documentation/RemixApiChangelog.md) and the [Remix Plus changelog](docs/CHANGELOG.md).
 - [Remix Sky API](docs/RemixSkyAPI.md): weather presets, game weather and the NUMOS settings.
 - [RemixFX post-processing effects](docs/RemixFx.md) and the [post-processing stack](docs/PostProcessingStack.md).
+- [Light gobos](docs/LightGobos.md): projecting textures from spot lights, with step-by-step setup for mods.
 - For mod authors: [mod order](documentation/RemixModOrder.md), [mod packaging](documentation/RemixModPackaging.md),
   [Remix Config](documentation/RemixConfig.md) and [Remix Logic](documentation/RemixLogic.md).
 - How features work: [SHaRC](documentation/SharcRadianceCache.md),
   [SCCR displacement](documentation/SccrDisplacement.md), [opacity micromaps](documentation/OpacityMicromap.md),
-  [anti-culling](documentation/AntiCullingSystem.md), [terrain](documentation/TerrainSystem.md) and the
-  [frame rate limit](documentation/FrameRateLimit.md).
+  [anti-culling](documentation/AntiCullingSystem.md), [terrain](documentation/TerrainSystem.md),
+  [light gobos](documentation/LightGobos.md) and the [frame rate limit](documentation/FrameRateLimit.md).
 - [RtxOptions.md](RtxOptions.md): every runtime option, generated from the code.
 
 ## Build from source

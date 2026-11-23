@@ -50,6 +50,8 @@
 #include <remix/remix_c.h>
 // NV-DXVK end
 
+#include "../dxvk/rtx_render/rtx_fork_hooks.h"
+
 namespace dxvk {
   // HDR10 output (rtx.tonemap.hdrEnabled): whether Windows has HDR turned on for the display showing `window`.
   // Some drivers accept an ST.2084 swap chain even with HDR off (Windows then converts it back to SDR), so
@@ -468,6 +470,13 @@ namespace dxvk {
     }
     // NV-DXVK end
 
+    // The FFX proxy presents from its own thread, so it is drained and released before waitForIdle idles the queues.
+    // The device can still hold a reference, which waitForIdle drops before vkDeviceWaitIdle.
+    if (m_fsrfgPresenter != nullptr) {
+      m_fsrfgPresenter->synchronize();
+      m_fsrfgPresenter = nullptr;
+    }
+
     m_device->waitForIdle();
   }
 
@@ -574,6 +583,7 @@ namespace dxvk {
     // concurrent remixapi_* call (a hard hang: RecursiveSpinlock never sleeps).
     if (m_presentsScene) {
       (void)remixapi_AutoInstancePersistentLights();
+      fork_hooks::nativePresentEndFrame();
     }
     // NV-DXVK end
 
@@ -1708,6 +1718,11 @@ namespace dxvk {
         presenterDevice,
         presenterDesc);
     }
+
+    const FrameGenerationPresenter presenterKind = dlfgEnabled
+      ? FrameGenerationPresenter::DLSS
+      : (createFsrfgPresenter ? FrameGenerationPresenter::FSR : FrameGenerationPresenter::Standard);
+    m_device->getCommon()->metaFrameGenerationStatus().setPresenter(presenterKind, "D3D9");
 
     GetPresenter()->setFrameRateLimit(m_parent->GetOptions()->maxFrameRate);
     GetPresenter()->setFrameRateLimiterRefreshRate(m_displayRefreshRate);
