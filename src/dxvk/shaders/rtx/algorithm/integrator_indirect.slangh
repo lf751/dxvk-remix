@@ -1482,7 +1482,7 @@ void integrateIndirectPath(
             gbufferPixelCoordinate, indirectPathTextures.PrimaryWorldPositionWorldTriangleNormal);
           const vec3 outwardViewDirection = signedOctahedralToSphereDirection(PrimaryViewDirection[gbufferPixelCoordinate]);
           const float attenuation = terrainBlendShadowThroughput(interaction, pathState.direction,
-            outwardViewDirection, terrainCoordinates.xy);
+            outwardViewDirection, terrainCoordinates);
           accumulateThroughput(pathState, attenuation);
           pathState.continuePath = any(pathState.throughput > 0.001h);
           pathState.continueResolving = pathState.continuePath;

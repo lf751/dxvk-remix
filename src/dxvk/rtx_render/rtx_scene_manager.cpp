@@ -1910,13 +1910,18 @@ namespace dxvk {
       capturer->setInstanceUpdateFlag(instance, GameCapturer::InstFlag::NormalsUpdate);
     }
     
-    instance.surface.terrainBlend = drawCall.testCategoryFlags(InstanceCategories::Terrain) && getActiveTerrainBlendPreset() != nullptr;
+    const auto* terrainPreset = drawCall.testCategoryFlags(InstanceCategories::Terrain)
+      ? getActiveTerrainBlendPreset().get() : nullptr;
+    instance.surface.terrainBlend = terrainPreset != nullptr;
     instance.surface.worldSpaceSecondaryOpacity = lookupHash(LegacyMaterialDefaults::worldSpaceSecondaryOpacityTextures(),
       drawCall.getMaterialData().getColorTexture().getImageHash());
 
     // Create and bind the RT material
     uint32_t newMatIdx = kInvalidMaterialCacheIndex;
-    const RtSurfaceMaterial& surfaceMaterial = createSurfaceMaterial(*material, drawCall, &newMatIdx);
+    // Palette sampling uses the texture and sampler from the original terrain draw.
+    const RtSurfaceMaterial& surfaceMaterial = terrainPreset && terrainPreset->paletteStrength > 0.f
+      ? createSurfaceMaterial(MaterialData::fromLegacy(drawCall.getMaterialData()), drawCall, &newMatIdx)
+      : createSurfaceMaterial(*material, drawCall, &newMatIdx);
 
     if(isFirstUpdateThisFrame) {
       const uint32_t oldMatIdx = instance.surface.surfaceMaterialIndex;
@@ -2098,8 +2103,7 @@ namespace dxvk {
     m_terrainBlendArgs.zUp = RtxOptions::zUp();
     const auto& worldOffset = m_cameraManager.getCamera(CameraType::Main).getArtificialWorldOffset();
     m_terrainBlendArgs.worldOffset = vec4(-worldOffset.x, -worldOffset.y, -worldOffset.z, 0.f);
-    const float maskScale = LegacyMaterialDefaults::worldSpaceSecondaryOpacityScale();
-    m_terrainBlendArgs.coverageUvScaleOffset = vec4(maskScale, maskScale, 0.f, 0.f);
+    m_terrainBlendArgs.coverageUvScale = LegacyMaterialDefaults::worldSpaceSecondaryOpacityScale();
     const auto& preset = getActiveTerrainBlendPreset();
     if (!preset) {
       return;
@@ -2125,31 +2129,45 @@ namespace dxvk {
     m_terrainBlendArgs.displacementSelfShadowEnabled = preset->displacementSelfShadowEnabled;
     m_terrainBlendArgs.displacementShadowStrength = preset->displacementShadowStrength;
     m_terrainBlendArgs.displacementShadowMaxIterations = static_cast<uint32_t>(preset->displacementShadowMaxIterations);
-    m_terrainBlendArgs.displacementInward = vec4(preset->displacementInward[0], preset->displacementInward[1],
-      preset->displacementInward[2], preset->displacementInward[3]);
-    m_terrainBlendArgs.displacementOutward = vec4(preset->displacementOutward[0], preset->displacementOutward[1],
-      preset->displacementOutward[2], preset->displacementOutward[3]);
-    m_terrainBlendArgs.displacementHeightMin = vec4(preset->displacementHeightMin[0], preset->displacementHeightMin[1],
-      preset->displacementHeightMin[2], preset->displacementHeightMin[3]);
-    m_terrainBlendArgs.displacementHeightMax = vec4(preset->displacementHeightMax[0], preset->displacementHeightMax[1],
-      preset->displacementHeightMax[2], preset->displacementHeightMax[3]);
+    m_terrainBlendArgs.paletteStrength = preset->paletteStrength;
+    m_terrainBlendArgs.paletteSoftness = preset->paletteSoftness;
     m_terrainBlendArgs.dirtStrength = preset->dirtStrength;
     m_terrainBlendArgs.dirtWidth = preset->dirtWidth;
     m_terrainBlendArgs.dirtMinElevation = preset->dirtMinElevation;
     m_terrainBlendArgs.dirtElevationFadeWidth = preset->dirtElevationFadeWidth;
-    if (preset->dirtStrength > 0.f &&
-        m_terrainCoverageTexture.isValid() && !m_terrainCoverageTexture.isImageEmpty()) {
-      trackTexture(m_terrainCoverageTexture, m_terrainBlendArgs.coverageTextureIndex, true, false);
-      const auto coverageSampler = patchSampler(VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+    const bool useControlMap = preset->controlMap.isValid() && !preset->controlMap.isImageEmpty();
+    const bool useLiveCoverage = preset->dirtStrength > 0.f && m_terrainCoverageTexture.isValid() && !m_terrainCoverageTexture.isImageEmpty();
+    const bool useGeoMap = preset->geoStrength > 0.f && preset->geoMap.isValid() && !preset->geoMap.isImageEmpty();
+    if (useControlMap || useLiveCoverage || useGeoMap) {
+      const auto maskSampler = patchSampler(VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
         VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, {});
-      m_terrainBlendArgs.coverageSamplerIndex = trackSampler(coverageSampler);
+      m_terrainBlendArgs.maskSamplerIndex = trackSampler(maskSampler);
+    }
+    if (useControlMap) {
+      trackTexture(preset->controlMap, m_terrainBlendArgs.controlTextureIndex, true, false);
+      const auto& uv = preset->controlWorldToUv;
+      m_terrainBlendArgs.controlWorldToUv = vec4(uv.x, uv.y, uv.z, uv.w);
+      ONCE(Logger::info("[RTX Terrain Blend] Terrain control map bound for tiled material blending."));
+    }
+    if (useLiveCoverage) {
+      trackTexture(m_terrainCoverageTexture, m_terrainBlendArgs.coverageTextureIndex, true, false);
       ONCE(Logger::info("[RTX Terrain Blend] Live grass coverage texture bound for dirt blending."));
+    }
+    if (useGeoMap) {
+      trackTexture(preset->geoMap, m_terrainBlendArgs.geoTextureIndex, true, false);
+      m_terrainBlendArgs.geoMinElevation = preset->geoMinElevation;
+      m_terrainBlendArgs.geoMaxElevation = preset->geoMaxElevation;
+      m_terrainBlendArgs.geoStrength = preset->geoStrength;
+      m_terrainBlendArgs.geoDipAmplitude = preset->geoDipAmplitude;
+      m_terrainBlendArgs.geoDipPeriod = preset->geoDipPeriod;
+      ONCE(Logger::info("[RTX Terrain Blend] Geo map bound for elevation tinting."));
     }
     const auto sampler = patchSampler(VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_REPEAT,
       VK_SAMPLER_ADDRESS_MODE_REPEAT, VK_SAMPLER_ADDRESS_MODE_REPEAT, {});
     const uint32_t samplerIndex = trackSampler(sampler);
 
-    for (uint32_t i = 0; i < 4; ++i) {
+    static_assert(std::extent_v<decltype(TerrainBlendPreset::materials)> == kTerrainBlendLayerCount);
+    for (uint32_t i = 0; i < kTerrainBlendLayerCount; ++i) {
       if (!preset->materials[i]) {
         continue;
       }
@@ -2157,6 +2175,20 @@ namespace dxvk {
       auto& layer = m_terrainBlendArgs.layers[i];
       layer.samplerIndex = samplerIndex;
       layer.unitsPerRepeat = preset->unitsPerRepeat[i];
+      if (i < kTerrainBlendMaskLayerCount) {
+        const auto& mask = preset->maskColors[i];
+        layer.maskColor = vec4(mask.x, mask.y, mask.z, 0.f);
+      } else if (i == kTerrainPeakRockLayer) {
+        m_terrainBlendArgs.peakRockLowElevation = preset->peakRockLowElevation;
+        m_terrainBlendArgs.peakRockHighElevation = preset->peakRockHighElevation;
+        ONCE(Logger::info("[RTX Terrain Blend] Peak rock material bound for summit blending."));
+      } else if (i == kTerrainLowerRockLayer) {
+        m_terrainBlendArgs.lowerRockLowElevation = preset->lowerRockLowElevation;
+        m_terrainBlendArgs.lowerRockHighElevation = preset->lowerRockHighElevation;
+        ONCE(Logger::info("[RTX Terrain Blend] Lower rock material bound for foothill rock blending."));
+      }
+      layer.relief = vec4(preset->displacementInward[i], preset->displacementOutward[i],
+        preset->displacementHeightMin[i], preset->displacementHeightMax[i]);
       layer.roughnessConstant = material.getRoughnessConstant();
       const auto& color = material.getAlbedoConstant();
       layer.albedoConstant = vec4(color.x, color.y, color.z, 1.f);
@@ -3419,6 +3451,13 @@ namespace dxvk {
 
     m_terrainBaker->prepareSceneData(ctx);
     prepareTerrainBlend();
+    const auto& terrainPreset = getActiveTerrainBlendPreset();
+    auto& geometryUtils = m_device->getCommon()->metaGeometryUtils();
+    if (terrainPreset && terrainPreset->smoothNormals) {
+      geometryUtils.weldTerrainNormals(ctx, m_instanceManager.getInstanceTable());
+    } else {
+      geometryUtils.resetTerrainNormals();
+    }
 
     // Binds every instance's mesh to its cached SCCR shell buffer and builds the missing ones. This runs after garbage
     // collection and the anti-cull pass, so the instance table is final, and before the bindless buffer table is

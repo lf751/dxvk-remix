@@ -34,6 +34,7 @@
 #include "rtx_utils.h"
 #include "rtx_lights_data.h"
 #include "rtx_terrain_blend_types.h"
+#include "../shaders/rtx/pass/terrain_blend_args.h"
 
 namespace dxvk {
   enum class TerrainRockMode : uint32_t { Slope = 0, Elevation = 1, Both = 2 };
@@ -45,9 +46,30 @@ namespace dxvk {
     TerrainRockMode rockMode = TerrainRockMode::Slope;
     float rockLowElevation = 4.0f;
     float rockHighElevation = 8.0f;
-    // Layer order is grass, sand, rock, dirt. All lengths are in game world units.
-    std::shared_ptr<MaterialData> materials[4];
-    float unitsPerRepeat[4] = { 8.0f, 8.0f, 8.0f, 8.0f };
+    float peakRockLowElevation = 0.f;
+    float peakRockHighElevation = 0.f;
+    float lowerRockLowElevation = 0.f;
+    float lowerRockHighElevation = 0.f;
+    // Layer order is grass, sand, cliff rock, dirt, dead grass, peak rock, lower rock.
+    std::shared_ptr<MaterialData> materials[kTerrainBlendLayerCount];
+    float unitsPerRepeat[kTerrainBlendLayerCount] = { 8.f, 8.f, 8.f, 8.f, 8.f, 8.f, 8.f };
+    float paletteStrength = 0.f;
+    float paletteSoftness = 0.16f;
+    TextureRef controlMap;
+    TextureRef geoMap;
+    float geoMinElevation = 0.f;
+    float geoMaxElevation = 1.f;
+    float geoStrength = 1.f;
+    float geoDipAmplitude = 0.f;
+    float geoDipPeriod = 32.f;
+    Vector4 controlWorldToUv = Vector4(1.f, 1.f, 0.f, 0.f);
+    Vector3 maskColors[kTerrainBlendMaskLayerCount] = {
+      Vector3(57.f, 132.f, 24.f) / 255.f,
+      Vector3(255.f, 247.f, 140.f) / 255.f,
+      Vector3(173.f, 173.f, 165.f) / 255.f,
+      Vector3(123.f, 132.f, 99.f) / 255.f,
+      Vector3(214.f, 181.f, 99.f) / 255.f,
+    };
     float lowElevation = 0.0f;
     float highElevation = 4.0f;
     float slopeStartDegrees = 30.0f;
@@ -62,10 +84,10 @@ namespace dxvk {
     TerrainDisplacementMode displacementMode = TerrainDisplacementMode::QuadtreePOM;
     float displacementStrength = 1.0f;
     uint32_t displacementMaxIterations = 64;
-    float displacementInward[4] = { 0.1f, 0.1f, 0.1f, 0.1f };
-    float displacementOutward[4] = {};
-    float displacementHeightMin[4] = {};
-    float displacementHeightMax[4] = { 1.f, 1.f, 1.f, 1.f };
+    float displacementInward[kTerrainBlendLayerCount] = { 0.1f, 0.1f, 0.1f, 0.1f, 0.1f, 0.1f, 0.1f };
+    float displacementOutward[kTerrainBlendLayerCount] = {};
+    float displacementHeightMin[kTerrainBlendLayerCount] = {};
+    float displacementHeightMax[kTerrainBlendLayerCount] = { 1.f, 1.f, 1.f, 1.f, 1.f, 1.f, 1.f };
     bool displacementSelfShadowEnabled = true;
     float displacementShadowStrength = 1.f;
     uint32_t displacementShadowMaxIterations = 32;

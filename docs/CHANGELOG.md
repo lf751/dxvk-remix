@@ -28,6 +28,27 @@ Entry format:
 - Docs: [RemixApi.md](RemixApi.md)   (only if a public doc covers it)
 ```
 
+## 2026-11-22
+
+### Terrain control maps with tiled detail
+
+Terrain Blend can use a linear RGBA weight map for placement while sampling the five full-resolution detail materials independently. Control maps work with smooth terrain normals and Quadtree POM.
+
+Control maps can combine their authored weights with a live elevation fade to rock and a separate live grass-exclusion texture for dirt.
+
+Terrain presets can use an optional geo tint strip addressed by live elevation to colour exposed rock and dirt independently of their detail maps. Optional geo dip varies the bedding angles across the world. A separate summit rock material can blend in from cliff rock by elevation and share the same triplanar PBR and relief path.
+Smooth terrain normals weld at matching world positions across draws, so independently submitted JPOG chunks share normals at their borders.
+- Preset controls: optional `controlMap` with `controlWorldToUv` projection.
+- Docs: [Terrain Blend](../documentation/TerrainBlend.md).
+
+## 2026-11-21
+
+### Five-layer terrain palette
+
+Terrain Blend uses the live terrain draw's original color to place grass, dead grass, dirt, sand, and rock. Color, elevation, slope, grass coverage, and material heights contribute continuous weights shared by shading and terrain relief.
+- Preset controls: `paletteStrength` (default zero when omitted), `paletteSoftness`, and one reference color per layer.
+- Docs: [Terrain Blend](../documentation/TerrainBlend.md).
+
 ## 2026-11-18
 
 ### JPOG integration: Remix Plus dev through ffcf5b723

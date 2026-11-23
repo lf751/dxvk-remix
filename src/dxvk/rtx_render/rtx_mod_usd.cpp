@@ -797,6 +797,37 @@ void UsdMod::Impl::processTerrainBlend(Args& args, const pxr::UsdStageRefPtr& st
     args.target->setTerrainBlendPreset(std::move(preset));
     return;
   }
+  const auto control = attribute("controlMap");
+  if (control.HasAuthoredValueOpinion()) {
+    preset->controlMap = TextureRef(getTexture(args, prim, control.GetName(), true));
+    const auto transform = attribute("controlWorldToUv");
+    pxr::GfVec4f values;
+    if (!preset->controlMap.isValid() || !transform.Get(&values) ||
+        !std::isfinite(values[0]) || !std::isfinite(values[1]) ||
+        !std::isfinite(values[2]) || !std::isfinite(values[3]) || values[0] == 0.f || values[1] == 0.f) {
+      fail("controlMap requires a readable texture and finite controlWorldToUv with nonzero scales");
+      return;
+    }
+    preset->controlWorldToUv = Vector4(values[0], values[1], values[2], values[3]);
+  }
+  const auto geo = attribute("geoMap");
+  if (geo.HasAuthoredValueOpinion()) {
+    preset->geoMap = TextureRef(getTexture(args, prim, geo.GetName(), true));
+    pxr::GfVec2f range;
+    if (!preset->geoMap.isValid() || !attribute("geoElevationRange").Get(&range) ||
+        !std::isfinite(range[0]) || !std::isfinite(range[1]) || range[1] <= range[0]) {
+      fail("geoMap requires a readable texture and a finite increasing geoElevationRange");
+      return;
+    }
+    preset->geoMinElevation = range[0];
+    preset->geoMaxElevation = range[1];
+    const auto strength = attribute("geoStrength");
+    if ((strength.HasAuthoredValueOpinion() && !strength.Get(&preset->geoStrength)) ||
+        !std::isfinite(preset->geoStrength) || preset->geoStrength < 0.f || preset->geoStrength > 1.f) {
+      fail("geoStrength must be in [0, 1]");
+      return;
+    }
+  }
   pxr::GfVec3f units(8.0f);
   const auto tiling = attribute("unitsPerRepeat");
   if (tiling.HasAuthoredValueOpinion() && !tiling.Get(&units)) {
@@ -814,6 +845,12 @@ void UsdMod::Impl::processTerrainBlend(Args& args, const pxr::UsdStageRefPtr& st
     const auto attr = attribute(name);
     return (!attr.HasAuthoredValueOpinion() || attr.Get(&value)) && std::isfinite(value);
   };
+  if (preset->geoMap.isValid() &&
+      (!readFloat("geoDipAmplitude", preset->geoDipAmplitude) || preset->geoDipAmplitude < 0.f ||
+       !readFloat("geoDipPeriod", preset->geoDipPeriod) || preset->geoDipPeriod <= 0.f)) {
+    fail("geo dip amplitude must be nonnegative and period must be positive");
+    return;
+  }
   const auto flip = attribute("flipElevation");
   const auto smoothNormals = attribute("smoothNormals");
   if (smoothNormals.HasAuthoredValueOpinion() && !smoothNormals.Get(&preset->smoothNormals)) {
@@ -866,7 +903,7 @@ void UsdMod::Impl::processTerrainBlend(Args& args, const pxr::UsdStageRefPtr& st
     value = static_cast<uint32_t>(authored);
     return true;
   };
-  const auto readVector = [&attribute](const char* name, float (&values)[4], float initial) {
+  const auto readVector = [&attribute](const char* name, float (&values)[kTerrainBlendLayerCount], float initial) {
     pxr::GfVec4f vector(initial);
     const auto attr = attribute(name);
     if (attr.HasAuthoredValueOpinion() && !attr.Get(&vector)) {
@@ -893,7 +930,16 @@ void UsdMod::Impl::processTerrainBlend(Args& args, const pxr::UsdStageRefPtr& st
     fail("invalid displacement or self-shadow settings");
     return;
   }
-  for (size_t i = 0; i < 4; ++i) {
+  if (!readFloat("deadGrassDisplacementInward", preset->displacementInward[4]) ||
+      !readFloat("deadGrassDisplacementOutward", preset->displacementOutward[4]) ||
+      !readFloat("deadGrassDisplacementHeightMin", preset->displacementHeightMin[4]) ||
+      !readFloat("deadGrassDisplacementHeightMax", preset->displacementHeightMax[4]) ||
+      preset->displacementInward[4] < 0.f || preset->displacementOutward[4] < 0.f ||
+      preset->displacementHeightMin[4] < 0.f) {
+    fail("invalid dead grass displacement settings");
+    return;
+  }
+  for (size_t i = 0; i < std::size(preset->materials); ++i) {
     if (preset->displacementHeightMax[i] > 1.f ||
         preset->displacementHeightMax[i] <= preset->displacementHeightMin[i]) {
       fail("height remap must satisfy 0 <= min < max <= 1");
@@ -912,6 +958,8 @@ void UsdMod::Impl::processTerrainBlend(Args& args, const pxr::UsdStageRefPtr& st
       preset->dirtElevationFadeWidth <= 0.0f ||
       !readFloat("dirtUnitsPerRepeat", preset->unitsPerRepeat[3]) ||
       preset->unitsPerRepeat[3] <= 0.0f ||
+      !readFloat("deadGrassUnitsPerRepeat", preset->unitsPerRepeat[4]) ||
+      preset->unitsPerRepeat[4] <= 0.0f ||
       !readFloat("rockLowElevation", preset->rockLowElevation) ||
       !readFloat("rockHighElevation", preset->rockHighElevation) ||
       preset->rockHighElevation <= preset->rockLowElevation ||
@@ -928,12 +976,42 @@ void UsdMod::Impl::processTerrainBlend(Args& args, const pxr::UsdStageRefPtr& st
     fail("invalid elevation, slope, or height blend parameters");
     return;
   }
-  static const char* kRelations[] = { "grassMaterial", "sandMaterial", "rockMaterial", "dirtMaterial" };
-  for (size_t i = 0; i < 4; ++i) {
+  if (!readFloat("paletteStrength", preset->paletteStrength) ||
+      !readFloat("paletteSoftness", preset->paletteSoftness) ||
+      preset->paletteStrength < 0.f || preset->paletteStrength > 1.f ||
+      preset->paletteSoftness <= 0.f || preset->paletteSoftness > 1.f) {
+    fail("palette strength must be in [0, 1] and softness in (0, 1]");
+    return;
+  }
+  static constexpr const char* kMaskColors[] = {
+    "grassMaskColor", "sandMaskColor", "rockMaskColor", "dirtMaskColor", "deadGrassMaskColor"
+  };
+  static constexpr const char* kRelations[] = {
+    "grassMaterial", "sandMaterial", "rockMaterial", "dirtMaterial", "deadGrassMaterial", "peakRockMaterial", "lowerRockMaterial"
+  };
+  static_assert(std::size(kRelations) == kTerrainBlendLayerCount);
+  static_assert(std::size(kMaskColors) == kTerrainBlendMaskLayerCount);
+  for (size_t i = 0; i < std::size(kMaskColors); ++i) {
+    const auto colorAttr = attribute(kMaskColors[i]);
+    if (colorAttr.HasAuthoredValueOpinion()) {
+      pxr::GfVec3f color;
+      if (!colorAttr.Get(&color) ||
+          !(color[0] >= 0.f && color[0] <= 1.f && color[1] >= 0.f && color[1] <= 1.f &&
+            color[2] >= 0.f && color[2] <= 1.f)) {
+        fail("mask colors must have RGB components in [0, 1]");
+        return;
+      }
+      preset->maskColors[i] = Vector3(color[0], color[1], color[2]);
+    }
+  }
+  for (size_t i = 0; i < std::size(kRelations); ++i) {
     pxr::SdfPathVector targets;
     const auto relation = prim.GetRelationship(pxr::TfToken(str::format("remix:terrainBlend:", kRelations[i])));
     const bool hasTargets = relation && relation.GetForwardedTargets(&targets);
-    if (i == 3 && preset->dirtStrength == 0.0f && (!relation || (hasTargets && targets.empty()))) {
+    const bool optional = i == kTerrainPeakRockLayer || i == kTerrainLowerRockLayer ||
+      (!preset->controlMap.isValid() && preset->paletteStrength == 0.f &&
+       (i == 4 || (i == 3 && preset->dirtStrength == 0.f)));
+    if (optional && (!relation || (hasTargets && targets.empty()))) {
       continue;
     }
     if (!hasTargets || targets.size() != 1) {
@@ -961,6 +1039,54 @@ void UsdMod::Impl::processTerrainBlend(Args& args, const pxr::UsdStageRefPtr& st
     opaque.setDisplaceIn(0.0f);
     opaque.setDisplaceOut(0.0f);
     preset->materials[i] = std::move(terrainMaterial);
+  }
+  if (preset->materials[kTerrainPeakRockLayer]) {
+    const auto layer = kTerrainPeakRockLayer;
+    pxr::GfVec2f range;
+    if (!attribute("peakRockElevationRange").Get(&range) ||
+        !std::isfinite(range[0]) || !std::isfinite(range[1]) || range[0] >= range[1] ||
+        !readFloat("peakRockUnitsPerRepeat", preset->unitsPerRepeat[layer]) || preset->unitsPerRepeat[layer] <= 0.f) {
+      fail("peak rock requires a finite increasing elevation range and positive repeat distance");
+      return;
+    }
+    preset->peakRockLowElevation = range[0];
+    preset->peakRockHighElevation = range[1];
+    pxr::GfVec4f relief(0.1f, 0.f, 0.f, 1.f);
+    const auto authoredRelief = attribute("peakRockRelief");
+    if ((authoredRelief.HasAuthoredValueOpinion() && !authoredRelief.Get(&relief)) ||
+        !std::isfinite(relief[0]) || relief[0] < 0.f || !std::isfinite(relief[1]) || relief[1] < 0.f ||
+        !(relief[2] >= 0.f && relief[2] < relief[3] && relief[3] <= 1.f)) {
+      fail("peakRockRelief requires nonnegative depths and 0 <= min < max <= 1");
+      return;
+    }
+    preset->displacementInward[layer] = relief[0];
+    preset->displacementOutward[layer] = relief[1];
+    preset->displacementHeightMin[layer] = relief[2];
+    preset->displacementHeightMax[layer] = relief[3];
+  }
+  if (preset->materials[kTerrainLowerRockLayer]) {
+    const auto layer = kTerrainLowerRockLayer;
+    pxr::GfVec2f range;
+    if (!attribute("lowerRockElevationRange").Get(&range) ||
+        !std::isfinite(range[0]) || !std::isfinite(range[1]) || range[0] >= range[1] ||
+        !readFloat("lowerRockUnitsPerRepeat", preset->unitsPerRepeat[layer]) || preset->unitsPerRepeat[layer] <= 0.f) {
+      fail("lower rock requires a finite increasing elevation range and positive repeat distance");
+      return;
+    }
+    preset->lowerRockLowElevation = range[0];
+    preset->lowerRockHighElevation = range[1];
+    pxr::GfVec4f relief(0.1f, 0.f, 0.f, 1.f);
+    const auto authoredRelief = attribute("lowerRockRelief");
+    if ((authoredRelief.HasAuthoredValueOpinion() && !authoredRelief.Get(&relief)) ||
+        !std::isfinite(relief[0]) || relief[0] < 0.f || !std::isfinite(relief[1]) || relief[1] < 0.f ||
+        !(relief[2] >= 0.f && relief[2] < relief[3] && relief[3] <= 1.f)) {
+      fail("lowerRockRelief requires nonnegative depths and 0 <= min < max <= 1");
+      return;
+    }
+    preset->displacementInward[layer] = relief[0];
+    preset->displacementOutward[layer] = relief[1];
+    preset->displacementHeightMin[layer] = relief[2];
+    preset->displacementHeightMax[layer] = relief[3];
   }
   args.target->setTerrainBlendPreset(std::move(preset));
 }

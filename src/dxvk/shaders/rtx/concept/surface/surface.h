@@ -553,6 +553,7 @@ struct SurfaceInteraction : MinimalSurfaceInteraction
 #ifdef TERRAIN_BLEND
   vec3 worldPositionGradientX = 0.f;
   vec3 worldPositionGradientY = 0.f;
+  float terrainPaletteSample = 0.f;
 #endif
   // The second texture coordinate set and its gradients. They are set only where surfaceHasTextureCoordinates1 holds.
   vec2 textureCoordinates1 = 0..xx;

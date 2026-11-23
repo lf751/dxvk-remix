@@ -12,7 +12,7 @@ load the mod while failing automatic terrain tagging.
 
 ## Authoring and loading
 
-Use the Terrain Blend window to configure grass, sand, rock, and dirt. Each layer uses
+Use the Terrain Blend window to configure dirt, sand, grass, dead grass, and rock. Each layer uses
 ordinary AperturePBR albedo, normal, roughness, and height textures, plus albedo and
 roughness constants. Texture inputs must be runtime-ready DDS assets; normal maps
 must have passed Remix's normal-map ingestion. Height maps control transitions and
@@ -62,8 +62,25 @@ Attributes below use the `remix:terrainBlend:` prefix:
 | `displacementSelfShadowEnabled` | bool | Enable terrain relief self-shadowing. Default true. |
 | `displacementShadowStrength` | float | Height-field shadow strength, 0 to 1. Default 1. |
 | `displacementShadowMaxIterations` | int | Light-ray iteration budget, 4 to 64. Default 32. |
-| `dirtMaterial` | relationship | One opaque Material target; required when dirt strength is positive. |
+| `dirtMaterial` | relationship | One opaque Material target. Required for palette blending or positive dirt strength. |
 | `dirtUnitsPerRepeat` | float | Positive dirt world units per repeat. Default 8. |
+| `deadGrassMaterial` | relationship | One opaque Material target, required for palette blending. |
+| `deadGrassUnitsPerRepeat` | float | Positive dead grass world units per repeat. Default 8. |
+| `deadGrassDisplacementInward`, `deadGrassDisplacementOutward` | float | Nonnegative dead grass relief depths. Defaults 0.1 and 0. |
+| `deadGrassDisplacementHeightMin`, `deadGrassDisplacementHeightMax` | float | Dead grass height remap endpoints. Defaults 0 and 1. |
+| `paletteStrength` | float | Influence of the live terrain color, from zero to one. Defaults to zero when omitted. |
+| `paletteSoftness` | float | Width of the color overlap, greater than zero and at most one. Default 0.16. |
+| `controlMap` | asset | Linear RGBA terrain weight map. Red is grass, green is dead grass, blue is dirt, and alpha is rock. Sand takes the remaining weight. Requires all five materials. |
+| `controlWorldToUv` | float4 | Required with `controlMap`. Two nonzero coordinate scales followed by two offsets. Applies to world XY when `rtx.zUp` is true and world XZ otherwise. |
+| `geoMap` | asset | Optional linear RGBA texture with height along U. RGB is a multiplicative tint with 0.5 neutral. Alpha controls the local tint strength. |
+| `geoElevationRange` | float2 | Required with `geoMap`. Increasing world elevations for the first and last texels. Uses the vertical axis and `flipElevation` of the terrain preset. |
+| `geoStrength` | float | Global geo tint strength from zero to one. Defaults to one when a map is supplied. |
+| `geoDipAmplitude`, `geoDipPeriod` | float | Optional nonnegative height offset and positive horizontal period in world units. Defaults 0 and 32. Blends changes in the tilt of geo strata across the terrain. |
+| `peakRockMaterial` | rel | Optional opaque summit material. Its weight comes from the cliff rock layer. |
+| `peakRockElevationRange` | float2 | Required with `peakRockMaterial`. Smooth elevation transition with a higher start on steep faces. Uses the preset's vertical axis and elevation sign. |
+| `peakRockUnitsPerRepeat` | float | Positive summit rock repeat distance in world units. Default 8. |
+| `peakRockRelief` | float4 | Inward and outward POM depth, then the lower and upper height remap endpoints. Default (0.1, 0, 0, 1). |
+| `grassMaskColor`, `sandMaskColor`, `rockMaskColor`, `dirtMaskColor`, `deadGrassMaskColor` | color3f | Reference colors in encoded sRGB, with each channel in [0, 1]. |
 | `dirtStrength` | float | Grass-exclusion dirt influence, zero to one. Default zero. |
 | `dirtWidth` | float | Positive border sampling radius in world units. Default 2. |
 | `dirtMinElevation` | float | Dirt starts above this elevation, respecting flip elevation. Default 0. |
@@ -76,28 +93,38 @@ are logged and ignored.
 
 ## Evaluation
 
+An authored `controlMap` supplies the initial material weights. The renderer filters it independently of the triplanar material maps and retains the selected mip level for the relief shadow pass. Use linear data textures for the weights.
+
+The optional geo map tints the evaluated ground with an elevation-addressed strip. Its influence follows the cliff rock weight, contributes lightly to dirt, and increases on steeper faces. Optional geo dip varies the sample elevation and direction across the horizontal plane. Use zero alpha at the ends of the strip for a smooth fade outside its authored range.
+
+The summit material takes weight from cliff rock across its authored elevation range. Steeper faces make that transition higher. Its four detail maps participate in height blending, view parallax and relief self-shadowing with the other layers.
+
+Terrain presets with smooth normals accumulate normals at shared world positions across terrain draws. This keeps shading continuous at matching chunk borders when the live island is redrawn.
+
+With a control map, `rockMode = "elevation"` fades grass and dead grass to rock between `rockLowElevation` and `rockHighElevation`, using the live terrain position and `flipElevation`. Sand and dirt keep their authored base weights. The `both` mode also applies the slope rule to those vegetation weights. The default `slope` mode leaves the initial rock weight to the map. Live grass-exclusion dirt can use its own texture alongside the control map. The authored map remains fixed in world space.
+
+The palette samples the original terrain draw's RGB with that draw's UVs and sampler. Its five reference colors give nearby colors overlapping material weights. Elevation preferences help distinguish sand from inland dirt, and slope or elevation reinforce rock. Black source areas fade to the procedural elevation and slope blend. The layer colors and maps still come from the authored materials.
+
 Optional dirt uses the live secondary alpha texture of draws selected by
 `rtx.legacyMaterial.worldSpaceSecondaryOpacityTextures`. The shader uses the same
 world-space projection as grass opacity. Set
 `rtx.legacyMaterial.worldSpaceSecondaryOpacityScale` in the game's `rtx.conf`;
 its default is 1. JPOG's coverage map uses `0.0009765625` (1/1024).
-A nine-sample filter extends excluded
-areas into nearby grass. After the original three layers' height blend, dirt takes
-only the remaining grass contribution: sand and rock weights remain unchanged.
+A nine-sample filter extends excluded areas into nearby grass. Coverage transfers
+a continuous fraction of the grass and dead grass weights into dirt.
 Dirt is zero at or below its minimum elevation and fades in over the configured
 positive elevation range. The threshold uses the same flipped coordinate as grass
 and rock. Missing coverage leaves the procedural blend unchanged. The last observed
 coverage texture remains available when frontend material translation is cached.
-The mask includes paths, buildings, shores, and other grass exclusions; it does not
-identify the reason for exclusion. Dirt and grass height textures refine their own transition without altering sand/rock weights.
+The mask includes paths, buildings, shores, and other grass exclusions.
 The old coverage-to-sand attributes are replaced by these dirt controls; Toolkit
 migrates old presets when loaded and writes only the new controls.
 
 The preset bypasses the downward terrain baker and evaluates at opaque material
 interactions in primary and indirect tracing. Grass and sand transition with
-elevation; rock replaces them as slope increases. Material height samples refine
-those weights while preserving zero-weight layers. A height strength of zero leaves
-the elevation/slope weights unchanged.
+elevation, and rock increases with slope. Material height samples bias active
+weights smoothly. The shader normalizes their sum to one. Height strength zero
+uses the placement weights directly.
 
 World-space triplanar sampling covers cliffs as well as horizontal surfaces. The
 shader blends linear albedo, world-space normals, and perceptual roughness, producing
@@ -129,7 +156,7 @@ multiplies both limits; zero strength or a missing height texture contributes no
 Changing repeat scale changes texture frequency without changing world-unit relief.
 
 POM intersects one blended signed height field using the current primary or indirect
-view ray. The grass/sand/rock/Dirt weights and raw height-map transitions are frozen
+view ray. The five material weights and raw height-map transitions are frozen
 at the real terrain hit. All material colors, normals, and roughness then sample the
 same virtual hit, avoiding independent material offsets at transitions. Quadtree leaf solving
 refines intersections within the configured maximum iteration budget. Near
@@ -164,7 +191,7 @@ regenerate normals through the same pass. Smoothing influences terrain slope
 placement and triplanar projection as well as lighting. Normals are generated per
 draw mesh; continuity across separately submitted terrain chunks is not guaranteed.
 
-This version supports four layers, opaque dielectric terrain, triplanar tiling,
+Terrain Blend supports up to six layers, opaque dielectric terrain, triplanar tiling,
 elevation, slope, and height-map transitions. It does not yet ingest JPOG's generated
 paint/detail textures as layer masks. Those maps require live identification and
 coordinate validation before preserving game-painted terrain can be promised.

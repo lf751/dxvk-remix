@@ -39,6 +39,7 @@ namespace dxvk {
 
   class DxvkDevice;
   class DxvkContext;
+  class RtInstance;
 
   // rtx.hostImport.deviceLocalStaticMeshes: usage bits that mark a Remix API mesh buffer
   // uploaded device-local in the layout a BlasEntry uses, so the entry may use it in place.
@@ -61,6 +62,16 @@ namespace dxvk {
   class RtxGeometryUtils : public CommonDeviceObject {
     std::unique_ptr<RtxStagingDataAlloc> m_pCbData;
     std::unique_ptr<RtxStagingDataAlloc> m_pSmoothNormalsHashData;
+    struct TerrainNormalChunk {
+      const BlasEntry* owner;
+      Matrix4 transform;
+      uint32_t created;
+      uint32_t updated;
+      bool operator==(const TerrainNormalChunk& other) const {
+        return owner == other.owner && transform == other.transform && created == other.created && updated == other.updated;
+      }
+    };
+    std::vector<TerrainNormalChunk> m_terrainNormalChunks;
     Rc<DxvkContext> m_skinningContext;
     // Commands recorded into the skinning context since its last flush.
     uint32_t m_skinningCommands = 0;
@@ -285,6 +296,9 @@ namespace dxvk {
       * The CPU path of small meshes reads the input's positions. Set gpuOnly when the geometry's
       * positions differ from them, such as after skinning.
       */
+    void weldTerrainNormals(const Rc<DxvkContext>& ctx, const std::vector<RtInstance*>& instances);
+    void resetTerrainNormals() { m_terrainNormalChunks.clear(); }
+
     void dispatchSmoothNormals(
       const Rc<DxvkContext>& ctx,
       const RasterGeometry& input,

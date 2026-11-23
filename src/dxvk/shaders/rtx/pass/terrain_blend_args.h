@@ -23,6 +23,11 @@
 
 #include "rtx/utility/shader_types.h"
 
+static const uint kTerrainBlendMaskLayerCount = 5;
+static const uint kTerrainPeakRockLayer = kTerrainBlendMaskLayerCount;
+static const uint kTerrainLowerRockLayer = kTerrainBlendMaskLayerCount + 1;
+static const uint kTerrainBlendLayerCount = kTerrainBlendMaskLayerCount + 2;
+
 struct TerrainBlendLayerArgs {
   uint albedoTextureIndex = 0xffff;
   uint normalTextureIndex = 0xffff;
@@ -33,6 +38,8 @@ struct TerrainBlendLayerArgs {
   float unitsPerRepeat = 8.f;
   float roughnessConstant = 0.7f;
   vec4 albedoConstant = vec4(0.5f, 0.5f, 0.5f, 1.f);
+  vec4 maskColor = vec4(0.f);
+  vec4 relief = vec4(0.1f, 0.f, 0.f, 1.f);
 };
 
 struct TerrainBlendArgs {
@@ -49,31 +56,39 @@ struct TerrainBlendArgs {
   float rockLowElevation = 4.f;
   float rockHighElevation = 8.f;
   uint coverageTextureIndex = 0xffff;
-  uint coverageSamplerIndex = 0xffff;
+  uint maskSamplerIndex = 0xffff;
   float dirtStrength = 0.f;
   float dirtWidth = 2.f;
   float dirtMinElevation = 0.f;
   float dirtElevationFadeWidth = 1.f;
-  uint padding0 = 0;
-  uint padding1 = 0;
+  float paletteStrength = 0.f;
+  float paletteSoftness = 0.16f;
   vec4 worldOffset = vec4(0.f);
-  vec4 coverageUvScaleOffset = vec4(1.f, 1.f, 0.f, 0.f);
+  vec4 controlWorldToUv = vec4(1.f, 1.f, 0.f, 0.f);
   uint displacementEnabled = 0;
   float displacementStrength = 1.f;
   uint displacementMaxIterations = 64;
-  uint displacementPadding = 0;
-  vec4 displacementInward = vec4(0.1f);
-  vec4 displacementOutward = vec4(0.f);
-  vec4 displacementHeightMin = vec4(0.f);
-  vec4 displacementHeightMax = vec4(1.f);
+  uint controlTextureIndex = 0xffff;
   uint displacementSelfShadowEnabled = 1;
   float displacementShadowStrength = 1.f;
   uint displacementShadowMaxIterations = 32;
-  uint displacementShadowPadding = 0;
-  TerrainBlendLayerArgs layers[4];
+  float coverageUvScale = 1.f;
+  uint geoTextureIndex = 0xffff;
+  float geoMinElevation = 0.f;
+  float geoMaxElevation = 1.f;
+  float geoStrength = 0.f;
+  float peakRockLowElevation = 0.f;
+  float peakRockHighElevation = 0.f;
+  float geoDipAmplitude = 0.f;
+  float geoDipPeriod = 32.f;
+  float lowerRockLowElevation = 0.f;
+  float lowerRockHighElevation = 0.f;
+  float lowerRockPad0 = 0.f;
+  float lowerRockPad1 = 0.f;
+  TerrainBlendLayerArgs layers[kTerrainBlendLayerCount];
 };
 
 #ifdef __cplusplus
-static_assert(sizeof(TerrainBlendLayerArgs) == 48);
-static_assert(sizeof(TerrainBlendArgs) == 400);
+static_assert(sizeof(TerrainBlendLayerArgs) == 80);
+static_assert(sizeof(TerrainBlendArgs) == 752);
 #endif

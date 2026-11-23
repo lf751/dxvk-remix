@@ -840,7 +840,7 @@ void opaqueSurfaceMaterialApplyTextureOperations(
       const TerrainBlendArgs coverage = cb.terrainBlendArgs;
       const vec3 position = surfaceInteraction.position + coverage.worldOffset.xyz;
       const vec2 plane = coverage.zUp ? position.xy : position.xz;
-      const vec2 uv = plane * coverage.coverageUvScaleOffset.xy + coverage.coverageUvScaleOffset.zw;
+      const vec2 uv = plane * coverage.coverageUvScale;
       opacity *= textures[nonuniformEXT(uint(opaqueSurfaceMaterial.secondaryTextureIndex))]
         .SampleLevel(samplers[nonuniformEXT(uint(opaqueSurfaceMaterial.samplerIndex))], uv, 0).a;
     }
@@ -1055,7 +1055,7 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
 {
 #ifdef TERRAIN_BLEND
   if (cb.terrainBlendArgs.enabled != 0 && surface.isTerrainBlend) {
-    return terrainBlendInteractionCreate(surface, surfaceInteraction, minimalRayInteraction);
+    return terrainBlendInteractionCreate(opaqueSurfaceMaterial, surface, surfaceInteraction, minimalRayInteraction);
   }
 #endif
   OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteraction;

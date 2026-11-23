@@ -31,6 +31,7 @@
 #include <rtx_shaders/decode_and_add_opacity.h>
 #include <rtx_shaders/interleave_geometry.h>
 #include <rtx_shaders/smooth_normals.h>
+#include <rtx_shaders/smooth_terrain_normals.h>
 #include <rtx_shaders/omm_class_census.h>
 #include <rtx_shaders/omm_micro_census.h>
 #include <rtx_shaders/omm_sw_pack.h>
@@ -40,6 +41,7 @@
 
 #include "rtx_context.h"
 #include "rtx_options.h"
+#include "rtx_instance_manager.h"
 
 #include "rtx/pass/view_model/view_model_correction_binding_indices.h"
 #include "rtx/pass/opacity_micromap/bake_opacity_micromap_binding_indices.h"
@@ -52,6 +54,7 @@
 #include "rtx/pass/gpu_skinning_binding_indices.h"
 #include "rtx/pass/skinning.h"
 #include "rtx/pass/smooth_normals_binding_indices.h"
+#include "rtx/pass/smooth_terrain_normals_args.h"
 #include "rtx/pass/smooth_normals.h"
 #include "rtx/pass/gen_tri_list_index_buffer.h"
 #include "rtx/pass/interleave_geometry_indices.h"
@@ -168,6 +171,18 @@ namespace dxvk {
     };
 
     PREWARM_SHADER_PIPELINE(SmoothNormalsShader);
+
+    class SmoothTerrainNormalsShader : public ManagedShader {
+      SHADER_SOURCE(SmoothTerrainNormalsShader, VK_SHADER_STAGE_COMPUTE_BIT, smooth_terrain_normals)
+      PUSH_CONSTANTS(SmoothTerrainNormalsArgs)
+      BEGIN_PARAMETER()
+        STRUCTURED_BUFFER(SMOOTH_TERRAIN_BINDING_CHUNKS)
+        STRUCTURED_BUFFER(SMOOTH_TERRAIN_BINDING_JOBS)
+        RW_STRUCTURED_BUFFER(SMOOTH_NORMALS_BINDING_HASH_TABLE)
+        RW_STRUCTURED_BUFFER(SMOOTH_TERRAIN_BINDING_WORLD_WRITE)
+        STRUCTURED_BUFFER(SMOOTH_TERRAIN_BINDING_WORLD_READ)
+      END_PARAMETER()
+    };
 
     // rtx.alphaBake.census. Not prewarmed, since it only runs with the census on.
     class OmmClassCensusShader : public ManagedShader {
@@ -1433,6 +1448,136 @@ namespace dxvk {
     }
 
     return std::sqrtf(maxUvTileSizeSqr);
+  }
+
+  void RtxGeometryUtils::weldTerrainNormals(const Rc<DxvkContext>& ctx, const std::vector<RtInstance*>& instances) {
+    if (!m_device->features().core.features.shaderInt64 || !m_device->features().vulkan12Features.bufferDeviceAddress) {
+      return;
+    }
+    std::vector<TerrainNormalChunk> chunks;
+    for (const auto* instance : instances) {
+      const auto* blas = instance->getBlas();
+      if (!blas || !blas->modifiedGeometryData.smoothNormalsApplied) {
+        continue;
+      }
+      const auto& geometry = blas->modifiedGeometryData;
+      const bool eligible = instance->surface.terrainBlend && !instance->surface.instancesToObject &&
+        geometry.positionBuffer.defined() && geometry.normalBuffer.defined() &&
+        geometry.indexBuffer.defined() && geometry.calculatePrimitiveCount() != 0 &&
+        (geometry.positionBuffer.buffer()->info().usage & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT) &&
+        (geometry.normalBuffer.buffer()->info().usage & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT) &&
+        (geometry.indexBuffer.buffer()->info().usage & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT);
+      chunks.push_back({ blas, instance->surface.objectToWorld, blas->frameCreated,
+        eligible ? blas->frameLastUpdated : kInvalidFrameIndex });
+    }
+    std::sort(chunks.begin(), chunks.end(), [](const auto& a, const auto& b) {
+      return std::less<const BlasEntry*>()(a.owner, b.owner);
+    });
+    auto output = chunks.begin();
+    uint64_t vertexCount = 0;
+    for (auto first = chunks.begin(); first != chunks.end();) {
+      auto last = first + 1;
+      while (last != chunks.end() && last->owner == first->owner) {
+        ++last;
+      }
+      // One GPU normal buffer is shared by all instances of a mesh.
+      const bool sharedTransform = std::all_of(first, last, [first](const auto& chunk) {
+        return chunk.updated != kInvalidFrameIndex && chunk.transform == first->transform;
+      });
+      if (sharedTransform) {
+        vertexCount += first->owner->modifiedGeometryData.vertexCount;
+        *output++ = *first;
+      }
+      first = last;
+    }
+    chunks.erase(output, chunks.end());
+    if (chunks == m_terrainNormalChunks) {
+      return;
+    }
+    m_terrainNormalChunks = std::move(chunks);
+    // Limit the scratch allocation for very large scenes. Local smoothing is already available.
+    if (m_terrainNormalChunks.size() < 2 || vertexCount > (1u << 19)) {
+      return;
+    }
+
+    ScopedGpuProfileZone(ctx, "smoothTerrainNormals");
+    uint32_t tableSize = 256;
+    while (tableSize < vertexCount * 4) {
+      tableSize *= 2;
+    }
+
+    std::vector<SmoothTerrainChunkArgs> chunkArgs;
+    std::vector<SmoothTerrainNormalJob> jobs;
+    chunkArgs.reserve(m_terrainNormalChunks.size());
+    jobs.reserve(vertexCount / 128 + m_terrainNormalChunks.size());
+    uint32_t vertexStart = 0;
+    for (const auto& chunk : m_terrainNormalChunks) {
+      const auto& geo = chunk.owner->modifiedGeometryData;
+      const auto& matrix = chunk.transform;
+      SmoothTerrainChunkArgs args{};
+      args.positionAddress = geo.positionBuffer.getDeviceAddress() + geo.positionBuffer.offsetFromSlice();
+      args.normalAddress = geo.normalBuffer.getDeviceAddress() + geo.normalBuffer.offsetFromSlice();
+      args.indexAddress = geo.indexBuffer.getDeviceAddress() + geo.indexBuffer.offsetFromSlice();
+      args.positionStride = geo.positionBuffer.stride() / sizeof(float);
+      args.normalStride = geo.normalBuffer.stride() / sizeof(float);
+      args.numTriangles = geo.calculatePrimitiveCount();
+      args.numVertices = geo.vertexCount;
+      args.useShortIndices = geo.indexBuffer.indexType() == VK_INDEX_TYPE_UINT16;
+      args.vertexStart = vertexStart;
+      args.orientation = determinant(matrix) < 0.0 ? -1.f : 1.f;
+      for (uint32_t axis = 0; axis < 3; ++axis) {
+        args.worldRows[axis] = vec4(matrix[0][axis], matrix[1][axis], matrix[2][axis], matrix[3][axis]);
+      }
+      for (uint32_t first = 0; first < args.numVertices; first += 128) {
+        jobs.push_back({ uint32_t(chunkArgs.size()), first });
+      }
+      chunkArgs.push_back(args);
+      vertexStart += geo.vertexCount;
+
+      // Device-address accesses bypass descriptor-based lifetime tracking.
+      ctx->getCommandList()->trackResource<DxvkAccess::Read>(geo.positionBuffer.buffer());
+      ctx->getCommandList()->trackResource<DxvkAccess::Read>(geo.indexBuffer.buffer());
+      ctx->getCommandList()->trackResource<DxvkAccess::Write>(geo.normalBuffer.buffer());
+    }
+    const uint32_t vertexJobs = uint32_t(jobs.size());
+    for (uint32_t chunk = 0; chunk < chunkArgs.size(); ++chunk) {
+      for (uint32_t first = 0; first < chunkArgs[chunk].numTriangles; first += 128) {
+        jobs.push_back({ chunk, first });
+      }
+    }
+
+    const auto scratch = [&](VkDeviceSize size) {
+      auto slice = m_pSmoothNormalsHashData->alloc(16, size);
+      ctx->getCommandList()->trackResource<DxvkAccess::Write>(slice.buffer());
+      return slice;
+    };
+    const auto table = scratch(VkDeviceSize(tableSize) * 4 * sizeof(int32_t));
+    const auto positions = scratch(VkDeviceSize(vertexCount) * 4 * sizeof(float));
+    const auto chunksBuffer = scratch(chunkArgs.size() * sizeof(SmoothTerrainChunkArgs));
+    const auto jobsBuffer = scratch(jobs.size() * sizeof(SmoothTerrainNormalJob));
+    ctx->writeToBuffer(chunksBuffer.buffer(), chunksBuffer.offset(), chunksBuffer.length(), chunkArgs.data());
+    ctx->writeToBuffer(jobsBuffer.buffer(), jobsBuffer.offset(), jobsBuffer.length(), jobs.data());
+    ctx->clearBuffer(table.buffer(), table.offset(), table.length(), 0);
+    ctx->bindShader(VK_SHADER_STAGE_COMPUTE_BIT, SmoothTerrainNormalsShader::getShader());
+    ctx->setPushConstantBank(DxvkPushConstantBank::RTX);
+    ctx->bindResourceBuffer(SMOOTH_NORMALS_BINDING_HASH_TABLE, table);
+    ctx->bindResourceBuffer(SMOOTH_TERRAIN_BINDING_WORLD_WRITE, positions);
+    ctx->bindResourceBuffer(SMOOTH_TERRAIN_BINDING_WORLD_READ, positions);
+    ctx->bindResourceBuffer(SMOOTH_TERRAIN_BINDING_CHUNKS, chunksBuffer);
+    ctx->bindResourceBuffer(SMOOTH_TERRAIN_BINDING_JOBS, jobsBuffer);
+
+    constexpr auto compute = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+    // The barriers also cover geometry reached through buffer device addresses.
+    ctx->emitMemoryBarrier(0, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_ACCESS_MEMORY_WRITE_BIT,
+      compute, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
+    for (uint32_t phase = 0; phase < 3; ++phase) {
+      const SmoothTerrainNormalsArgs params{ phase, tableSize, phase == 1 ? vertexJobs : 0 };
+      ctx->pushConstants(0, sizeof(params), &params);
+      ctx->dispatch(phase == 1 ? uint32_t(jobs.size()) - vertexJobs : vertexJobs, 1, 1);
+    }
+    ctx->emitMemoryBarrier(0, compute, VK_ACCESS_SHADER_WRITE_BIT,
+      VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT);
+    ONCE(Logger::info(str::format("[RTX Terrain Blend] Welded terrain normals across ", m_terrainNormalChunks.size(), " chunks with batched GPU dispatches.")));
   }
 
   void RtxGeometryUtils::dispatchSmoothNormals(const Rc<DxvkContext>& ctx, const RasterGeometry& input, RaytraceGeometry& geo,

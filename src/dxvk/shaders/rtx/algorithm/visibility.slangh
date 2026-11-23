@@ -583,7 +583,7 @@ VisibilityResult traceVisibilityRay<let VisibilityMode : uint>(
     if (surfaces[primarySurfaceIndex].isTerrainBlend)
     {
       terrainAttenuation = terrainBlendShadowThroughput(
-        minimalSurfaceInteraction, visibilityRay.direction, outwardViewDirection, texCoords.xy);
+        minimalSurfaceInteraction, visibilityRay.direction, outwardViewDirection, texCoords);
       if (terrainAttenuation <= 0.001f)
       {
         VisibilityResult result = (VisibilityResult) 0;
