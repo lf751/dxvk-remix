@@ -34,6 +34,7 @@ namespace dxvk {
   class RtxContext;
   class DxvkContext;
   class InstanceManager;
+  struct TerrainGrassBatchInfo;
 
   /**
     * GPU-driven radius culling system for USD PointInstancer replacements.
@@ -76,6 +77,7 @@ namespace dxvk {
     uint32_t tlasType;                             // Tlas::Type (Opaque, Unordered, SSS)
     uint32_t instanceBufferByteOffset;             // Absolute byte offset in m_vkInstanceBuffer (resolved before dispatch)
     bool fromHost;                                 // Host (Remix API) instancing rather than a USD PointInstancer
+    std::shared_ptr<const TerrainGrassBatchInfo> terrainGrass; // Non-null: populated by RtxTerrainGrassSystem on GPU
   };
 
   class RtxPointInstancerSystem : public CommonDeviceObject {

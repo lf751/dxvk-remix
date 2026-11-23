@@ -2838,6 +2838,7 @@ namespace dxvk {
             batch.tlasType = primaryType;
             batch.instanceBufferByteOffset = 0; // resolved before dispatch
             batch.fromHost = inst->surface.instancesFromHost;
+            batch.terrainGrass = inst->surface.terrainGrassBatch;
             m_pointInstancerBatches[cursor.batches++] = batch;
             if (!unordered && inst->isSubsurface()) {
               PointInstancerBatch sssBatch = batch;
@@ -2891,7 +2892,8 @@ namespace dxvk {
           if (a.transforms != b.transforms || a.instanceCount != b.instanceCount || a.baseSurfaceIndex != b.baseSurfaceIndex ||
               a.firstIndexInType != b.firstIndexInType || a.tlasType != b.tlasType || a.blasReference != b.blasReference ||
               a.customIndexFlags != b.customIndexFlags || a.instanceMask != b.instanceMask || a.sbtOffsetAndFlags != b.sbtOffsetAndFlags ||
-              std::memcmp(&a.objectToWorld, &b.objectToWorld, sizeof(Matrix4)) != 0 || a.fromHost != b.fromHost) {
+              std::memcmp(&a.objectToWorld, &b.objectToWorld, sizeof(Matrix4)) != 0 || a.fromHost != b.fromHost ||
+              a.terrainGrass != b.terrainGrass) {
             ++mismatches;
             break;
           }
@@ -3409,6 +3411,24 @@ namespace dxvk {
     const Vector3 cameraPos = cameraManager.getMainCamera().getPosition();
 
     system.dispatchCulling(ctx, m_vkInstanceBuffer, m_surfaceBuffer, surfaceMaterialBuffer, m_pointInstancerBatches, cameraPos);
+
+    // Dispatch GPU-driven terrain grass scatter for any TerrainGrass batches
+    SceneManager& sceneManager = m_device->getCommon()->getSceneManager();
+    const auto& grassPreset = sceneManager.getActiveTerrainGrassPreset();
+    if (grassPreset && grassPreset->enabled && RtxTerrainGrassSystem::isEnabled()) {
+      RtxTerrainGrassSystem& grassSystem = m_device->getCommon()->metaTerrainGrassSystem();
+      grassSystem.dispatchScatter(
+        ctx,
+        m_vkInstanceBuffer,
+        m_surfaceBuffer,
+        surfaceMaterialBuffer,
+        m_pointInstancerBatches,
+        cameraManager,
+        *grassPreset,
+        sceneManager.getTerrainBlendArgs(),
+        sceneManager.getTerrainCoverageTexture(),
+        sceneManager.isTerrainGrassFlipUp());
+    }
   }
 
   // rtx.accelIncrementalSelfCheckFrames ([PointInstancerCheck]). The GPU culling pass writes every
@@ -4774,6 +4794,7 @@ namespace dxvk {
     batch.tlasType = primaryType;
     batch.instanceBufferByteOffset = 0; // resolved before dispatch
     batch.fromHost = rtInstance->surface.instancesFromHost;
+    batch.terrainGrass = rtInstance->surface.terrainGrassBatch;
     m_pointInstancerBatches.push_back(batch);
 
     // Also reserve SSS TLAS slots if needed

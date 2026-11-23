@@ -479,6 +479,10 @@ dxvk_src = files([
 
   'rtx_render/rtx_point_instancer_system.cpp',
   'rtx_render/rtx_point_instancer_system.h',
+  'rtx_render/rtx_terrain_grass_math.h',
+  'rtx_render/rtx_terrain_grass_types.h',
+  'rtx_render/rtx_terrain_grass_system.cpp',
+  'rtx_render/rtx_terrain_grass_system.h',
 
   'rtx_render/graph/rtx_component_list.h',
   'rtx_render/graph/rtx_component_list.cpp',

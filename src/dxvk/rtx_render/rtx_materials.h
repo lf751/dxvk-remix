@@ -627,6 +627,8 @@ struct RtSurface {
   // Some API-provided instance transform arrays are not owned by an AssetReplacement and may be destroyed before the
   // next full scene clear, so surfaces retain shared ownership of the transform data they reference.
   std::shared_ptr<const std::vector<Matrix4>> instancesToObject;
+  // Optional GPU-driven terrain grass scatter descriptor (when non-null, RtxTerrainGrassSystem writes the TLAS/surface slots).
+  std::shared_ptr<const struct TerrainGrassBatchInfo> terrainGrassBatch;
   // instancesToObject came from the host (Remix API instancing), not a USD PointInstancer.
   bool instancesFromHost = false;
   // on the GPU, multiple copies of this surface with different transforms will exist.  They will be in a continuous block, starting at surfaceIndexOfFirstInstance.

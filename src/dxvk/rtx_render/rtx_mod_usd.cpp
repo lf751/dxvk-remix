@@ -158,6 +158,7 @@ private:
   Rc<ManagedTexture> getTexture(const Args& args, const pxr::UsdPrim& shader, const pxr::TfToken& textureToken, bool forcePreload = false) const;
   std::pair<XXH64_hash_t, std::shared_ptr<MaterialData>> processMaterial(Args& args, const pxr::UsdPrim& matPrim);
   void processTerrainBlend(Args& args, const pxr::UsdStageRefPtr& stage);
+  void processTerrainGrass(Args& args, const pxr::UsdStageRefPtr& stage);
   std::pair<XXH64_hash_t, std::shared_ptr<MaterialData>> processMaterialUser(Args& args, const pxr::UsdPrim& prim);
   bool processMesh(const pxr::UsdPrim& prim, Args& args);
   void processPrim(Args& args, const pxr::UsdPrim& prim);
@@ -522,6 +523,11 @@ void classifyChangedPath(const pxr::SdfPath& path, bool isResync, const pxr::Usd
   }
   const pxr::SdfPath& sectionPath = prefixes[1];
   if (sectionPath == pxr::SdfPath("/RootNode/TerrainBlend")) {
+    rebuildAllMats = true;
+    return;
+  }
+  if (sectionPath == pxr::SdfPath("/RootNode/TerrainGrass")) {
+    rebuildAllMeshes = true;
     rebuildAllMats = true;
     return;
   }
@@ -1089,6 +1095,144 @@ void UsdMod::Impl::processTerrainBlend(Args& args, const pxr::UsdStageRefPtr& st
     preset->displacementHeightMax[layer] = relief[3];
   }
   args.target->setTerrainBlendPreset(std::move(preset));
+}
+
+void UsdMod::Impl::processTerrainGrass(Args& args, const pxr::UsdStageRefPtr& stage) {
+  static std::atomic<uint64_t> s_terrainGrassGeneration { 1u };
+  const auto prim = stage->GetPrimAtPath(pxr::SdfPath("/RootNode/TerrainGrass"));
+  args.target->setTerrainGrassPreset(nullptr);
+  if (!prim || !prim.IsActive()) {
+    return;
+  }
+  const auto fail = [&prim](const char* reason) {
+    Logger::warn(str::format("Invalid terrain grass preset ", prim.GetPath().GetString(), ": ", reason));
+  };
+  const auto attribute = [&prim](const char* name) {
+    return prim.GetAttribute(pxr::TfToken(str::format("remix:terrainGrass:", name)));
+  };
+  int version = 0;
+  if (!attribute("schemaVersion").Get(&version) || version != 1) {
+    fail("schemaVersion must be 1");
+    return;
+  }
+  auto preset = std::make_shared<TerrainGrassPreset>();
+  preset->generation = s_terrainGrassGeneration.fetch_add(1u, std::memory_order_relaxed);
+  const auto enabledAttr = attribute("enabled");
+  if (enabledAttr.HasAuthoredValueOpinion() && !enabledAttr.Get(&preset->enabled)) {
+    fail("enabled must be a bool");
+    return;
+  }
+  if (!preset->enabled) {
+    args.target->setTerrainGrassPreset(std::move(preset));
+    return;
+  }
+
+  const auto readBool = [&attribute](const char* name, bool& value, bool* authored = nullptr) {
+    const auto attr = attribute(name);
+    if (!attr.HasAuthoredValueOpinion()) {
+      return true;
+    }
+    if (authored) {
+      *authored = true;
+    }
+    return attr.Get(&value);
+  };
+  const auto readFloat = [&attribute](const char* name, float& value) {
+    const auto attr = attribute(name);
+    return (!attr.HasAuthoredValueOpinion() || attr.Get(&value)) && std::isfinite(value);
+  };
+
+  if (!readBool("hideVanillaGrass", preset->hideVanillaGrass) ||
+      !readBool("flipUp", preset->flipUp, &preset->flipUpAuthored) ||
+      !readBool("useTerrainBlendRules", preset->useTerrainBlendRules)) {
+    fail("invalid boolean option");
+    return;
+  }
+
+  pxr::GfVec2f origin(0.f, 0.f);
+  const auto originAttr = attribute("worldOrigin");
+  if (originAttr.HasAuthoredValueOpinion()) {
+    if (!originAttr.Get(&origin) || !std::isfinite(origin[0]) || !std::isfinite(origin[1])) {
+      fail("worldOrigin must be a finite float2");
+      return;
+    }
+    preset->worldOrigin = Vector2(origin[0], origin[1]);
+  }
+
+  if (!readFloat("worldSize", preset->worldSize) || preset->worldSize <= 0.f ||
+      !readFloat("minElevation", preset->minElevation) ||
+      !readFloat("maxSlopeDegrees", preset->maxSlopeDegrees) || preset->maxSlopeDegrees < 1.f || preset->maxSlopeDegrees > 89.f ||
+      !readFloat("sinkDepth", preset->sinkDepth) || preset->sinkDepth < -1.f || preset->sinkDepth > 2.f ||
+      !readFloat("normalAlign", preset->normalAlign) || preset->normalAlign < 0.f || preset->normalAlign > 1.f ||
+      !readFloat("borderShrinkWidth", preset->borderShrinkWidth) || preset->borderShrinkWidth < 0.f ||
+      !readFloat("minScale", preset->minScale) || !readFloat("maxScale", preset->maxScale) ||
+      preset->minScale <= 0.f || preset->maxScale < preset->minScale ||
+      !readFloat("transitionWidth", preset->transitionWidth) || preset->transitionWidth < 0.f ||
+      !readFloat("coverageThreshold", preset->coverageThreshold) || preset->coverageThreshold < 0.f || preset->coverageThreshold > 1.f) {
+    fail("invalid scalar terrain grass parameter");
+    return;
+  }
+
+  static constexpr const char* kRingNames[kTerrainGrassRingCount] = { "near", "mid", "far" };
+  for (uint32_t r = 0; r < kTerrainGrassRingCount; ++r) {
+    auto& ring = preset->rings[r];
+    const std::string prefix = kRingNames[r];
+    if (!readFloat((prefix + "Spacing").c_str(), ring.spacing) || ring.spacing <= 0.25f ||
+        !readFloat((prefix + "Radius").c_str(), ring.outerRadius) || ring.outerRadius <= 0.f ||
+        !readFloat((prefix + "Scale").c_str(), ring.scale) || ring.scale <= 0.f) {
+      fail("invalid ring spacing, radius, or scale");
+      return;
+    }
+
+    const auto rel = prim.GetRelationship(pxr::TfToken(str::format("remix:terrainGrass:", prefix, "Prototypes")));
+    pxr::SdfPathVector targets;
+    if (rel && rel.GetForwardedTargets(&targets)) {
+      for (const auto& targetPath : targets) {
+        pxr::UsdPrim protoPrim = stage->GetPrimAtPath(targetPath);
+        if (!protoPrim || !protoPrim.IsActive()) {
+          Logger::warn(str::format("TerrainGrass prototype target invalid or inactive: ", targetPath.GetString()));
+          continue;
+        }
+        std::vector<AssetReplacement> protoMeshes;
+        Args protoArgs = { args.context, args.xformCache, protoPrim, protoMeshes };
+        protoArgs.target = args.target;
+        processReplacementRecursive(protoArgs, protoPrim, /*isRoot=*/true);
+
+        TerrainGrassPrototype proto {};
+        for (auto& rep : protoMeshes) {
+          if (rep.type == AssetReplacement::eMesh && rep.geometry != nullptr &&
+              rep.geometry->data.vertexCount > 0) {
+            TerrainGrassMeshPart part {};
+            part.geometry = rep.geometry;
+            part.materialData = rep.materialData;
+            part.meshToPrototype = rep.replacementToObject;
+            part.categoryFlagsRaw = rep.categories.applyCategoryFlags(0).raw();
+            proto.meshes.push_back(std::move(part));
+          }
+        }
+        if (!proto.meshes.empty()) {
+          ring.prototypes.push_back(std::move(proto));
+        }
+      }
+    }
+  }
+
+  // Fallback chain: if Mid or Far omits prototypes, inherit from the previous populated ring.
+  if (preset->rings[0].prototypes.empty()) {
+    fail("nearPrototypes must target at least one valid Mesh/Xform prim");
+    return;
+  }
+  if (preset->rings[1].prototypes.empty()) {
+    preset->rings[1].prototypes = preset->rings[0].prototypes;
+  }
+  if (preset->rings[2].prototypes.empty()) {
+    preset->rings[2].prototypes = preset->rings[1].prototypes;
+  }
+
+  Logger::info(str::format("[RTX Terrain Grass] Loaded /RootNode/TerrainGrass preset (near=",
+    preset->rings[0].prototypes.size(), ", mid=", preset->rings[1].prototypes.size(),
+    ", far=", preset->rings[2].prototypes.size(), " prototypes, worldSize=", preset->worldSize, ")."));
+  args.target->setTerrainGrassPreset(std::move(preset));
 }
 
 std::pair<XXH64_hash_t, std::shared_ptr<MaterialData>> UsdMod::Impl::processMaterialUser(Args& args, const pxr::UsdPrim& prim) {
@@ -2330,6 +2474,14 @@ bool UsdMod::Impl::processUSD(const Rc<DxvkContext>& context, AssetReplacements&
     Args args = {context, xformCache, terrainRoot, placeholder};
     args.target = &target;
     processTerrainBlend(args, stage);
+  }
+
+  {
+    pxr::UsdPrim grassRoot = stage->GetPrimAtPath(pxr::SdfPath("/RootNode/TerrainGrass"));
+    std::vector<AssetReplacement> placeholder;
+    Args args = {context, xformCache, grassRoot, placeholder};
+    args.target = &target;
+    processTerrainGrass(args, stage);
   }
 
   // Process Meshes
