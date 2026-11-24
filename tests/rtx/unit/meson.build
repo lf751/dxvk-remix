@@ -186,6 +186,11 @@ exe = executable('test_scene_input',  files('test_scene_input.cpp'),  dependenci
 test('test_scene_input', exe, env: test_env)
 tests += exe
 
+# D3D9 frontend in-place handover lifecycle & hiddenUnseen visibility restoration (self-contained).
+exe = executable('test_d3d9_frontend_lifecycle',  files('test_d3d9_frontend_lifecycle.cpp'),  dependencies : test_unit_deps, win_subsystem : 'console', override_options: ['cpp_std='+dxvk_cpp_std])
+test('test_d3d9_frontend_lifecycle', exe, env: test_env)
+tests += exe
+
 exe = executable('test_legacy_material_fresnel', files('test_legacy_material_fresnel.cpp'),
   include_directories : test_include_path, dependencies : [ d3d9_dep, test_unit_deps ], link_with: [ d3d9_dll, dxvk_lib ], win_subsystem : 'console', override_options: ['cpp_std='+dxvk_cpp_std])
 test('test_legacy_material_fresnel', exe, env: test_env)

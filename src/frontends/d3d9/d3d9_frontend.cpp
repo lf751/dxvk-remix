@@ -49,6 +49,7 @@
 #include "../translator/sky_rules.h"
 #include "d3d9_camera.h"
 #include "d3d9_draw_call.h"
+#include "d3d9_frontend_lifecycle.h"
 #include "d3d9_raster_replay.h"
 #include "../../util/log/log.h"
 #include "../../util/util_string.h"
@@ -305,7 +306,7 @@ namespace dxvk {
       // ---- CS thread -------------------------------------------------------------------------------------------
 
       struct D3D9Frontend::Impl {
-        struct Object {
+        struct Object : DirectObjectLifecycle {
           XXH64_hash_t assetHash = 0;   // mesh hash for the hash checker / hash dumps (reportAssetUse)
           XXH64_hash_t legacyHash0 = 0; // the legacy asset hashes submitDrawState also tracks (0 = rule off)
           XXH64_hash_t legacyHash1 = 0;
@@ -314,11 +315,7 @@ namespace dxvk {
           AxisAlignedBoundingBox bounds;
           Matrix4 objectToWorld;
           uint32_t categories = 0;
-          uint32_t frameCreated = 0;
           uint32_t frameLastSeen = 0;
-          uint32_t frameMoved = ~0u;
-          uint32_t frameMergedPass = 0; // The last frame mergePass ran for the object
-          bool releasing = false;       // Released sent, waiting for the app thread's destroy
           // The scene expanded a USD mesh replacement for it (InstanceFeedback::replaced). The scene's copy owns the
           // replacement's lights and graphs.
           bool replaced = false;
@@ -335,8 +332,6 @@ namespace dxvk {
           // What a new object must share with an object the game stopped drawing in the same frame to take over its
           // motion history: the vertex layout, the counts and the colour texture.
           XXH64_hash_t pairKey = 0;
-          bool agedOut = false;         // released because the game stopped drawing it
-          bool hiddenUnseen = false;    // hidden in the frames it is not drawn, until the app thread's destroy arrives
         };
         std::unordered_map<uint64_t, Object> objects;
         // The objects the scene accepted this frame, for the pairing with the objects that went stale (endFrame).
@@ -1041,6 +1036,12 @@ namespace dxvk {
           }
           // Built now: the scene owns the object from this draw on. The scene's record points at the description's
           // geometry, not at the D3D9 or staging buffers the draw was made from.
+          const auto previousBeforeBuild = objects.find(handle);
+          if (previousBeforeBuild != objects.end() && prepareHandoverRebuild(previousBeforeBuild->second)) {
+            // An aged-out object updated before the app thread's destroy arrives: unhide it
+            // before building so buildNow builds it visible under every retainedHiddenPolicy.
+            scene.setVisible(handle, true);
+          }
           frontend::PreparedInstance prepared = frontend::prepareInstance(std::move(desc));
           scene.buildInstance(handle, std::move(prepared));
           const frontend::InstanceFeedback result = buildResult(scene, handle);
@@ -1054,12 +1055,8 @@ namespace dxvk {
             }
             const auto previous = objects.find(handle);
             if (previous != objects.end()) {
-              // An update: same object, and its age carries over. The scene carries the replacement's lights over.
-              object.frameCreated = previous->second.frameCreated;
-              // An update that moves the object counts as a move, so it is not anti-culled mid-motion.
-              object.frameMoved = sameMatrix(previous->second.objectToWorld, object.objectToWorld)
-                ? previous->second.frameMoved
-                : frame;
+              // An update: same object, and its age and release state carry over. The scene carries the replacement's lights over.
+              carryOverOnUpdate(object, previous->second, !sameMatrix(previous->second.objectToWorld, object.objectToWorld), frame);
               totals.updated++;
             } else {
               totals.accepted++;
