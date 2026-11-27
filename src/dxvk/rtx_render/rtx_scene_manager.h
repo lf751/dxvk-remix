@@ -471,6 +471,14 @@ public:
 
   void onFrameEnd(Rc<DxvkContext> ctx, bool raytracedThisFrame);
 
+  struct WaterRipple {
+    Vector3 center;
+    float radius;
+    float strength;
+    float verticalTolerance;
+  };
+  const std::vector<WaterRipple>& getWaterRipples() const { return m_waterRipples; }
+
   // GameCapturer
   void triggerUsdCapture() const;
   bool isGameCapturerIdle() const;
@@ -554,6 +562,10 @@ private:
   std::vector<TerrainGrassCachedBatch> m_terrainGrassBatches;
   uint64_t m_terrainGrassCacheGeneration = 0;
   float m_terrainGrassCacheDensity = 0.f;
+  float m_terrainGrassCacheNearDist = -1.f;
+  float m_terrainGrassCacheMidDist = -1.f;
+  float m_terrainGrassCacheFarDist = -1.f;
+  bool m_terrainGrassCacheWholeIsland = true;
 
   enum class ObjectCacheState
   {
@@ -735,6 +747,7 @@ private:
       ReplacementInstance* replacementInstance);
 
   void createEffectLight(Rc<DxvkContext> ctx, const SceneDraw& input, const RtInstance* instance);
+  void collectWaterRipples(const SceneDraw& input, RtInstance* instance);
 
   // Print all RtInstances for debugging
   void printAllRtInstances();
@@ -881,12 +894,16 @@ private:
     uint64_t assetEpoch = ~0ull;
     uint64_t lightConverterSig = ~0ull;
     size_t lightConverterCount = ~size_t(0);
+    uint64_t waterRippleSig = ~0ull;
+    size_t waterRippleCount = ~size_t(0);
     bool replacementMeshes = false;
     bool operator==(const RetainedSteadyInputs& o) const {
       return assetEpoch == o.assetEpoch && lightConverterSig == o.lightConverterSig &&
-             lightConverterCount == o.lightConverterCount && replacementMeshes == o.replacementMeshes;
+             lightConverterCount == o.lightConverterCount && waterRippleSig == o.waterRippleSig &&
+             waterRippleCount == o.waterRippleCount && replacementMeshes == o.replacementMeshes;
     }
   } m_retainedSteadyInputs;
+  std::vector<WaterRipple> m_waterRipples;
   uint32_t m_retainedSteadyMismatches = 0;
   bool m_retainedPreserveOptionsOn = false; // set per replay in submitRetainedExternalDraws
   std::vector<RetainedExternalDraw> m_retainedExternalDraws;

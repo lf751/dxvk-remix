@@ -89,6 +89,7 @@
 #include "dxvk_memory_tracker.h"
 #include "rtx_render/rtx_particle_system.h"
 #include "rtx_render/rtx_point_instancer_system.h"
+#include "rtx_render/rtx_terrain_grass_system.h"
 #include "rtx_render/rtx_overlay_window.h"
 #include "rtx_render/rtx_fork_hooks.h"
 #include "rtx_render/rtx_fork_shadow_rays.h"
@@ -221,6 +222,7 @@ namespace dxvk {
     {"decaltextures", "Decal Texture (optional)", &RtxOptions::decalTexturesObject()},
     {"terraintextures", "Terrain Texture", &RtxOptions::terrainTexturesObject()},
     {"watertextures", "Water Texture (optional)", &RtxOptions::animatedWaterTexturesObject()},
+    {"waterrippletextures", "Water Ripple Texture (optional)", &RtxOptions::waterRippleTexturesObject()},
     {"antiCullingTextures", "Anti-Culling Texture (optional)", &RtxOptions::antiCullingTexturesObject()},
     {"motionBlurMaskOutTextures", "Motion Blur Mask-Out Textures (optional)", &RtxOptions::motionBlurMaskOutTexturesObject()},
     {"playermodeltextures", "Player Model Texture (optional)", &RtxOptions::playerModelTexturesObject()},
@@ -988,6 +990,15 @@ namespace dxvk {
             RemixGui::SliderFloat2("Secondary Normal Texcoord Velocity", &TranslucentMaterialOptions::animatedWaterSecondaryNormalMotionObject(), -0.5f, 0.5f, "%.3f", sliderFlags);
             RemixGui::SliderFloat("Secondary Normal LOD bias", &TranslucentMaterialOptions::animatedWaterSecondaryNormalLodBiasObject(), 0.0f, 16.0f, "%.3f", sliderFlags);
             RemixGui::SliderFloat("Secondary Normal UV Scale", &TranslucentMaterialOptions::animatedWaterSecondaryNormalScaleObject(), 0.05f, 8.0f, "%.3f", sliderFlags);
+          }
+
+          RemixGui::Checkbox("Enable Water Normal Ripples", &TranslucentMaterialOptions::waterRippleEnableObject());
+          if (TranslucentMaterialOptions::waterRippleEnable()) {
+            ImGui::Indent();
+            RemixGui::SliderFloat("Ripple Strength", &TranslucentMaterialOptions::waterRippleStrengthObject(), 0.0f, 3.0f, "%.2f", sliderFlags);
+            RemixGui::SliderFloat("Ripple Frequency", &TranslucentMaterialOptions::waterRippleFrequencyObject(), 0.5f, 8.0f, "%.2f", sliderFlags);
+            RemixGui::Checkbox("Hide Source Ripple Geometry", &TranslucentMaterialOptions::waterRippleHideSourceObject());
+            ImGui::Unindent();
           }
           ImGui::Unindent();
         }
@@ -4832,12 +4843,26 @@ namespace dxvk {
 
         ImGui::TextWrapped("These settings control the effect lights, which are created by Remix, and attached to objects tagged using the rtx.lightConverter option (found in the texture tagging menu as 'Add Light to Texture').");
 
+        RemixGui::Checkbox("Force Storm Flares At Night", &RtxOptions::effectLightNightFlaresEnableObject());
+        ImGui::BeginDisabled(!RtxOptions::effectLightNightFlaresEnable());
+        RemixGui::DragFloat("Night Flare Sun Elevation", &RtxOptions::effectLightNightSunElevationObject(), 0.1f, -18.0f, 15.0f, "%.1f deg", sliderFlags);
+        ImGui::EndDisabled();
+        RemixGui::Separator();
+
+        RemixGui::Checkbox("Enable Effect Lights", &RtxOptions::effectLightEnableObject());
+        ImGui::BeginDisabled(!RtxOptions::effectLightEnable());
+        RemixGui::Checkbox("Per-Quad Lights (Batched Sprites)", &RtxOptions::effectLightPerQuadObject());
+        ImGui::BeginDisabled(!RtxOptions::effectLightPerQuad());
+        RemixGui::DragInt("Max Per-Quad Lights", &RtxOptions::effectLightMaxPerQuadObject(), 1.0f, 1, 1024);
+        ImGui::EndDisabled();
+        RemixGui::Checkbox("Use Vertex Color", &RtxOptions::effectLightUseVertexColorObject());
         RemixGui::DragFloat("Light Intensity", &RtxOptions::effectLightIntensityObject(), 0.01f, 0.0f, FLT_MAX, "%.3f", sliderFlags);
         RemixGui::DragFloat("Light Radius", &RtxOptions::effectLightRadiusObject(), 0.01f, 0.01f, FLT_MAX, "%.3f", sliderFlags);
         // Plasma ball has first priority
         RemixGui::Checkbox("Plasma Ball Effect", &RtxOptions::effectLightPlasmaBallObject());
         ImGui::BeginDisabled(RtxOptions::effectLightPlasmaBall());
         RemixGui::ColorPicker3("Light Color", &RtxOptions::effectLightColorObject());
+        ImGui::EndDisabled();
         ImGui::EndDisabled();
         ImGui::Unindent();
       }
@@ -4925,6 +4950,8 @@ namespace dxvk {
     RtxParticleSystemManager::showImguiSettings();
 
     RtxPointInstancerSystem::showImguiSettings();
+
+    RtxTerrainGrassSystem::showImguiSettings();
 
     if (RemixGui::CollapsingHeader("RTX Volumetrics (Global)", collapsingHeaderClosedFlags)) {
       ImGui::Indent();

@@ -1709,6 +1709,7 @@ namespace {
         // look comments in UsdMod::Impl::processMesh, rtx_mod_usd.cpp
         dst.hashes[dxvk::HashComponents::Indices] = dst.hashes[dxvk::HashComponents::VertexPosition] = hack_getNextGeomHash();
         dst.hashes[dxvk::HashComponents::VertexTexcoord] = hack_getNextGeomHash();
+        dst.hashes[dxvk::HashComponents::VertexColor] = hack_getNextGeomHash();
         dst.hashes[dxvk::HashComponents::GeometryDescriptor] = hack_getNextGeomHash();
         dst.hashes[dxvk::HashComponents::VertexLayout] = hack_getNextGeomHash();
         dst.hashes.precombine();
@@ -1863,6 +1864,7 @@ namespace {
       // look comments in UsdMod::Impl::processMesh, rtx_mod_usd.cpp
       dst.hashes[dxvk::HashComponents::Indices] = dst.hashes[dxvk::HashComponents::VertexPosition] = hack_getNextGeomHash();
       dst.hashes[dxvk::HashComponents::VertexTexcoord] = hack_getNextGeomHash();
+      dst.hashes[dxvk::HashComponents::VertexColor] = hack_getNextGeomHash();
       dst.hashes[dxvk::HashComponents::GeometryDescriptor] = hack_getNextGeomHash();
       dst.hashes[dxvk::HashComponents::VertexLayout] = hack_getNextGeomHash();
       dst.hashes.precombine();

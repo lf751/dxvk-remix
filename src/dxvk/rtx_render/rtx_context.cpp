@@ -1974,6 +1974,20 @@ namespace dxvk {
     constants.opaqueMaterialArgs.legacySpecularLevel = std::clamp(LegacyMaterialDefaults::specularLevel(), 0.0f, 1.0f);
     constants.opaqueMaterialArgs.legacyFresnelGrazing = std::clamp(LegacyMaterialDefaults::fresnelGrazing(), 0.0f, 1.0f);
     TranslucentMaterialOptions::fillShaderParams(constants.translucentMaterialArgs);
+    constants.waterRippleArgs = {};
+    if (TranslucentMaterialOptions::waterRippleEnable()) {
+      const auto& ripples = getSceneManager().getWaterRipples();
+      const uint32_t rippleCount = std::min<uint32_t>(uint32_t(ripples.size()), WATER_RIPPLE_MAX_COUNT);
+      constants.waterRippleArgs.count = rippleCount;
+      constants.waterRippleArgs.strength = std::max(TranslucentMaterialOptions::waterRippleStrength(), 0.0f);
+      constants.waterRippleArgs.frequency = std::max(TranslucentMaterialOptions::waterRippleFrequency(), 0.1f);
+      for (uint32_t i = 0; i < rippleCount; ++i) {
+        constants.waterRippleArgs.entries[i].centerAndRadius = vec4(
+          ripples[i].center.x, ripples[i].center.y, ripples[i].center.z, ripples[i].radius);
+        constants.waterRippleArgs.entries[i].params = vec4(
+          ripples[i].strength, ripples[i].verticalTolerance, 0.0f, 0.0f);
+      }
+    }
     ViewDistanceOptions::fillShaderParams(constants.viewDistanceArgs, RtxOptions::getMeterToWorldUnitScale());
     constants.alphaBlendSurfacePackMult = RtxOptions::getMeterToWorldUnitScale();
 
@@ -2023,9 +2037,7 @@ namespace dxvk {
     constants.preExposureHistoryRatio = PreExposure::historyRatio();
 
     constants.skyMode = static_cast<uint32_t>(RtxOptions::skyMode());
-    // Sky light on particle materials flagged OPAQUE_SURFACE_MATERIAL_FLAG_SKY_LIT_PARTICLE, at full
-    // strength. Nothing creates such materials at present.
-    constants.particleSkyAmbientScale = 1.0f;
+    constants.particleSkyAmbientScale = std::max(RtxParticleSystemManager::skyAmbientScale(), 0.0f);
 
     const SkyMode currentSkyMode = RtxOptions::skyMode();
     if (currentSkyMode != m_lastSkyMode) {

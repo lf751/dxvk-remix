@@ -302,6 +302,7 @@ namespace dxvk {
     m_terrainGrassBatches.clear();
     m_terrainGrassCacheGeneration = 0;
     m_device->getCommon()->metaTerrainGrassSystem().onSceneClear();
+    m_waterRipples.clear();
 
     ++m_clearEpoch;
     // The retained scene releases its geometry's buffer slots before the check below.
@@ -553,6 +554,8 @@ namespace dxvk {
 
     const bool texcoordsChanged = !isNew &&
       input.hashes[HashComponents::VertexTexcoord] != inOutGeometry.hashes[HashComponents::VertexTexcoord];
+    const bool colorsChanged = !isNew &&
+      input.hashes[HashComponents::VertexColor] != inOutGeometry.hashes[HashComponents::VertexColor];
 
     // Determine the optimal object state for this geometry
     if (!isNew) {
@@ -619,17 +622,18 @@ namespace dxvk {
       ? input.positionBuffer.stride()
       : RtxGeometryUtils::computeOptimalVertexStride(input, forceNormals);
 
-    if (result == ObjectCacheState::kUpdateInstance && texcoordsChanged) {
+    if (result == ObjectCacheState::kUpdateInstance && (texcoordsChanged || colorsChanged)) {
       const auto sameLayout = [](const RasterBuffer& source, const RaytraceBuffer& cached) {
         return source.defined() == cached.defined() && (!source.defined() ||
           (source.offsetFromSlice() == cached.offsetFromSlice() &&
            source.stride() == cached.stride() && source.vertexFormat() == cached.vertexFormat()));
       };
       // In-place copies must preserve BLAS position addresses and any post-processed vertex data.
-      const bool canRefreshInPlace = optimizeAnimatedTexcoords() &&
+      // Color-only updates leave UVs unchanged, so OMMs remain valid during in-place copies.
+      const bool canRefreshInPlace = (!texcoordsChanged || optimizeAnimatedTexcoords()) &&
         !drawCallState.usesVertexShader && drawCallState.getSkinningState().numBones == 0 &&
         input.numBonesPerVertex == 0 && !needsSmoothNormals &&
-        (!m_opacityMicromapManager || !m_opacityMicromapManager->isActive()) &&
+        (!texcoordsChanged || !m_opacityMicromapManager || !m_opacityMicromapManager->isActive()) &&
         input.isVertexDataInterleaved() && input.areFormatsGpuFriendly() &&
         input.vertexCount == output.vertexCount &&
         output.historyBuffer[0]->info().size == align(vertexStride * input.vertexCount, CACHE_LINE_SIZE) &&
@@ -916,6 +920,7 @@ namespace dxvk {
 
     // Not currently safe to cache these across frames (due to texture indices and rtx options potentially changing)
     m_preCreationSurfaceMaterialMap.clear();
+    m_waterRipples.clear();
 
     if (m_materialUpdateStats.dirty && m_device->getCurrentFrameId() % 300 == 0) {
       m_materialUpdateStats.dirty = false;
@@ -1126,6 +1131,7 @@ namespace dxvk {
         !secondSubmissionThisFrame &&
         !input.getCategoryFlags().test(InstanceCategories::ParticleEmitter) &&
         !RtxOptions::shouldConvertToLight(input.getMaterialData().getHash()) &&
+        !RtxOptions::isWaterRippleTexture(input.getMaterialData().getHash()) &&
         !blasAlreadyTouchedByOtherDraw() &&
         !overrideMaterialHasParticles&&
         activeReplacementsMatch &&
@@ -1227,7 +1233,32 @@ namespace dxvk {
     return MaterialData::fromLegacy(legacyMaterial);
   }
 
+  namespace {
+    uint32_t readGeometryIndex(const GeometryBufferData& bufferData, const RasterGeometry& geometryData, uint32_t i) {
+      if (geometryData.indexBuffer.indexType() == VK_INDEX_TYPE_UINT32) {
+        const uint8_t* base = reinterpret_cast<const uint8_t*>(bufferData.indexData);
+        return *reinterpret_cast<const uint32_t*>(base + i * geometryData.indexBuffer.stride());
+      }
+      return bufferData.getIndex(i);
+    }
+
+    Vector4 decodeBgraUnorm(uint32_t packed) {
+      return Vector4(
+        float((packed >> 16) & 0xFFu) * (1.0f / 255.0f),
+        float((packed >> 8)  & 0xFFu) * (1.0f / 255.0f),
+        float(packed & 0xFFu)         * (1.0f / 255.0f),
+        float((packed >> 24) & 0xFFu) * (1.0f / 255.0f));
+    }
+
+    Vector4 readVertexColor(const GeometryBufferData& bufferData, uint32_t vertexIndex) {
+      return decodeBgraUnorm(bufferData.vertexColorData[vertexIndex * bufferData.vertexColorStride]);
+    }
+  }
+
   void SceneManager::createEffectLight(Rc<DxvkContext> ctx, const SceneDraw& input, const RtInstance* instance) {
+    if (!RtxOptions::effectLightEnable())
+      return;
+
     const float effectLightIntensity = RtxOptions::effectLightIntensity();
     if (effectLightIntensity <= 0.f)
       return;
@@ -1236,53 +1267,349 @@ namespace dxvk {
 
     const GeometryBufferData bufferData(geometryData);
     
-    if (!bufferData.indexData && geometryData.indexCount > 0 || !bufferData.positionData)
+    if ((!bufferData.indexData && geometryData.indexCount > 0) || !bufferData.positionData)
       return;
 
-    // Find centroid of point cloud.
-    Vector3 centroid = Vector3();
+    const bool hasVertexColor = bufferData.vertexColorData != nullptr && geometryData.color0Buffer.defined();
+    const bool useVertexColor = RtxOptions::effectLightUseVertexColor() && hasVertexColor;
+    const Matrix4d viewToWorld = getCamera().getViewToWorld(false);
+    const Matrix4& objectToView = input.getTransformData().objectToView;
+
+    auto toWorldPos = [&](const Vector3& localPos) -> Vector3 {
+      const Vector4 renderingPos = objectToView * Vector4(localPos.x, localPos.y, localPos.z, 1.0f);
+      const Vector4d worldPos = viewToWorld * Vector4d(renderingPos.x, renderingPos.y, renderingPos.z, renderingPos.w);
+      return Vector3(float(worldPos.x), float(worldPos.y), float(worldPos.z));
+    };
+
+    const float lightRadius = std::max(RtxOptions::effectLightRadius(), 1e-3f);
+    const float surfaceArea = 4.f * kPi * lightRadius * lightRadius;
+    const float radianceFactor = 1e5f * effectLightIntensity / surfaceArea;
+    const RtLightShaping shaping{};
+
+    Vector3 plasmaColor(1.f, 1.f, 1.f);
+    const bool usePlasma = RtxOptions::effectLightPlasmaBall();
+    if (usePlasma) {
+      const double timeMilliseconds = static_cast<double>(GlobalTime::get().absoluteTimeMs());
+      const double animationPhase = sin(timeMilliseconds * 0.006) * 0.5 + 0.5;
+      plasmaColor = lerp(Vector3(1.f, 0.921f, 0.738f), Vector3(1.f, 0.521f, 0.238f), animationPhase);
+    }
+
+    auto emitSphereLight = [&](const Vector3& worldPos, const Vector4& vertexColor, bool hasSampledColor) {
+      Vector3 lightRadiance;
+      if (usePlasma) {
+        lightRadiance = plasmaColor;
+      } else if (useVertexColor && hasSampledColor) {
+        const float alpha = std::clamp(vertexColor.w, 0.0f, 1.0f);
+        if (alpha < 0.02f)
+          return;
+        lightRadiance = Vector3(vertexColor.x, vertexColor.y, vertexColor.z) * alpha * RtxOptions::effectLightColor();
+      } else {
+        const Vector4& originalColor = input.getMaterialData().getFixedFunctionMaterial().diffuse;
+        lightRadiance = Vector3(originalColor.x, originalColor.y, originalColor.z) * RtxOptions::effectLightColor();
+      }
+      if (lightRadiance.x <= 1e-4f && lightRadiance.y <= 1e-4f && lightRadiance.z <= 1e-4f)
+        return;
+
+      lightRadiance *= radianceFactor;
+
+      RtLight rtLight(RtSphereLight(worldPos, lightRadiance, lightRadius, shaping));
+      rtLight.isDynamic = true;
+
+      m_lightManager.addLight(rtLight, input, RtLightAntiCullingType::Ignore);
+    };
+
+    const bool indexedQuads = RtxOptions::effectLightPerQuad() &&
+                              geometryData.indexCount >= 6 && (geometryData.indexCount % 6) == 0;
+    const bool unindexedQuads = RtxOptions::effectLightPerQuad() &&
+                                geometryData.indexCount == 0 &&
+                                geometryData.vertexCount >= 4 && (geometryData.vertexCount % 4) == 0;
+
+    if (indexedQuads || unindexedQuads) {
+      const uint32_t maxPerQuadLights = std::max(RtxOptions::effectLightMaxPerQuad(), 1u);
+      std::vector<Vector3> emittedPositions;
+      const uint32_t quadCount = indexedQuads ? (geometryData.indexCount / 6) : (geometryData.vertexCount / 4);
+
+      for (uint32_t q = 0; q < quadCount && emittedPositions.size() < maxPerQuadLights; ++q) {
+        uint32_t uniqueIndices[6];
+        uint32_t uniqueCount = 0;
+        const uint32_t elemCount = indexedQuads ? 6u : 4u;
+        for (uint32_t k = 0; k < elemCount; ++k) {
+          const uint32_t idx = indexedQuads
+            ? readGeometryIndex(bufferData, geometryData, q * 6 + k)
+            : (q * 4 + k);
+          if (idx >= geometryData.vertexCount)
+            continue;
+          bool seen = false;
+          for (uint32_t u = 0; u < uniqueCount; ++u) {
+            if (uniqueIndices[u] == idx) {
+              seen = true;
+              break;
+            }
+          }
+          if (!seen && uniqueCount < 6)
+            uniqueIndices[uniqueCount++] = idx;
+        }
+        if (uniqueCount < 3)
+          continue;
+
+        Vector3 centroid(0.f, 0.f, 0.f);
+        Vector4 avgColor(0.f, 0.f, 0.f, 0.f);
+        for (uint32_t u = 0; u < uniqueCount; ++u) {
+          centroid += bufferData.getPosition(uniqueIndices[u]);
+          if (hasVertexColor)
+            avgColor += readVertexColor(bufferData, uniqueIndices[u]);
+        }
+        const float invCount = 1.0f / float(uniqueCount);
+        centroid *= invCount;
+        avgColor *= invCount;
+
+        const Vector3 worldPos = toWorldPos(centroid);
+        bool duplicate = false;
+        for (const Vector3& prev : emittedPositions) {
+          const Vector3 d = worldPos - prev;
+          if (dot(d, d) < 0.01f) {
+            duplicate = true;
+            break;
+          }
+        }
+        if (duplicate)
+          continue;
+
+        emittedPositions.push_back(worldPos);
+        emitSphereLight(worldPos, avgColor, hasVertexColor);
+      }
+      return;
+    }
+
+    // Fallback: single centroid light for the whole draw call.
+    Vector3 centroid(0.f, 0.f, 0.f);
+    Vector4 avgColor(0.f, 0.f, 0.f, 0.f);
     uint32_t counter = 0;
     if (geometryData.indexCount > 0) {
       for (uint32_t i = 0; i < geometryData.indexCount; i++) {
-        const uint16_t index = bufferData.getIndex(i);
+        const uint32_t index = readGeometryIndex(bufferData, geometryData, i);
+        if (index >= geometryData.vertexCount)
+          continue;
         centroid += bufferData.getPosition(index);
+        if (hasVertexColor)
+          avgColor += readVertexColor(bufferData, index);
         ++counter;
       }
     } else {
       for (uint32_t i = 0; i < geometryData.vertexCount; i++) {
         centroid += bufferData.getPosition(i);
+        if (hasVertexColor)
+          avgColor += readVertexColor(bufferData, i);
         ++counter;
       }
     }
-    centroid /= (float) counter;
-    
-    const Vector4 renderingPos = input.getTransformData().objectToView * Vector4(centroid.x, centroid.y, centroid.z, 1.0f);
-    // Note: False used in getViewToWorld since the renderingPos of the object is defined with respect to the game's object to view
-    // matrix, not our freecam's, and as such we want to convert it back to world space using the matching matrix.
-    const Vector4 worldPos{ getCamera().getViewToWorld(false) * Vector4d{ renderingPos } };
+    if (counter == 0)
+      return;
+    centroid /= float(counter);
+    avgColor /= float(counter);
 
-    RtLightShaping shaping{};
+    emitSphereLight(toWorldPos(centroid), avgColor, hasVertexColor);
+  }
 
-    float lightRadius = std::max(RtxOptions::effectLightRadius(), 1e-3f);
-    const Vector3 lightPosition { worldPos.x, worldPos.y, worldPos.z };
-    Vector3 lightRadiance;
-    if (RtxOptions::effectLightPlasmaBall()) {
-      // Todo: Make these options more configurable via config options.
-      const double timeMilliseconds = static_cast<double>(GlobalTime::get().absoluteTimeMs());
-      const double animationPhase = sin(timeMilliseconds * 0.006) * 0.5 + 0.5;
-      lightRadiance = lerp(Vector3(1.f, 0.921f, 0.738f), Vector3(1.f, 0.521f, 0.238f), animationPhase);
-    } else {
-      const Vector4& originalColor = input.getMaterialData().getFixedFunctionMaterial().diffuse;
-      lightRadiance = Vector3(originalColor.x, originalColor.y, originalColor.z) * RtxOptions::effectLightColor();
+  void SceneManager::collectWaterRipples(const SceneDraw& input, RtInstance* instance) {
+    if (instance != nullptr && TranslucentMaterialOptions::waterRippleHideSource() &&
+        TranslucentMaterialOptions::waterRippleEnable()) {
+      instance->setHidden(true);
     }
-    const float surfaceArea = 4.f * kPi * lightRadius * lightRadius;
-    const float radianceFactor = 1e5f * effectLightIntensity / surfaceArea;
-    lightRadiance *= radianceFactor;
 
-    RtLight rtLight(RtSphereLight(lightPosition, lightRadiance, lightRadius, shaping));
-    rtLight.isDynamic = true;
+    if (!TranslucentMaterialOptions::waterRippleEnable() || m_waterRipples.size() >= WATER_RIPPLE_MAX_COUNT)
+      return;
 
-    m_lightManager.addLight(rtLight, input, RtLightAntiCullingType::MeshReplacement);
+    const RasterGeometry& geometryData = input.getGeometryData();
+    const GeometryBufferData bufferData(geometryData);
+    if ((!bufferData.indexData && geometryData.indexCount > 0) || !bufferData.positionData)
+      return;
+
+    const bool hasVertexColor = bufferData.vertexColorData != nullptr && geometryData.color0Buffer.defined();
+    const bool zUp = RtxOptions::zUp();
+    const Matrix4d viewToWorld = getCamera().getViewToWorld(false);
+    const Matrix4& objectToView = input.getTransformData().objectToView;
+
+    auto toWorldPos = [&](const Vector3& localPos) -> Vector3 {
+      const Vector4 renderingPos = objectToView * Vector4(localPos.x, localPos.y, localPos.z, 1.0f);
+      const Vector4d worldPos = viewToWorld * Vector4d(renderingPos.x, renderingPos.y, renderingPos.z, renderingPos.w);
+      return Vector3(float(worldPos.x), float(worldPos.y), float(worldPos.z));
+    };
+
+    auto appendRipple = [&](const Vector3& center, float radius, float strength) {
+      if (m_waterRipples.size() >= WATER_RIPPLE_MAX_COUNT)
+        return;
+      if (strength < 0.01f || radius < 0.05f || !std::isfinite(radius))
+        return;
+
+      for (const WaterRipple& existing : m_waterRipples) {
+        const Vector3 d = existing.center - center;
+        if (dot(d, d) < 0.04f && std::abs(existing.radius - radius) < 0.15f)
+          return;
+      }
+
+      WaterRipple ripple;
+      ripple.center = center;
+      ripple.radius = radius;
+      ripple.strength = strength;
+      ripple.verticalTolerance = 4.0f;
+      m_waterRipples.push_back(ripple);
+    };
+
+    const bool indexedQuads = geometryData.indexCount >= 6 && (geometryData.indexCount % 6) == 0;
+    const bool unindexedQuads = geometryData.indexCount == 0 &&
+                                geometryData.vertexCount >= 4 && (geometryData.vertexCount % 4) == 0;
+    if (indexedQuads || unindexedQuads) {
+      struct RippleQuad {
+        Vector3 verts[6];
+        uint32_t vertCount = 0;
+        float alpha = 1.f;
+      };
+
+      const uint32_t quadCount = indexedQuads ? (geometryData.indexCount / 6) : (geometryData.vertexCount / 4);
+      const uint32_t elemCount = indexedQuads ? 6u : 4u;
+      std::vector<RippleQuad> quads;
+      quads.reserve(std::min<uint32_t>(quadCount, 256u));
+
+      for (uint32_t q = 0; q < quadCount && quads.size() < 256u; ++q) {
+        uint32_t uniqueIndices[6];
+        uint32_t uniqueCount = 0;
+        for (uint32_t k = 0; k < elemCount; ++k) {
+          const uint32_t idx = indexedQuads
+            ? readGeometryIndex(bufferData, geometryData, q * 6 + k)
+            : (q * 4 + k);
+          if (idx >= geometryData.vertexCount)
+            continue;
+          bool seen = false;
+          for (uint32_t u = 0; u < uniqueCount; ++u) {
+            if (uniqueIndices[u] == idx) {
+              seen = true;
+              break;
+            }
+          }
+          if (!seen && uniqueCount < 6)
+            uniqueIndices[uniqueCount++] = idx;
+        }
+        if (uniqueCount < 3)
+          continue;
+
+        RippleQuad rq;
+        rq.vertCount = uniqueCount;
+        float alphaSum = 0.f;
+        for (uint32_t u = 0; u < uniqueCount; ++u) {
+          rq.verts[u] = toWorldPos(bufferData.getPosition(uniqueIndices[u]));
+          if (hasVertexColor)
+            alphaSum += readVertexColor(bufferData, uniqueIndices[u]).w;
+        }
+        rq.alpha = hasVertexColor ? std::clamp(alphaSum / float(uniqueCount), 0.0f, 1.0f) : 1.0f;
+        if (rq.alpha >= 0.01f) {
+          quads.push_back(rq);
+        }
+      }
+
+      // Cluster quads that share a vertex (e.g. 4 quarter-arc quads forming one circular ripple ring).
+      static constexpr float kSharedVertexDistSq = 0.15f * 0.15f;
+      auto quadsShareVertex = [](const RippleQuad& a, const RippleQuad& b) -> bool {
+        for (uint32_t i = 0; i < a.vertCount; ++i) {
+          for (uint32_t j = 0; j < b.vertCount; ++j) {
+            const Vector3 d = a.verts[i] - b.verts[j];
+            if (dot(d, d) <= kSharedVertexDistSq)
+              return true;
+          }
+        }
+        return false;
+      };
+
+      std::vector<uint8_t> visited(quads.size(), 0);
+      std::vector<size_t> queue;
+      queue.reserve(16);
+
+      for (size_t start = 0; start < quads.size() && m_waterRipples.size() < WATER_RIPPLE_MAX_COUNT; ++start) {
+        if (visited[start])
+          continue;
+
+        queue.clear();
+        queue.push_back(start);
+        visited[start] = 1;
+
+        Vector3 minPos(FLT_MAX, FLT_MAX, FLT_MAX);
+        Vector3 maxPos(-FLT_MAX, -FLT_MAX, -FLT_MAX);
+        float alphaSum = 0.f;
+
+        for (size_t qi = 0; qi < queue.size(); ++qi) {
+          const RippleQuad& cur = quads[queue[qi]];
+          alphaSum += cur.alpha;
+          for (uint32_t u = 0; u < cur.vertCount; ++u) {
+            const Vector3& p = cur.verts[u];
+            minPos.x = std::min(minPos.x, p.x);
+            minPos.y = std::min(minPos.y, p.y);
+            minPos.z = std::min(minPos.z, p.z);
+            maxPos.x = std::max(maxPos.x, p.x);
+            maxPos.y = std::max(maxPos.y, p.y);
+            maxPos.z = std::max(maxPos.z, p.z);
+          }
+
+          for (size_t other = 0; other < quads.size(); ++other) {
+            if (!visited[other] && quadsShareVertex(cur, quads[other])) {
+              visited[other] = 1;
+              queue.push_back(other);
+            }
+          }
+        }
+
+        const Vector3 center = (minPos + maxPos) * 0.5f;
+        const float avgAlpha = alphaSum / float(queue.size());
+
+        // Use farthest corner distance from cluster center divided by sqrt(2) so both
+        // 1-quad and 4-quadrant rings yield exact ring radius at any rotation angle.
+        float maxHorizDist = 0.f;
+        for (size_t idx : queue) {
+          const RippleQuad& cur = quads[idx];
+          for (uint32_t u = 0; u < cur.vertCount; ++u) {
+            const Vector3 d = cur.verts[u] - center;
+            const float horiz = zUp ? std::sqrt(d.x * d.x + d.y * d.y) : std::sqrt(d.x * d.x + d.z * d.z);
+            maxHorizDist = std::max(maxHorizDist, horiz);
+          }
+        }
+
+        appendRipple(center, maxHorizDist * 0.70710678f, avgAlpha);
+      }
+      return;
+    }
+
+    // Fallback for non-quad mesh: compute bounding circle from all vertices.
+    Vector3 center(0.f, 0.f, 0.f);
+    float avgAlpha = 0.f;
+    uint32_t count = 0;
+    const uint32_t total = geometryData.indexCount > 0 ? geometryData.indexCount : geometryData.vertexCount;
+    for (uint32_t i = 0; i < total; ++i) {
+      const uint32_t idx = geometryData.indexCount > 0 ? readGeometryIndex(bufferData, geometryData, i) : i;
+      if (idx >= geometryData.vertexCount)
+        continue;
+      center += toWorldPos(bufferData.getPosition(idx));
+      if (hasVertexColor)
+        avgAlpha += readVertexColor(bufferData, idx).w;
+      ++count;
+    }
+    if (count == 0)
+      return;
+    center /= float(count);
+    avgAlpha = hasVertexColor ? std::clamp(avgAlpha / float(count), 0.0f, 1.0f) : 1.0f;
+    if (avgAlpha < 0.01f)
+      return;
+    float maxRadius = 0.f;
+    for (uint32_t i = 0; i < total; ++i) {
+      const uint32_t idx = geometryData.indexCount > 0 ? readGeometryIndex(bufferData, geometryData, i) : i;
+      if (idx >= geometryData.vertexCount)
+        continue;
+      const Vector3 d = toWorldPos(bufferData.getPosition(idx)) - center;
+      const float horiz = zUp ? std::sqrt(d.x * d.x + d.y * d.y) : std::sqrt(d.x * d.x + d.z * d.z);
+      maxRadius = std::max(maxRadius, horiz);
+    }
+    const float radius = maxRadius * 0.70710678f;
+    if (radius >= 0.05f && std::isfinite(radius)) {
+      m_waterRipples.push_back(WaterRipple{ center, radius, avgAlpha, 4.0f });
+    }
   }
 
   namespace {
@@ -2146,14 +2473,26 @@ namespace dxvk {
 
     const float densityScale = std::max(0.25f, RtxTerrainGrassSystem::getDensityScale());
     const float invDensity = 1.f / densityScale;
+    const float nearOverride = RtxTerrainGrassSystem::getNearDistance();
+    const float midOverride = RtxTerrainGrassSystem::getMidDistance();
+    const float farOverride = RtxTerrainGrassSystem::getFarDistance();
+    const bool wholeIsland = RtxTerrainGrassSystem::getWholeIsland();
     const bool rebuildCache = m_terrainGrassCacheGeneration != preset->generation ||
       std::fabs(m_terrainGrassCacheDensity - densityScale) > 1e-4f ||
+      std::fabs(m_terrainGrassCacheNearDist - nearOverride) > 1e-4f ||
+      std::fabs(m_terrainGrassCacheMidDist - midOverride) > 1e-4f ||
+      std::fabs(m_terrainGrassCacheFarDist - farOverride) > 1e-4f ||
+      m_terrainGrassCacheWholeIsland != wholeIsland ||
       m_terrainGrassBatches.empty();
 
     if (rebuildCache) {
       m_terrainGrassBatches.clear();
       m_terrainGrassCacheGeneration = preset->generation;
       m_terrainGrassCacheDensity = densityScale;
+      m_terrainGrassCacheNearDist = nearOverride;
+      m_terrainGrassCacheMidDist = midOverride;
+      m_terrainGrassCacheFarDist = farOverride;
+      m_terrainGrassCacheWholeIsland = wholeIsland;
 
       static constexpr uint32_t kMaxGridWidths[kTerrainGrassRingCount] = { 224u, 224u, 224u };
       float prevRadius = 0.f;
@@ -2163,24 +2502,27 @@ namespace dxvk {
         if (variantCount == 0) {
           continue;
         }
-        const bool isWholeIsland = (r == kTerrainGrassRingCount - 1u);
-        if (!isWholeIsland && ring.outerRadius <= prevRadius) {
+        const bool isFarRing = (r == kTerrainGrassRingCount - 1u);
+        const bool unlimitedFar = isFarRing && wholeIsland;
+        const float distOverride = (r == 0u) ? nearOverride : (r == 1u ? midOverride : farOverride);
+        const float requestedOuterRadius = distOverride > 0.f ? distOverride : ring.outerRadius;
+        if (!unlimitedFar && requestedOuterRadius <= prevRadius) {
           continue;
         }
         float spacing = std::max(0.5f, ring.spacing * invDensity);
         const TerrainGrassRingLayout layout = computeTerrainGrassRingLayout(
-          spacing, ring.outerRadius, preset->worldSize, variantCount, isWholeIsland, kMaxGridWidths[r]);
-        if (isWholeIsland) {
+          spacing, requestedOuterRadius, preset->worldSize, variantCount, isFarRing, kMaxGridWidths[r]);
+        if (isFarRing) {
           // Ensure whole-island ring still spans the full worldSize if density hits the grid cap.
           const float minIslandSpacing = preset->worldSize / float(std::max<uint32_t>(1u, layout.gridWidth));
           spacing = std::max(spacing, minIslandSpacing);
         }
         // Clamp toroidal outer radius to what the grid actually covers so a gap can never open before the next ring.
         const float maxToroidalRadius = std::max(0.f, (float(layout.gridWidth) * 0.5f - 1.5f) * spacing);
-        const float effectiveOuterRadius = isWholeIsland
-          ? ring.outerRadius
-          : std::min(ring.outerRadius, maxToroidalRadius);
-        if (!isWholeIsland && effectiveOuterRadius <= prevRadius) {
+        const float effectiveOuterRadius = isFarRing
+          ? (unlimitedFar ? 0.f : requestedOuterRadius)
+          : std::min(requestedOuterRadius, maxToroidalRadius);
+        if (!unlimitedFar && effectiveOuterRadius <= prevRadius) {
           continue;
         }
 
@@ -2197,7 +2539,7 @@ namespace dxvk {
             batchInfo->variantCount = variantCount;
             batchInfo->gridWidth = layout.gridWidth;
             batchInfo->rowSlots = layout.rowSlots;
-            batchInfo->isWholeIsland = isWholeIsland;
+            batchInfo->isWholeIsland = isFarRing;
             batchInfo->spacing = spacing;
             batchInfo->innerRadius = prevRadius;
             batchInfo->outerRadius = effectiveOuterRadius;
@@ -2513,6 +2855,10 @@ namespace dxvk {
     // Check if a light should be created for this Material
     if (instance && RtxOptions::shouldConvertToLight(drawCallState.getMaterialData().getHash())) {
       createEffectLight(ctx, drawCallState, instance);
+    }
+
+    if (instance && RtxOptions::isWaterRippleTexture(drawCallState.getMaterialData().getHash())) {
+      collectWaterRipples(drawCallState, instance);
     }
 
     if (instance) {
@@ -4400,7 +4746,8 @@ namespace dxvk {
       const uint64_t materialHandle = material != nullptr ? material->getLiveHandle() : 0;
       if (materialHash != entry.replayedMaterialHash || materialHandle != entry.replayedMaterialHandle ||
           (material != nullptr && material->getParticleSystemDesc() != nullptr) ||
-          RtxOptions::shouldConvertToLight(materialHash)) {
+          RtxOptions::shouldConvertToLight(materialHash) ||
+          RtxOptions::isWaterRippleTexture(materialHash)) {
         if (steady) {
           steadyMismatch("found the material changed or converted to a light");
         }
@@ -4514,6 +4861,14 @@ namespace dxvk {
         mix ^= h * 0x9E3779B97F4A7C15ull;
       }
       inputs.lightConverterSig = sum ^ (mix << 1);
+      const auto& waterRipples = RtxOptions::waterRippleTextures();
+      inputs.waterRippleCount = waterRipples.size();
+      uint64_t rsum = 0, rmix = 0;
+      for (const XXH64_hash_t h : waterRipples) {
+        rsum += h;
+        rmix ^= h * 0x9E3779B97F4A7C15ull;
+      }
+      inputs.waterRippleSig = rsum ^ (rmix << 1);
       inputs.replacementMeshes = RtxOptions::getEnableReplacementMeshes();
       if (!(inputs == m_retainedSteadyInputs)) {
         m_retainedSteadyInputs = inputs;

@@ -112,7 +112,8 @@ namespace dxvk {
       const std::shared_ptr<MaterialData> keepAlive = fork_hooks::externalDrawMaterialReplacement(replacer, material);
       // A frontend-resolved draw is tagged for light conversion by its legacy material, as on the external-draw path.
       const XXH64_hash_t lightHash = state.frontendResolved ? state.drawCall.getMaterialData().getHash() : material->getHash();
-      if (material->getParticleSystemDesc() != nullptr || RtxOptions::shouldConvertToLight(lightHash)) {
+      if (material->getParticleSystemDesc() != nullptr || RtxOptions::shouldConvertToLight(lightHash) ||
+          RtxOptions::isWaterRippleTexture(lightHash)) {
         return false;
       }
     }

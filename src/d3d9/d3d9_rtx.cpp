@@ -843,6 +843,8 @@ namespace dxvk {
     static_assert(sizeof(drawKey) == 56, "no implicit padding");
 
     key = XXH3_64bits_withSeed(&drawKey, sizeof(drawKey), key);
+    const uint32_t hasColor0 = geoData.color0Buffer.defined() ? 1u : 0u;
+    key = XXH3_64bits_withSeed(&hasColor0, sizeof(hasColor0), key);
 
     // 0 is the sentinel for "not eligible", so never hand it back as a real key.
     return key == 0 ? 1 : key;
@@ -2102,8 +2104,10 @@ namespace dxvk {
     prepared.zWriteEnable = m_activeDrawCallState.zWriteEnable;
     prepared.blending = m_activeDrawCallState.getMaterialData().blendMode.enableBlending;
     prepared.skinned = m_activeDrawCallState.futureSkinningData.valid();
-    prepared.legacyMaterialHash = m_activeDrawCallState.getMaterialData().getHash();
-    prepared.convertsToLight = RtxOptions::shouldConvertToLight(m_activeDrawCallState.getMaterialData().getHash());
+    const XXH64_hash_t legacyMatHash = m_activeDrawCallState.getMaterialData().getHash();
+    prepared.legacyMaterialHash = legacyMatHash;
+    prepared.convertsToLight = RtxOptions::shouldConvertToLight(legacyMatHash) ||
+                               RtxOptions::isWaterRippleTexture(legacyMatHash);
     prepared.raytracedRenderTarget = m_activeDrawCallState.isDrawingToRaytracedRenderTarget ||
                                      m_activeDrawCallState.isUsingRaytracedRenderTarget;
     prepared.skyAutoDetected = m_activeDrawCallState.skyAutoDetected;

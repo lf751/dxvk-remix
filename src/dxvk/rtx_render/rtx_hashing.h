@@ -40,6 +40,7 @@ namespace dxvk {
     GeometryDescriptor,
     VertexLayout,
     VertexShader,
+    VertexColor,
     Count
   };
 
@@ -53,7 +54,8 @@ namespace dxvk {
     const uint32_t VertexDataHash  = (1 << (uint32_t)HashComponents::VertexPosition)
                                    | (1 << (uint32_t)HashComponents::VertexTexcoord)
                                    | (1 << (uint32_t)HashComponents::VertexLayout)
-                                   | (1 << (uint32_t)HashComponents::VertexShader);
+                                   | (1 << (uint32_t)HashComponents::VertexShader)
+                                   | (1 << (uint32_t)HashComponents::VertexColor);
 
     const uint32_t FullGeometryHash = VertexDataHash | TopologicalHash;
 

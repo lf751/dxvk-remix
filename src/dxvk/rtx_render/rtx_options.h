@@ -285,6 +285,8 @@ namespace dxvk {
                   "Textures on draw calls to be treated as \"animated water\".\n"
                   "Objects with this flag applied will animate their normals to fake a basic water effect based on the layered water material parameters, and only when rtx.opaqueMaterial.layeredWaterNormalEnable is set to true.\n"
                   "Should typically be used on static water planes that the original application may have relied on shaders to animate water on.");
+    RTX_OPTION("rtx", fast_unordered_set, waterRippleTextures, {},
+                  "Textures on draw calls (such as expanding water rings) that perturb the surface normal of AnimatedWater translucent surfaces with concentric wave ripples.");
     RTX_OPTION("rtx", fast_unordered_set, ignoreBakedLightingTextures, {},
                   "Textures for which to ignore two types of baked lighting, Texture Factors and Vertex Color.\n\n"
                   "Texture Factor disablement:\n"
@@ -1950,6 +1952,12 @@ namespace dxvk {
     static HashRule s_geometryHashGenerationRule;
     static HashRule s_geometryAssetHashRule;
 
+    RTX_OPTION("rtx", bool, effectLightEnable, true, "Enable spawning Remix effect lights on draw calls tagged with rtx.lightConverter.");
+    RTX_OPTION("rtx", bool, effectLightNightFlaresEnable, true, "When NUMOS sky is active and the sun drops to or below rtx.effectLightNightSunElevation, signal __numos.force_night_flares=1 so game plugins turn on storm-only flares and lights at night.");
+    RTX_OPTION_ARGS("rtx", float, effectLightNightSunElevation, 0.0f, "Sun elevation in degrees at or below which NUMOS signals night time for storm-only game flares (0 deg = horizon, negative = twilight/night).", args.minValue = -18.0f, args.maxValue = 15.0f);
+    RTX_OPTION("rtx", bool, effectLightPerQuad, true, "When a rtx.lightConverter draw call contains batched quads (e.g. light flare sprites), spawn one effect light per quad instead of a single averaged centroid light.");
+    RTX_OPTION_ARGS("rtx", uint32_t, effectLightMaxPerQuad, 256u, "Maximum number of per-quad effect lights spawned from a single batched rtx.lightConverter draw call.", args.minValue = 1u, args.maxValue = 1024u);
+    RTX_OPTION("rtx", bool, effectLightUseVertexColor, true, "Tint each rtx.lightConverter effect light by the draw call's per-vertex color and alpha when available.");
     RTX_OPTION("rtx", Vector3, effectLightColor, Vector3(1, 1, 1), "Colour of the effect light, if not using plasma ball mode.  Effect lights can be attached to materials from the remix runtime menu, using the `Add Light to Texture` texture tag in game setup.");
     RTX_OPTION("rtx", float, effectLightIntensity, 1.f, "The intensity of the effect light.  Effect lights can be attached to materials from the remix runtime menu, using the `Add Light to Texture` texture tag in game setup.");
     RTX_OPTION("rtx", float, effectLightRadius, 5.f, "The sphere radius of the effect light.  Effect lights can be attached to materials from the remix runtime menu, using the `Add Light to Texture` texture tag in game setup.");
@@ -2080,6 +2088,10 @@ namespace dxvk {
 
     static bool shouldConvertToLight(const XXH64_hash_t& h) {
       return lightConverter().find(h) != lightConverter().end();
+    }
+
+    static bool isWaterRippleTexture(const XXH64_hash_t& h) {
+      return waterRippleTextures().find(h) != waterRippleTextures().end();
     }
 
 

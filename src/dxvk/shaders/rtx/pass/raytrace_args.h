@@ -144,6 +144,25 @@ struct ShadowTerminatorArgs
   float maxLength;
 };
 
+#define WATER_RIPPLE_MAX_COUNT 32
+
+struct WaterRippleEntry
+{
+  // xyz = world-space center, w = outer radius (world units)
+  vec4 centerAndRadius;
+  // x = ripple alpha/strength [0..1], y = vertical match tolerance, z/w = reserved
+  vec4 params;
+};
+
+struct WaterRippleArgs
+{
+  uint  count;
+  float strength;
+  float frequency;
+  uint  pad0;
+  WaterRippleEntry entries[WATER_RIPPLE_MAX_COUNT];
+};
+
 #define OBJECT_PICKING_INVALID (cb.clearColorPicking)
 
 // RaytraceArgs::secondaryRayFlags.
@@ -193,6 +212,8 @@ struct RaytraceArgs {
   SparseRenderingArgs sparseRenderingArgs;
 
   LightGoboArgs lightGoboArgs;
+
+  WaterRippleArgs waterRippleArgs;
 
   // ------------------------- Structs above this line, non structs below this line -----------------------------------
 

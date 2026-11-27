@@ -416,6 +416,7 @@ bool AssetReplacer::registerExternalMesh(remixapi_MeshHandle handle, std::vector
       next[HashComponents::Indices]            = prev[HashComponents::Indices];
       next[HashComponents::GeometryDescriptor] = prev[HashComponents::GeometryDescriptor];
       next[HashComponents::VertexTexcoord]     = prev[HashComponents::VertexTexcoord];
+      next[HashComponents::VertexColor]        = prev[HashComponents::VertexColor];
       next[HashComponents::VertexLayout]       = prev[HashComponents::VertexLayout];
       next.precombine();
 

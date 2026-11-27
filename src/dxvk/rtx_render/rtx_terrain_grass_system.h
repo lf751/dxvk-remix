@@ -83,6 +83,11 @@ namespace dxvk {
     static bool isEnabled() { return enable(); }
     static float getDensityScale() { return densityScale(); }
     static float getHeightScale() { return scaleMultiplier(); }
+    static float getNearDistance() { return nearDistance(); }
+    static float getMidDistance() { return midDistance(); }
+    static float getFarDistance() { return farDistance(); }
+    static float getTransitionWidth() { return transitionWidth(); }
+    static bool getWholeIsland() { return wholeIsland(); }
     static bool getForceHideVanillaGrass() { return forceHideVanillaGrass(); }
 
   private:
@@ -111,6 +116,24 @@ namespace dxvk {
       "Global uniform scale multiplier applied to all 3D terrain grass clusters.",
       args.minValue = 0.1f;
       args.maxValue = 4.0f);
+    RTX_OPTION_ARGS("rtx.terrainGrass", float, nearDistance, 0.0f,
+      "Override Near ring outer distance in world units (0 = use USD preset).",
+      args.minValue = 0.0f;
+      args.maxValue = 1024.0f);
+    RTX_OPTION_ARGS("rtx.terrainGrass", float, midDistance, 0.0f,
+      "Override Mid ring outer distance in world units (0 = use USD preset).",
+      args.minValue = 0.0f;
+      args.maxValue = 1024.0f);
+    RTX_OPTION_ARGS("rtx.terrainGrass", float, farDistance, 0.0f,
+      "Override Far ring outer distance in world units when Whole Island is unchecked (0 = use USD preset).",
+      args.minValue = 0.0f;
+      args.maxValue = 2048.0f);
+    RTX_OPTION_ARGS("rtx.terrainGrass", float, transitionWidth, -1.0f,
+      "Override ring cross-fade transition width in world units (< 0 = use USD preset, 0 = hard switch).",
+      args.minValue = -1.0f;
+      args.maxValue = 200.0f);
+    RTX_OPTION("rtx.terrainGrass", bool, wholeIsland, true,
+      "When enabled, Far grass covers the entire island without an outer distance cutoff. When disabled, Far grass fades out at Far Distance.");
     RTX_OPTION("rtx.terrainGrass", bool, forceHideVanillaGrass, false,
       "Forces vanilla grass billboards hidden even if the USD preset leaves hideVanillaGrass disabled.");
 

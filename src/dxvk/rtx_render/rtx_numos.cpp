@@ -4,6 +4,7 @@
 #include "rtx_numos.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <fstream>
 #include <iterator>
@@ -20,6 +21,7 @@
 #include "rtx_debug_view.h"
 #include "rtx_light_manager.h"
 #include "rtx_fork_camera_origin.h"
+#include "rtx_fork_game_state.h"
 #include "rtx/pass/common_binding_indices.h"
 #include "rtx/pass/composite/composite_binding_indices.h"
 #include "rtx/pass/raytrace_args.h"
@@ -325,6 +327,10 @@ namespace dxvk {
         m_rendering = false;
         LightBvh::setSkyProviderRendering(false);
       }
+      if (m_lastForceNightFlares != 0) {
+        fork_game_state::GameStateStore::get().set("__numos.force_night_flares", "0");
+        m_lastForceNightFlares = 0;
+      }
       m_impl->gpu.endFrame();
       return;
     }
@@ -415,6 +421,16 @@ namespace dxvk {
     ++m_frameIndex;
 
     const numos::FrameOutputs& out = m_impl->renderer.outputs();
+    {
+      const float sinElev = std::clamp(out.args.sunDirection.y, -1.0f, 1.0f);
+      const float sunElevDeg = std::asin(sinElev) * (180.0f / 3.14159265358979323846f);
+      const int8_t forceNightFlares = (RtxOptions::effectLightNightFlaresEnable() &&
+                                       sunElevDeg <= RtxOptions::effectLightNightSunElevation()) ? 1 : 0;
+      if (forceNightFlares != m_lastForceNightFlares) {
+        fork_game_state::GameStateStore::get().set("__numos.force_night_flares", forceNightFlares ? "1" : "0");
+        m_lastForceNightFlares = forceNightFlares;
+      }
+    }
     // A partial write (the buffer has a tail pad): DXVK updates it in place in the command stream,
     // ordered before this frame's readers, instead of renaming it under bindings already taken.
     ctx.writeToBuffer(m_argsBuffer, 0, sizeof(numos::AtmosphereArgs), &out.args);

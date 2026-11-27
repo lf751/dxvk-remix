@@ -45,6 +45,7 @@ namespace dxvk {
     "geometrydescriptor",
     "vertexlayout",
     "vertexshader",
+    "colors",
   };
   static_assert((sizeof(HashComponentNames) / sizeof(char*)) == (size_t) HashComponents::Count);
 

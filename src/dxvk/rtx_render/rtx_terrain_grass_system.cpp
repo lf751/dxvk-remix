@@ -89,7 +89,15 @@ namespace dxvk {
       ImGui::Dummy({ 0, 2 });
       ImGui::Indent();
       RemixGui::Checkbox("Enable 3D Terrain Grass", &enableObject());
+      RemixGui::DragFloat("Density Scale", &densityScaleObject(), 0.05f, 0.25f, 2.0f, "%.2f");
       RemixGui::DragFloat("Scale Multiplier", &scaleMultiplierObject(), 0.05f, 0.1f, 4.0f, "%.2f");
+      RemixGui::DragFloat("Near Distance (0 = USD)", &nearDistanceObject(), 1.0f, 0.0f, 1024.0f, "%.1f");
+      RemixGui::DragFloat("Mid Distance (0 = USD)", &midDistanceObject(), 1.0f, 0.0f, 1024.0f, "%.1f");
+      RemixGui::Checkbox("Whole Island", &wholeIslandObject());
+      ImGui::BeginDisabled(wholeIsland());
+      RemixGui::DragFloat("Far Distance (0 = USD)", &farDistanceObject(), 2.0f, 0.0f, 2048.0f, "%.1f");
+      ImGui::EndDisabled();
+      RemixGui::DragFloat("Transition Width (<0 = USD)", &transitionWidthObject(), 0.5f, -1.0f, 200.0f, "%.1f");
       RemixGui::Checkbox("Force Hide Vanilla Grass", &forceHideVanillaGrassObject());
       ImGui::Unindent();
       ImGui::PopID();
@@ -464,7 +472,8 @@ namespace dxvk {
     cb.borderShrinkWidth = preset.borderShrinkWidth;
     cb.minScale = preset.minScale;
     cb.maxScale = preset.maxScale;
-    cb.transitionWidth = preset.transitionWidth;
+    const float twOverride = transitionWidth();
+    cb.transitionWidth = twOverride >= 0.f ? twOverride : preset.transitionWidth;
     cb.coverageThreshold = preset.coverageThreshold;
     cb.rockLowElevation = terrainBlendArgs.rockLowElevation;
     cb.rockHighElevation = terrainBlendArgs.rockHighElevation;

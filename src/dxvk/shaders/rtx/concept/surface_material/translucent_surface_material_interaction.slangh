@@ -130,6 +130,42 @@ TranslucentSurfaceMaterialInteraction translucentSurfaceMaterialInteractionCreat
     normal = normalize(mul(tangentToWorld, tangentNormal));
   }
 
+  if (surface.isAnimatedWater && cb.waterRippleArgs.count > 0)
+  {
+    vec2 rippleGrad = vec2(0.0f, 0.0f);
+    const uint rippleCount = min(cb.waterRippleArgs.count, WATER_RIPPLE_MAX_COUNT);
+    const float rippleFreqRad = cb.waterRippleArgs.frequency * 6.2831853f;
+    const float rippleStrength = cb.waterRippleArgs.strength;
+    for (uint i = 0; i < rippleCount; ++i)
+    {
+      const vec4 cr = cb.waterRippleArgs.entries[i].centerAndRadius;
+      const vec4 pr = cb.waterRippleArgs.entries[i].params;
+      const float radius = cr.w;
+      if (radius <= 1e-4f || pr.x <= 1e-4f)
+        continue;
+      const float dy = abs(cb.isZUp != 0 ? (surfaceInteraction.position.z - cr.z)
+                                         : (surfaceInteraction.position.y - cr.y));
+      if (dy > pr.y)
+        continue;
+      const vec2 delta = cb.isZUp != 0 ? (surfaceInteraction.position.xy - cr.xy)
+                                       : (surfaceInteraction.position.xz - cr.xz);
+      const float dist2 = dot(delta, delta);
+      if (dist2 >= radius * radius || dist2 < 1e-8f)
+        continue;
+      const float dist = sqrt(dist2);
+      const float u = dist / radius;
+      const float env = smoothstep(0.05f, 0.35f, u) * smoothstep(1.0f, 0.72f, u);
+      const float slope = sin((1.0f - u) * rippleFreqRad) * env * pr.x * rippleStrength;
+      rippleGrad += (delta / dist) * slope;
+    }
+    if (dot(rippleGrad, rippleGrad) > 1e-8f)
+    {
+      const vec3 worldOffset = cb.isZUp != 0 ? vec3(rippleGrad.x, rippleGrad.y, 0.0f)
+                                             : vec3(rippleGrad.x, 0.0f, rippleGrad.y);
+      normal = normalize(normal + worldOffset);
+    }
+  }
+
   // Note: Diffuse layer override encapsulated in if the diffuse layer flag is set or not as this override is able to be done on the CPU.
   const bool useDiffuseLayer = translucentSurfaceMaterial.flags & TRANSLUCENT_SURFACE_MATERIAL_FLAG_USE_DIFFUSE_LAYER;
 

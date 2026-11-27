@@ -257,9 +257,28 @@ namespace dxvk {
       // The inputs with materialKey as the material identity.
       XXH64_hash_t inputsKeyWith(XXH64_hash_t materialKey, bool includeVsConstants, bool includeWorld) const {
         XXH64_hash_t h = XXH3_64bits(&flags, sizeof(flags));
+        const bool coarse = usesCoarseKey();
+        const bool coarseRange = coarse && !(flags & kContent);
         for (uint32_t i = 0; i < kMaxStreams; ++i) {
           if (streamMask & (1u << i)) {
-            h = XXH3_64bits_withSeed(&streams[i].buffer.version, sizeof(uint64_t), h);
+            if (coarseRange) {
+              const uint64_t streamParts[3] = { streams[i].buffer.id, streams[i].buffer.version, streams[i].offset };
+              h = XXH3_64bits_withSeed(streamParts, sizeof(streamParts), h);
+            } else {
+              h = XXH3_64bits_withSeed(&streams[i].buffer.version, sizeof(uint64_t), h);
+            }
+          }
+        }
+        if (coarse) {
+          const uint64_t counts = (uint64_t(primitiveCount) << 32) | numVertices;
+          h = XXH3_64bits_withSeed(&counts, sizeof(counts), h);
+          if (coarseRange) {
+            const uint64_t rangeParts[3] = {
+              indices.id,
+              (uint64_t(uint32_t(baseVertex)) << 32) | startIndex,
+              minVertexIndex
+            };
+            h = XXH3_64bits_withSeed(rangeParts, sizeof(rangeParts), h);
           }
         }
         const XXH64_hash_t parts[8] = { indices.version, psBytecode, materialKey, includeVsConstants ? vsConstants : 0,

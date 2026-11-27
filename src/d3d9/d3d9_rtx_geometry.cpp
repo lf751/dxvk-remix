@@ -16,6 +16,7 @@ namespace dxvk {
     enum Type : uint32_t {
       Position = 0,
       Texcoord,
+      Color0,
       Count
     };
   }
@@ -26,6 +27,7 @@ namespace dxvk {
     switch (component) {
     case HashComponents::VertexPosition: regionOut = VertexRegions::Position; return true;
     case HashComponents::VertexTexcoord: regionOut = VertexRegions::Texcoord; return true;
+    case HashComponents::VertexColor: regionOut = VertexRegions::Color0; return true;
     default: return false;
     }
   }
@@ -108,7 +110,9 @@ namespace dxvk {
       const HashComponents& component = (HashComponents) i;
 
       VertexRegions::Type region = VertexRegions::Position;
-      if (globalHashRule.test(component) && componentToRegion(component, region)) {
+      if (componentToRegion(component, region) &&
+          (globalHashRule.test(component) ||
+           (component == HashComponents::VertexColor && vertexRegions[(uint32_t)region].size > 0))) {
         hashesOut[component] = hashVertexRegionIndexed(vertexRegions[(uint32_t)region], uniqueIndices);
       }
     }
@@ -181,6 +185,11 @@ namespace dxvk {
     if (getVertexRegion(geoData.texcoordBuffer, vertexCount, vertexRegions[VertexRegions::Texcoord])) {
       vertexRegions[VertexRegions::Texcoord].ref->acquire(DxvkAccess::Read);
       vertexRegions[VertexRegions::Texcoord].ref->incRef();
+    }
+
+    if (getVertexRegion(geoData.color0Buffer, vertexCount, vertexRegions[VertexRegions::Color0])) {
+      vertexRegions[VertexRegions::Color0].ref->acquire(DxvkAccess::Read);
+      vertexRegions[VertexRegions::Color0].ref->incRef();
     }
 
     // Make sure we hold a ref to the index buffer while hashing.

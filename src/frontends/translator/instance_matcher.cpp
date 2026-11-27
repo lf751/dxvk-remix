@@ -22,6 +22,7 @@
 #include "instance_matcher.h"
 
 #include <algorithm>
+#include <cmath>
 #include <iterator>
 #include <limits>
 
@@ -45,31 +46,49 @@ namespace dxvk {
       query.tier = Query::Tier::Occurrence;
       XXH64_hash_t contentGroup = 0;
       XXH64_hash_t exactKey = 0;
-      if (query.content != 0) {
+      const bool hasFinitePosition = !query.positionUnknown &&
+        std::isfinite(position.x) && std::isfinite(position.y) && std::isfinite(position.z);
+      if (query.content != 0 || hasFinitePosition) {
         const uint64_t group[3] = { groupKey, query.content, signature };
-        contentGroup = XXH3_64bits(group, sizeof(group)) | 1;
-        const float place[3] = { position.x, position.y, position.z };
-        exactKey = XXH3_64bits_withSeed(place, sizeof(place), contentGroup) | 1;
+        const XXH64_hash_t exactGroup = XXH3_64bits(group, sizeof(group)) | 1;
+        if (query.content != 0) {
+          contentGroup = exactGroup;
+        }
+        if (hasFinitePosition) {
+          const float place[3] = {
+            position.x == 0.f ? 0.f : position.x,
+            position.y == 0.f ? 0.f : position.y,
+            position.z == 0.f ? 0.f : position.z
+          };
+          exactKey = XXH3_64bits_withSeed(place, sizeof(place), exactGroup) | 1;
 
-        // The same bytes at the same position. Coincident copies keep their order among themselves.
-        const uint32_t occurrence = m_exactOccurrence[exactKey]++;
-        const auto exact = m_exactSlots.find(exactKey);
-        if (exact != m_exactSlots.end()) {
-          const std::vector<uint32_t>& slots = exact->second;
-          if (occurrence < slots.size() && claimable(slots[occurrence]) && sameMaterialAs(slots[occurrence])) {
-            chosen = slots[occurrence];
-          } else {
-            for (const uint32_t slot : slots) {
-              if (claimable(slot) && sameMaterialAs(slot)) {
-                chosen = slot;
-                break;
+          // Exact-position lookup independent of draw-order shifts (handles >kWindow frustum culling shifts for both
+          // kContent and non-kContent draws). Coincident copies keep their order among themselves; fallback prefers a
+          // slot drawn on the previous frame over a stale one.
+          const uint32_t occurrence = m_exactOccurrence[exactKey]++;
+          const auto exact = m_exactSlots.find(exactKey);
+          if (exact != m_exactSlots.end()) {
+            const std::vector<uint32_t>& slots = exact->second;
+            if (occurrence < slots.size() && claimable(slots[occurrence]) && sameMaterialAs(slots[occurrence])) {
+              chosen = slots[occurrence];
+            } else {
+              for (const uint32_t slot : slots) {
+                if (claimable(slot) && sameMaterialAs(slot)) {
+                  if (chosen == ~0u || known[slot].lastFrame + 1 == frame) {
+                    chosen = slot;
+                    if (known[slot].lastFrame + 1 == frame) {
+                      break;
+                    }
+                  }
+                }
               }
             }
           }
+          if (chosen != ~0u && query.content != 0) {
+            query.tier = Query::Tier::ContentExact;
+          }
         }
-        if (chosen != ~0u) {
-          query.tier = Query::Tier::ContentExact;
-        } else {
+        if (chosen == ~0u && query.content != 0) {
           // The same bytes elsewhere: the nearest slot within the limits of the search below, lowest slot on a tie. A slot
           // drawn in the previous frame ranks above a stale one, which a look-alike can have left in the draw's path.
           bool bestRecent = false;
@@ -140,7 +159,7 @@ namespace dxvk {
             continue;
           }
           const bool sameSignature = known[slot].signature == signature;
-          if (query.shapeFirst && !sameSignature && !recent) {
+          if (query.shapeFirst && !sameSignature && (!recent || distance > query.otherMaterialDistanceSqr)) {
             query.shapeRejects++;
             continue;
           }

@@ -115,6 +115,7 @@ namespace dxvk {
     bool m_hostSkyOverride = false;
     bool m_postDepthDone = false;  // dispatchPostDepth ran since this frame's beginFrame
     bool m_argsCleared = false;    // the args buffer was zeroed once (it is read even while NUMOS is off)
+    int8_t m_lastForceNightFlares = -1;
   };
 
 }

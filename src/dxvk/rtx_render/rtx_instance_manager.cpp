@@ -1045,7 +1045,7 @@ namespace dxvk {
         currentInstance.surface.isAnimatedWater = currentInstance.testCategoryFlags(InstanceCategories::AnimatedWater);
         currentInstance.surface.associatedGeometryHash = drawCall.getHash(RtxOptions::geometryAssetHashRule());
         currentInstance.surface.isTextureFactorBlend = legacySurface.isTextureFactorBlend;
-        currentInstance.surface.isVertexColorBakedLighting = legacySurface.isVertexColorBakedLighting;
+        currentInstance.surface.isVertexColorBakedLighting = legacySurface.isVertexColorBakedLighting && !alphaState.isParticle;
         currentInstance.surface.isMotionBlurMaskOut = currentInstance.testCategoryFlags(InstanceCategories::IgnoreMotionBlur);
 
         // Note: Skip the spritesheet adjustment logic in the surface interaction when using Ray Portal materials as this logic

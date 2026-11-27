@@ -1214,7 +1214,8 @@ namespace dxvk {
 
     if (instance.testCategoryFlags(InstanceCategories::IgnoreOpacityMicromap) ||
         instance.testCategoryFlags(InstanceCategories::Terrain) ||
-        instance.testCategoryFlags(InstanceCategories::IgnoreAlphaChannel)) {
+        instance.testCategoryFlags(InstanceCategories::IgnoreAlphaChannel) ||
+        instance.isHidden()) {
       return false;
     }
 

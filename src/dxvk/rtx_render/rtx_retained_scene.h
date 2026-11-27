@@ -274,7 +274,7 @@ namespace dxvk {
     uint64_t m_modChangesEpoch = ~0ull;
     bool entryUsesChangedAssets(const Entry& entry, const AssetChanges& changes) const;
     // Per-frame work of direct instances.
-    enum ServiceFlags : uint8_t { kServiceStamp = 1, kServiceLight = 2, kServiceParticles = 4, kServiceReplacement = 8 };
+    enum ServiceFlags : uint8_t { kServiceStamp = 1, kServiceLight = 2, kServiceParticles = 4, kServiceReplacement = 8, kServiceWaterRipple = 16 };
     struct Service {
       RtInstance* instance = nullptr;
       uint64_t handle = 0;

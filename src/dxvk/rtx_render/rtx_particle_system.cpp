@@ -204,6 +204,7 @@ namespace dxvk {
       RemixGui::Checkbox("Enable Spawning", &enableSpawningObject());
       RemixGui::DragFloat("Time Scale", &timeScaleObject(), 0.01f, 0.f, 1.f, "%.2f");
       RemixGui::DragFloat("Min Screen Size", &minScreenSizeObject(), 0.05f, 0.f, 16.f, "%.2f px");
+      RemixGui::DragFloat("Sky Ambient Scale", &skyAmbientScaleObject(), 0.02f, 0.f, 4.f, "%.2f");
 
       if (RemixGui::CollapsingHeader("Emitter Discontinuity Lerp Guard", ImGuiTreeNodeFlags_CollapsingHeader)) {
         ImGui::Indent();
@@ -475,7 +476,15 @@ namespace dxvk {
       disableMaterialSpriteSheet = true;
     }
 
-    const XXH64_hash_t particleSystemHash = drawCallState.getMaterialData().getHash() ^ desc.calcHash();
+    const DxvkBlendMode& blend = drawCallState.getMaterialData().blendMode;
+    const uint32_t blendKey[4] = {
+      uint32_t(blend.enableBlending),
+      uint32_t(blend.colorSrcFactor),
+      uint32_t(blend.colorDstFactor),
+      uint32_t(blend.colorBlendOp)
+    };
+    const XXH64_hash_t blendHash = XXH3_64bits(blendKey, sizeof(blendKey));
+    const XXH64_hash_t particleSystemHash = drawCallState.getMaterialData().getHash() ^ desc.calcHash() ^ blendHash;
 
     auto materialSystemIt = m_particleSystems.find(particleSystemHash);
     if (materialSystemIt == m_particleSystems.end()) {

@@ -56,6 +56,21 @@ vec3 skyProviderAmbient(vec3 directionWorld)
                                    AtmosphereSkyViewSampler) * cb.skyRadianceUnscale;
 }
 
+// Returns the cloud-shadowed direct sun diffuse scattering term (sunIrradiance / pi, in Remix pre-exposed
+// radiance units) at a world position, for particles in open air. Returns 0 when the sun is below the horizon.
+vec3 skyProviderSunDiffuse(vec3 worldPosition)
+{
+  const vec3 sunDirYUp = normalize(skyArgs.sunDirection);
+  if (sunDirYUp.y <= 0.0f)
+  {
+    return vec3(0.0f);
+  }
+  const vec3 sunDirWorld = normalize(atmosphereYUpToWorld(sunDirYUp, cb.isZUp != 0, skyArgs.flipUpAxis != 0u));
+  const vec3 transmittance = getAtmosphericTransmittanceForDir(sunDirYUp, skyArgs);
+  const float cloudT = skyProviderCloudShadow(worldPosition, sunDirWorld);
+  return skyArgs.sunIlluminance * transmittance * cloudT * saturate(sunDirYUp.y) * (1.0f / kPi) * cb.skyRadianceUnscale;
+}
+
 // Converts a world-unit distance to NUMOS km, for the foreground split's AtmosphereForeground.w, which the
 // composite's cloud pass reads back with numosKmToWorld. This is NUMOS's one host-boundary conversion
 // (rtx.atmosphere.unitsPerMeter x rtx.atmosphere.worldScale).

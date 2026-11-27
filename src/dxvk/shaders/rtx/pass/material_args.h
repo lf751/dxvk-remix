@@ -158,6 +158,14 @@ struct TranslucentMaterialOptions {
   RTX_OPTION("rtx.translucentMaterial", bool, animatedWaterEnable, true,
              "If enabled, draw calls in the AnimatedWater category and a translucent material will have their primary texcoordinates animated, and will also take a second sample from the normal map.\n"
              "Note that objects must be properly categorized as animated water to be rendered with this mode.");
+  RTX_OPTION("rtx.translucentMaterial", bool, waterRippleEnable, true,
+             "If enabled, draws tagged in rtx.waterRippleTextures perturb the normals of AnimatedWater translucent surfaces with concentric wave ripples.");
+  RTX_OPTION("rtx.translucentMaterial", float, waterRippleStrength, 0.75f,
+             "Normal perturbation strength for water ripple rings generated from rtx.waterRippleTextures.");
+  RTX_OPTION("rtx.translucentMaterial", float, waterRippleFrequency, 2.5f,
+             "Number of concentric wave cycles across each water ripple ring.");
+  RTX_OPTION("rtx.translucentMaterial", bool, waterRippleHideSource, true,
+             "Hide the original 2D ripple ring geometry when converting rtx.waterRippleTextures into water normal ripples.");
   // Overrides
 
   RTX_OPTION("rtx.translucentMaterial", bool, enableDiffuseLayerOverride, false, "A flag to force the diffuse layer on the translucent material to be enabled. Should only be used for debugging or development.");

@@ -36,6 +36,9 @@
 #include "rtx/concept/ray_portal/ray_portal.slangh"
 #include "rtx/algorithm/view_distance.slangh"
 #include "rtx/algorithm/volume_lighting_consumer.slangh"
+#ifdef RESOLVE_OPACITY_LIGHTING_APPROXIMATION
+#include "rtx/algorithm/sky_provider.slangh"
+#endif
 
 #ifndef GBUFFER_FEATURE_OBJECT_PICKING
 #define GBUFFER_FEATURE_OBJECT_PICKING 1
@@ -175,26 +178,22 @@ bool evaluateOpaqueApproximations(
     // Finally, albedo has opacity baked into it already so it does not need to be multiplied in here.
     emissiveRadiance += opaqueSurfaceMaterialInteraction.albedo * accumulatedOutgoingRadiance * incomingRadianceAttenuation;
 
-#ifdef RESOLVE_SKY_LIT_PARTICLES
-    // Skylight for sky-lit particle materials. The froxel radiance cache sampled above holds NEE over the analytic
-    // lights only, with no sky term, so particles shaded only by it render dark against a bright overcast sky.
-    // This adds the sky provider's sky light (clouds included) as the average of two taps: the view direction,
-    // lifted slightly above the horizon so looking down does not zero it, and the zenith.
-    // Only materials with OPAQUE_SURFACE_MATERIAL_FLAG_SKY_LIT_PARTICLE opt in, because generic game particles
-    // cannot be assumed to see open sky (indoor smoke must not glow sky-blue).
-    if (skyLitParticle && skyProviderActive() && cb.particleSkyAmbientScale > 0.0f)
+    // Sky and direct sun scattering for sky-lit particle materials and non-emissive game particles.
+    // The froxel radiance cache is strongly attenuated under NUMOS and carries no sky-dome term,
+    // leaving translucent smoke, dust, splashes, and fire dark against bright daytime skies.
+    if ((skyLitParticle || (surface.isParticle && !surface.isEmissiveBlend)) && skyProviderActive() && cb.particleSkyAmbientScale > 0.0f)
     {
       vec3 viewDir = normalize(surfaceInteraction.position - cameraGetWorldPosition(camera));
       const vec3 up = cb.isZUp != 0 ? vec3(0.0f, 0.0f, 1.0f) : vec3(0.0f, 1.0f, 0.0f);
       viewDir = normalize(viewDir + up * max(0.05f - dot(viewDir, up), 0.0f));
 
       const vec3 skyAmbient = (skyProviderAmbient(viewDir) + skyProviderAmbient(up)) * 0.5f;
+      const vec3 sunDiffuse = skyProviderSunDiffuse(surfaceInteraction.position);
 
       // The albedo convention matches the froxel term above, with opacity pre-baked.
-      emissiveRadiance += opaqueSurfaceMaterialInteraction.albedo * skyAmbient
+      emissiveRadiance += opaqueSurfaceMaterialInteraction.albedo * (skyAmbient + sunDiffuse * 0.35f)
         * cb.particleSkyAmbientScale * incomingRadianceAttenuation;
     }
-#endif
   }
 #else
   const bool opacityLightingApprox = false;

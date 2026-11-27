@@ -1065,6 +1065,9 @@ namespace dxvk {
       if (RtxOptions::shouldConvertToLight(drawCall.getMaterialData().getHash())) {
         service.flags |= kServiceLight;
       }
+      if (RtxOptions::isWaterRippleTexture(drawCall.getMaterialData().getHash())) {
+        service.flags |= kServiceWaterRipple;
+      }
       const ExternalDrawState::SubmeshPart* part = submeshPart(state, i);
       if (state.optionalParticleDesc.has_value() || (part != nullptr && part->particleSystem.has_value()) ||
           material.getParticleSystemDesc() != nullptr || drawCall.getCategoryFlags().test(InstanceCategories::ParticleEmitter)) {
@@ -1614,6 +1617,9 @@ namespace dxvk {
       }
       if (service.flags & kServiceLight) {
         m_scene.createEffectLight(ctx, currentDrawCall(*instance), instance);
+      }
+      if (service.flags & kServiceWaterRipple) {
+        m_scene.collectWaterRipples(currentDrawCall(*instance), instance);
       }
       if (service.flags & kServiceParticles) {
         if (!owner->second.hasDesc) {

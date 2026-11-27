@@ -168,13 +168,13 @@ void main(uint3 threadId : SV_DispatchThreadID) {
   const float dist = length(worldPlane - camPlane);
   float ringFade = 1.f;
   if (visible) {
-    if (batch.isWholeIsland == 0u && dist > batch.outerRadius) {
+    if (batch.outerRadius > 0.f && dist > batch.outerRadius) {
       visible = false;
     } else if (batch.innerRadius > 0.f && dist < max(0.f, batch.innerRadius - cb.transitionWidth)) {
       visible = false;
     } else {
       if (cb.transitionWidth > 1e-3f) {
-        if (batch.isWholeIsland == 0u && dist > batch.outerRadius - cb.transitionWidth) {
+        if (batch.outerRadius > 0.f && dist > batch.outerRadius - cb.transitionWidth) {
           ringFade = min(ringFade, saturate((batch.outerRadius - dist) / cb.transitionWidth));
         }
         if (batch.innerRadius > 0.f && dist < batch.innerRadius) {
